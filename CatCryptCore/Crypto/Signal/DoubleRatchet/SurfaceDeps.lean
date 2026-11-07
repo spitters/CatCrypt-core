@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Examples.SymmRatchet
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedCorrespondence
+public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedScheme
 public import CatCryptCore.Hax.ReprBridge
 public import CatCryptCore.Crypto.UCDSL
 public import CatCryptCore.Crypto.Libcrux.Extraction.Libcrux_specs
@@ -61,6 +62,26 @@ UC-emulates the encoded ideal game, through the class route (`PureGame`, `GameAd
 in `G25519 B`, the PRG advantages of the HKDF root step and the FS-AEAD advantages of the
 libcrux symmetric ratchet against explicit reductions, summed over the epochs, plus
 `(msgs.length + 1) * Δ25519`.
+
+`signalDR_extracted_corrupt_advantage_le` and `signalDR_extracted_adaptive_advantage_le`: the
+session functions of the crate at `defaultDoubleratchetDeps`, as the secure-messaging scheme
+`signalDRLibcruxSM B` of `ExtractedScheme` (`Uninitialized_establish` opens the initiator's
+first epoch, the halves of `Session_dh_ratchet` open the other epochs and receive them), in the
+ACD corruption game with forward secrecy and post-compromise security and in the game with an
+adaptive challenge epoch. Under `X25519Hom B` the scheme simulates the ACD construction over the
+Diffie–Hellman CKA `dhCKAOf (G25519 B) signedE`, whose secret keys are the libcrux keys
+`(sk, b)`; the bound is that of `sm_corrupt_advantage_le` (`sm_adaptive_corrupt_advantage_le`)
+at explicit reductions of the encoded adversary. A corruption reveals the bytes of the secret
+key, which the exponent `signedE (sk, b)` does not determine. In the corruption game with
+`2 ≤ ΔFS`, `2 ≤ ΔPCS` the CKA terms are DDH advantages in `G25519 B` of the reductions
+`ckaCorruptDDHRedOf signedE ΔFS ΔPCS`, each plus `4 Δ25519` for the two exponent draws of the
+epochs `t* - 1` and `t*` in the real and in the ideal game (`dhCKAOf_corrupt_advantage_le` at
+`signedClampCert`). In the adaptive game, for an adversary of at most `q` queries and with
+`2 ≤ ΔFS`, `2 ≤ ΔPCS`, the bound is the sum over the epochs `e ≤ q` of the same terms at the
+guessing reductions of the epochs, the CKA terms DDH advantages in `G25519 B` of
+`ckaCorruptDDHRedOf signedE ΔFS ΔPCS`, plus `(q + 1) * 8 * Δ25519`.
+`signalDR_extracted_adaptive_advantage_le_tsum` (with `2 ≤ ΔFS`, `1 ≤ ΔPCS`) is the bound summed
+over all epochs, with the CKA corruption advantages of `dhCKAOf (G25519 B) signedE`.
 
 ## References
 
@@ -283,6 +304,164 @@ theorem signalDR_e2e_uc_secure (msgs : List (List (Vector UInt8 32))) (V : Type)
   UCFromGameC.uc
 
 end UC
+
+/-! ## Forward secrecy and post-compromise security of the extracted double ratchet -/
+
+section Corrupt
+
+open ExtractedCorrespondence ExtractedScheme
+
+variable (B : Curve25519Point) [Fact (addOrderOf B = curve25519SubgroupOrder)]
+
+/-- The extracted double ratchet at `defaultDoubleratchetDeps` as a secure-messaging scheme:
+`drExtractedSM` with the plaintext length `32`, root keys, chain keys, words and ciphertexts
+encoded by `vecToArrayInt`, group elements of `G25519 B` by `vecToArrayInt ∘ encU`, and secret
+keys `(sk, b)` drawn uniformly, encoded by the bytes of `sk` and with the exponent
+`signedE (sk, b)`. -/
+noncomputable abbrev signalDRLibcruxSM :
+    SMScheme Doubleratchet.Session_T (Array Int) (Vector UInt8 32 × Bool) (Vector UInt8 32)
+      (Array Int) DrLeak :=
+  drExtractedSM (Vector UInt8 32) (G := G25519 B) (Ct := Vector UInt8 32) 32 vecToArrayInt
+    (vecToArrayInt ∘ encU) (vecToArrayInt ∘ Prod.fst) signedE vecToArrayInt vecToArrayInt
+
+/-- The encoding of the corruption answers of the ACD construction at the libcrux encodings. -/
+noncomputable abbrev signalDRLibcruxLeak :
+    SMPartySt (G25519 B × (Vector UInt8 32 × Bool)) (Vector UInt8 32) (Vector UInt8 32) →
+      DrLeak :=
+  drEncLeak vecToArrayInt (vecToArrayInt ∘ encU) (vecToArrayInt ∘ Prod.fst) signedE
+    vecToArrayInt
+
+/-- **Forward secrecy and post-compromise security of the extracted Signal double ratchet.**
+For the session functions of `doubleratchet-hax` at `defaultDoubleratchetDeps` (libcrux
+HMAC-SHA256, HKDF-SHA256 and X25519, XOR encryption), under the RFC 7748 correctness
+`X25519Hom B` of X25519 on the subgroup `G25519 B`, and with `2 ≤ ΔFS`, `2 ≤ ΔPCS`, the
+advantage of every adversary `A` in the corruption game over `signalDRLibcruxSM B` is at most
+
+* the DDH advantages in `G25519 B` of the reductions `ckaCorruptDDHRedOf signedE ΔFS ΔPCS` at
+  the CKA reductions `smcCKARed`, each plus `4 Δ25519` for the distance of the signed clamped
+  scalars of the libcrux secret keys to uniform exponents,
+* the PRF-PRNG advantages of the HKDF root step `hkdfRoot (libcruxRootKdf encU)` at the
+  reductions `smcRootRed`,
+* the FS-AEAD advantage with corruption of the libcrux symmetric ratchet at `smcFSRed`,
+
+for `A` with its answers encoded (`SMSchemeAdv.comap`) and relabelled (`SMSchemeAdv.toSM`).
+The theorem is `drExtracted_corruptAdvantage_le` at `defaultDrHom`, with the CKA terms bounded by
+`dhCKAOf_corrupt_advantage_le` at `signedClampCert`. -/
+theorem signalDR_extracted_corrupt_advantage_le (hH : X25519Hom B) {ΔFS ΔPCS : ℕ}
+    (hFS : 2 ≤ ΔFS) (hPCS : 2 ≤ ΔPCS)
+    (A : SMSchemeAdv (Array Int) (Vector UInt8 32) (Array Int) DrLeak) :
+    (signalDRLibcruxSM B).corruptAdvantage ΔFS ΔPCS A ≤
+      ∑ b : Bool, (DDH_Advantage (G25519 B) (ckaCorruptDDHRedOf (G := G25519 B) signedE ΔFS ΔPCS
+          (smcCKARed (hkdfRoot (libcruxRootKdf encU)) (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
+            (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) b
+            (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM)) +
+          4 * Δ25519) +
+        ∑ b : Bool, PRFPRNG_Advantage (hkdfRoot (libcruxRootKdf encU))
+          (smcRootRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
+            (Signal.FSAEAD.toPRG libcrux_fsaeadConfig) (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
+            ΔFS ΔPCS b (dhInitPOf (G25519 B) signedE)
+            (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM) +
+        FSAEAD_Corrupt_Advantage (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
+          (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
+          (smcFSRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
+            (Signal.FSAEAD.toPRG libcrux_fsaeadConfig) (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
+            ΔFS ΔPCS (dhInitPOf (G25519 B) signedE)
+            (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM) := by
+  refine (drExtracted_corruptAdvantage_le (defaultDrHom hH) hFS (le_trans (by norm_num) hPCS)
+    A).trans ?_
+  have hδ : signedClampCert.δ = Δ25519 := rfl
+  have h := dhCKAOf_corrupt_advantage_le (G := G25519 B) signedE signedClampCert rfl rfl hFS hPCS
+  rw [hδ] at h
+  gcongr with b
+  exact h _
+
+/-- The adversary of `sm_adaptive_game` from an adversary `A` of the adaptive game over
+`signalDRLibcruxSM B`: its answers are encoded and relabelled. -/
+noncomputable abbrev signalDRLibcruxAdModel
+    (A : Array Int → OracleAdv (SMQuery (Vector UInt8 32))
+      (SMSchemeAns (Array Int) (Array Int) DrLeak) Bool) (T : G25519 B) :
+    OracleAdv (SMQuery (Vector UInt8 32))
+      (SMAns (G25519 B × (Vector UInt8 32 × Bool)) (G25519 B) (Vector UInt8 32)
+        (Vector UInt8 32) (Vector UInt8 32)) Bool :=
+  ((A (vecToArrayInt (encU T))).mapQueryAnswer id
+    (SMSchemeAns.map (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B))).mapQueryAnswer
+      id SMAns.toScheme
+
+/-- **The extracted Signal double ratchet with an adaptive challenge epoch, over all epochs.**
+Under `X25519Hom B`, with `2 ≤ ΔFS` and `1 ≤ ΔPCS`, the advantage of every adversary `A` in the
+game over `signalDRLibcruxSM B` with an adaptive challenge epoch is at most the sum over the
+epochs `e` of the CKA corruption advantages for `dhCKAOf (G25519 B) signedE`, the PRF-PRNG
+advantages of the HKDF root step and the FS-AEAD advantage of the libcrux symmetric ratchet, at
+the guessing reduction `smGuessAdv ΔFS ΔPCS (signalDRLibcruxAdModel B A) e`. The theorem is
+`drExtracted_adaptiveAdvantage_le` at `defaultDrHom`. -/
+theorem signalDR_extracted_adaptive_advantage_le_tsum (hH : X25519Hom B) {ΔFS ΔPCS : ℕ}
+    (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS)
+    (A : Array Int → OracleAdv (SMQuery (Vector UInt8 32))
+      (SMSchemeAns (Array Int) (Array Int) DrLeak) Bool) :
+    (signalDRLibcruxSM B).adaptiveAdvantage ΔFS ΔPCS A ≤
+      ∑' e, (∑ b : Bool, CKA_Corrupt_Advantage (dhCKAOf (G25519 B) signedE) ΔFS ΔPCS
+            (smcCKARed (hkdfRoot (libcruxRootKdf encU)) (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
+              (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) b
+              (smGuessAdv ΔFS ΔPCS (signalDRLibcruxAdModel B A) e)) +
+        ∑ b : Bool, PRFPRNG_Advantage (hkdfRoot (libcruxRootKdf encU))
+          (smcRootRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
+            (Signal.FSAEAD.toPRG libcrux_fsaeadConfig) (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
+            ΔFS ΔPCS b (dhInitPOf (G25519 B) signedE)
+            (smGuessAdv ΔFS ΔPCS (signalDRLibcruxAdModel B A) e)) +
+        FSAEAD_Corrupt_Advantage (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
+          (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
+          (smcFSRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
+            (Signal.FSAEAD.toPRG libcrux_fsaeadConfig) (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
+            ΔFS ΔPCS (dhInitPOf (G25519 B) signedE)
+            (smGuessAdv ΔFS ΔPCS (signalDRLibcruxAdModel B A) e))) :=
+  drExtracted_adaptiveAdvantage_le (defaultDrHom hH) hFS hPCS A
+
+/-- **The extracted Signal double ratchet with an adaptive challenge epoch.** Under
+`X25519Hom B`, with `2 ≤ ΔFS` and `2 ≤ ΔPCS`, the advantage of every adversary `A` that makes at
+most `q` oracle queries, in the game over `signalDRLibcruxSM B` with an adaptive challenge epoch,
+is at most the sum over the epochs `e ≤ q` of
+
+* the DDH advantages in `G25519 B` of the reductions `ckaCorruptDDHRedOf signedE ΔFS ΔPCS` at
+  the CKA reductions `smcCKARed`,
+* the PRF-PRNG advantages of the HKDF root step `hkdfRoot (libcruxRootKdf encU)` at the
+  reductions `smcRootRed`,
+* the FS-AEAD advantage with corruption of the libcrux symmetric ratchet at `smcFSRed`,
+
+each at the guessing reduction `smGuessAdv ΔFS ΔPCS (signalDRLibcruxAdModel B A) e`, plus
+`(q + 1) * 8 * Δ25519` for the distance of the signed clamped scalars of the libcrux secret keys
+to uniform exponents. The theorem is `SMScheme.Sim.adaptiveAdvantage_le_dhCKAOf_of_isQueryBound`
+at the simulation `drExtracted_sim` of `defaultDrHom` and the sampler certificate
+`signedClampCert`. -/
+theorem signalDR_extracted_adaptive_advantage_le (hH : X25519Hom B) {ΔFS ΔPCS : ℕ}
+    (hFS : 2 ≤ ΔFS) (hPCS : 2 ≤ ΔPCS) {q : ℕ}
+    (A : Array Int → OracleAdv (SMQuery (Vector UInt8 32))
+      (SMSchemeAns (Array Int) (Array Int) DrLeak) Bool)
+    (hA : ∀ T, (A T).IsQueryBound q) :
+    (signalDRLibcruxSM B).adaptiveAdvantage ΔFS ΔPCS A ≤
+      ∑ e ∈ Finset.range (q + 1), (∑ b : Bool, DDH_Advantage (G25519 B)
+            (ckaCorruptDDHRedOf (G := G25519 B) signedE ΔFS ΔPCS
+              (smcCKARed (hkdfRoot (libcruxRootKdf encU))
+                (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
+                (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) b
+                (smGuessAdv ΔFS ΔPCS (signalDRLibcruxAdModel B A) e))) +
+        ∑ b : Bool, PRFPRNG_Advantage (hkdfRoot (libcruxRootKdf encU))
+          (smcRootRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
+            (Signal.FSAEAD.toPRG libcrux_fsaeadConfig) (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
+            ΔFS ΔPCS b (dhInitPOf (G25519 B) signedE)
+            (smGuessAdv ΔFS ΔPCS (signalDRLibcruxAdModel B A) e)) +
+        FSAEAD_Corrupt_Advantage (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
+          (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
+          (smcFSRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
+            (Signal.FSAEAD.toPRG libcrux_fsaeadConfig) (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
+            ΔFS ΔPCS (dhInitPOf (G25519 B) signedE)
+            (smGuessAdv ΔFS ΔPCS (signalDRLibcruxAdModel B A) e))) +
+        (q + 1) * 8 * Δ25519 :=
+  (drExtracted_sim (defaultDrHom hH)).adaptiveAdvantage_le_dhCKAOf_of_isQueryBound (G25519 B)
+    signedE signedClampCert rfl rfl (hkdfRoot (libcruxRootKdf encU))
+    (Signal.FSAEAD.toPRG libcrux_fsaeadConfig) (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
+    hFS hPCS A hA
+
+end Corrupt
 
 /-! ## Unfolding lemmas -/
 

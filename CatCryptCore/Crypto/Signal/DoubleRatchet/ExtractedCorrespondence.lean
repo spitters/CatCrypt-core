@@ -35,9 +35,13 @@ for the Diffie–Hellman CKA and a root key, establishes the session (`Uninitial
 and runs the epochs in turn: the first epoch by `Session_send` per message, then per pair of
 epochs one `Session_dh_ratchet` on the public value of the epoch and the session's new key
 pair, the receiving epoch by `Session_receive` per message and the sending epoch by
-`Session_send` per message. `Uninitialized_establish` sets the receiving chain key to the root
-key it is given; the first receiving chain read by `Session_receive` is the one
-`Session_dh_ratchet` sets. The session functions run with the ghost hooks `keyGhost`, which
+`Session_send` per message. The chain keys of a session are optional:
+`Uninitialized_establish` holds the chain key of its root step as the sending chain key and no
+receiving chain key, `Session_dh_ratchet` sets both, and `Session_send` (`Session_receive`)
+returns no session on a session without a sending (receiving) chain key (`session_send_none`,
+`session_receive_none`). The runs of the game reach no refusal: the first receiving chain read
+by `Session_receive` is the one `Session_dh_ratchet` sets. The session functions run with the
+ghost hooks `keyGhost`, which
 keep the message key the session hands to `send` or `recv`. The game encrypts each message
 `(m, a)` of the model by the trait's `aead_encrypt` under that message key with the model's
 associated data `a`; at the Signal instance (`signalMsgs`) the associated data of each message
@@ -85,6 +89,7 @@ exponent sampler, `sm_extracted_advantage_le` bounds the advantage by the bound 
   root step and Diffie–Hellman function at encoded arguments
 * `session_send_enc`, `session_receive_enc`, `establish_enc`, `dh_ratchet_enc` — the session
   functions at encoded states
+* `session_send_none`, `session_receive_none` — the refusals on an absent chain
 * `sessionCts_eq` — the ciphertexts of the extracted session are the encoded ciphertexts of
   `smCts` over the root chain of the Diffie–Hellman CKA keys
 * `smSampled_realAt_uniform`, `smSampled_idealAt` — the games of `smSampled` at the uniform
@@ -192,37 +197,54 @@ theorem dh_enc (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC) (x 
 /-! ## The session functions at encoded states -/
 
 /-- **Sending step.** `Session_send` at a session whose sending chain key is the encoding of
-the state `s` holds the encoding of the next state of `F` and hands the encoded message key of
-`F` to the ghost hook `send`. -/
+the state `s` returns the session with the encoding of the next state of `F` and hands the
+encoded message key of `F` to the ghost hook `send`. -/
 theorem session_send_enc (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC) (s : Sa)
-    (rk rc sk pk rpk : Array Int) (sn rn st : Int) (g : Array Int) :
-    Session_send (rk, encS s, rc, sn, rn, sk, pk, rpk, st) g =
-      ((rk, encS (F.stretch s).2, rc, sn + 1, rn, sk, pk, rpk, st + 1),
+    (rk : Array Int) (rc : Option (Array Int)) (sk pk rpk : Array Int) (sn rn st : Int)
+    (g : Array Int) :
+    Session_send (rk, some (encS s), rc, sn, rn, sk, pk, rpk, st) g =
+      (some (rk, some (encS (F.stretch s).2), rc, sn + 1, rn, sk, pk, rpk, st + 1),
         event (send g st (encW (F.stretch s).1)) 0 (st + 1)) := by
   simp only [Session_send, Session, «Session.send_ck», «Session.root_key», «Session.recv_ck»,
     «Session.send_n», «Session.recv_n», «Session.my_sk», «Session.my_pk», «Session.remote_pk»,
     «.step», kdf_ck_msg_enc h, kdf_ck_chain_enc h, Hax.add]
 
+/-- **Refused sending step.** `Session_send` at a session without a sending chain key returns
+no session and leaves the ghost. -/
+theorem session_send_none (rk : Array Int) (rc : Option (Array Int)) (sk pk rpk : Array Int)
+    (sn rn st : Int) (g : Array Int) :
+    Session_send (rk, none, rc, sn, rn, sk, pk, rpk, st) g = (none, g) := by
+  simp only [Session_send, «Session.send_ck»]
+
 /-- **Receiving step.** `Session_receive` at a session whose receiving chain key is the
-encoding of the state `s` holds the encoding of the next state of `F` and hands the encoded
-message key of `F` to the ghost hook `recv`. -/
+encoding of the state `s` returns the session with the encoding of the next state of `F` and
+hands the encoded message key of `F` to the ghost hook `recv`. -/
 theorem session_receive_enc (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC) (s : Sa)
-    (rk sc sk pk rpk : Array Int) (sn rn st : Int) (g : Array Int) :
-    Session_receive (rk, sc, encS s, sn, rn, sk, pk, rpk, st) g =
-      ((rk, sc, encS (F.stretch s).2, sn, rn + 1, sk, pk, rpk, st + 1),
+    (rk : Array Int) (sc : Option (Array Int)) (sk pk rpk : Array Int) (sn rn st : Int)
+    (g : Array Int) :
+    Session_receive (rk, sc, some (encS s), sn, rn, sk, pk, rpk, st) g =
+      (some (rk, sc, some (encS (F.stretch s).2), sn, rn + 1, sk, pk, rpk, st + 1),
         event (recv g st (encW (F.stretch s).1)) 1 (st + 1)) := by
   simp only [Session_receive, Session, «Session.send_ck», «Session.root_key», «Session.recv_ck»,
     «Session.send_n», «Session.recv_n», «Session.my_sk», «Session.my_pk», «Session.remote_pk»,
     «.step», kdf_ck_msg_enc h, kdf_ck_chain_enc h, Hax.add]
 
+/-- **Refused receiving step.** `Session_receive` at a session without a receiving chain key
+returns no session and leaves the ghost. -/
+theorem session_receive_none (rk : Array Int) (sc : Option (Array Int)) (sk pk rpk : Array Int)
+    (sn rn st : Int) (g : Array Int) :
+    Session_receive (rk, sc, none, sn, rn, sk, pk, rpk, st) g = (none, g) := by
+  simp only [Session_receive, «Session.recv_ck»]
+
 /-- **Establishing a session.** `Uninitialized_establish` at the encoded root key `rk`, the
 encoded secret key `x` and the encoded remote element `T` holds the encodings of the root KDF
-`R` at `rk` and the Diffie–Hellman key `T ^ decE x`. -/
+`R` at `rk` on the Diffie–Hellman key `T ^ decE x`, as root key and sending chain key, and no
+receiving chain key. -/
 theorem establish_enc (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC)
     (u : Uninitialized_T) (g : Array Int) (rk : RK) (x : Sk) (pk : Array Int) (T : G) :
     Uninitialized_establish u g (encR rk) (encSk x) pk (encG T) =
       ((encR (R.stretch (rk, CyclicGroup.elemPow T (decE x))).1,
-        encS (R.stretch (rk, CyclicGroup.elemPow T (decE x))).2, encR rk, 0, 0, encSk x, pk,
+        some (encS (R.stretch (rk, CyclicGroup.elemPow T (decE x))).2), none, 0, 0, encSk x, pk,
         encG T, 0),
         event g 3 0) := by
   simp only [Uninitialized_establish, Session, dh_enc h, kdf_rk_enc h]
@@ -232,12 +254,12 @@ theorem establish_enc (h : DrHom G R F D ptLen encR encG encSk decE encS encW en
 secret key `y`, holds the encodings of two root steps of `R`: at `rk` on `T ^ decE x` (the
 receiving chain), then at the next root key on `T ^ decE y` (the sending chain). -/
 theorem dh_ratchet_enc (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC)
-    (rk : RK) (sc rc pk : Array Int) (sn rn st : Int) (x y : Sk) (rpk pk' : Array Int)
-    (T : G) (g : Array Int) :
+    (rk : RK) (sc rc : Option (Array Int)) (pk : Array Int) (sn rn st : Int) (x y : Sk)
+    (rpk pk' : Array Int) (T : G) (g : Array Int) :
     Session_dh_ratchet (encR rk, sc, rc, sn, rn, encSk x, pk, rpk, st) g (encG T) (encSk y) pk' =
       let r1 := R.stretch (rk, CyclicGroup.elemPow T (decE x))
       let r2 := R.stretch (r1.1, CyclicGroup.elemPow T (decE y))
-      ((encR r2.1, encS r2.2, encS r1.2, 0, 0, encSk y, pk', encG T, st + 1),
+      ((encR r2.1, some (encS r2.2), some (encS r1.2), 0, 0, encSk y, pk', encG T, st + 1),
         event g 2 (st + 1)) := by
   simp only [Session_dh_ratchet, Session, «Session.root_key», «Session.my_sk», «.step»,
     dh_enc h, kdf_rk_enc h, Hax.add]
@@ -250,23 +272,31 @@ variable (ptLen) (encR) (encG) (encSk) (decE)
 
 /-- The ciphertexts of a sending epoch from the session `x`: per message `(m, a)`, one
 `Session_send` under the ghost hooks `keyGhost`, and `aead_encrypt` of `m` with associated data
-`a` under the message key it hands to `send`; and the session after the epoch. -/
+`a` under the message key it hands to `send`; and the session after the epoch. The epoch ends
+at a refusal of `Session_send`. -/
 def sendEpoch (x : Session_T) : List (Array Int × Array Int) → List (Array Int) × Session_T
   | [] => ([], x)
   | m :: ms =>
     let r := @Session_send (keyGhost inst) x #[]
-    let p := sendEpoch r.1 ms
-    (aead_encrypt r.2 m.1 ptLen m.2 :: p.1, p.2)
+    match r.1 with
+    | some y =>
+      let p := sendEpoch y ms
+      (aead_encrypt r.2 m.1 ptLen m.2 :: p.1, p.2)
+    | none => ([], x)
 
 /-- The ciphertexts of a receiving epoch at the session `x`: per message `(m, a)`, one
 `Session_receive` under the ghost hooks `keyGhost`, and `aead_encrypt` of `m` with associated
-data `a` under the message key it hands to `recv`; and the session after the epoch. -/
+data `a` under the message key it hands to `recv`; and the session after the epoch. The epoch
+ends at a refusal of `Session_receive`. -/
 def recvEpoch (x : Session_T) : List (Array Int × Array Int) → List (Array Int) × Session_T
   | [] => ([], x)
   | m :: ms =>
     let r := @Session_receive (keyGhost inst) x #[]
-    let p := recvEpoch r.1 ms
-    (aead_encrypt r.2 m.1 ptLen m.2 :: p.1, p.2)
+    match r.1 with
+    | some y =>
+      let p := recvEpoch y ms
+      (aead_encrypt r.2 m.1 ptLen m.2 :: p.1, p.2)
+    | none => ([], x)
 
 /-- The ciphertexts of the epochs after the first from the session `x`, with the fresh CKA
 secret keys `es` and the messages `mss` of the epochs. Per pair of epochs, one
@@ -323,7 +353,7 @@ theorem encEpoch_cons (s : Sa) (m : W × W) (ms : List (W × W)) :
 /-- The ciphertexts of a sending epoch from a session whose sending chain key is the encoding
 of `s` are the encoded ciphertexts of `encEpoch F D s`. -/
 theorem sendEpoch_cts (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC)
-    (ms : List (W × W)) (x : Session_T) (s : Sa) (hs : «Session.send_ck» x = encS s) :
+    (ms : List (W × W)) (x : Session_T) (s : Sa) (hs : «Session.send_ck» x = some (encS s)) :
     (sendEpoch ptLen x (ms.map (encPair encW))).1 = (encEpoch F D s ms).map encC := by
   induction ms generalizing x s with
   | nil => simp only [List.map_nil, sendEpoch, encEpoch, encAll, List.zipWith_nil_right]
@@ -338,7 +368,7 @@ theorem sendEpoch_cts (h : DrHom G R F D ptLen encR encG encSk decE encS encW en
 /-- The ciphertexts of a receiving epoch from a session whose receiving chain key is the
 encoding of `s` are the encoded ciphertexts of `encEpoch F D s`. -/
 theorem recvEpoch_cts (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC)
-    (ms : List (W × W)) (x : Session_T) (s : Sa) (hs : «Session.recv_ck» x = encS s) :
+    (ms : List (W × W)) (x : Session_T) (s : Sa) (hs : «Session.recv_ck» x = some (encS s)) :
     (recvEpoch ptLen x (ms.map (encPair encW))).1 = (encEpoch F D s ms).map encC := by
   induction ms generalizing x s with
   | nil => simp only [List.map_nil, recvEpoch, encEpoch, encAll, List.zipWith_nil_right]
@@ -356,7 +386,11 @@ theorem sendEpoch_keys (ms : List (Array Int × Array Int)) (x : Session_T) :
       «Session.my_sk» (sendEpoch ptLen x ms).2 = «Session.my_sk» x := by
   induction ms generalizing x with
   | nil => exact ⟨rfl, rfl⟩
-  | cons m ms ih => solve_by_elim
+  | cons m ms ih =>
+    obtain ⟨a, b, c, d, e, f, g, i, j⟩ := x
+    cases b with
+    | none => exact ⟨rfl, rfl⟩
+    | some b => exact ih _
 
 /-- A receiving epoch keeps the root key, the sending chain key and the secret key of the
 session. -/
@@ -366,7 +400,11 @@ theorem recvEpoch_keys (ms : List (Array Int × Array Int)) (x : Session_T) :
       «Session.my_sk» (recvEpoch ptLen x ms).2 = «Session.my_sk» x := by
   induction ms generalizing x with
   | nil => exact ⟨rfl, rfl, rfl⟩
-  | cons m ms ih => solve_by_elim
+  | cons m ms ih =>
+    obtain ⟨a, b, c, d, e, f, g, i, j⟩ := x
+    cases c with
+    | none => exact ⟨rfl, rfl, rfl⟩
+    | some c => exact ih _
 
 omit inst in
 /-- The ciphertexts of the epochs from the states `sa :: sas`: the epoch of `sa`, then the
@@ -379,10 +417,10 @@ theorem smCts_cons (sa : Sa) (sas : List Sa) (ms : List (W × W)) (mss : List (L
 `rk` and the encoded secret key `x`, on the encoded remote element `T`, is the encoded
 FS-AEAD state of the root KDF `R` at `rk` on `T ^ decE x`, whatever the new key pair. -/
 theorem dh_ratchet_recv_ck (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC)
-    (rk : RK) (sc rc pk : Array Int) (sn rn st : Int) (x : Sk) (rpk sk' pk' : Array Int)
-    (T : G) (g : Array Int) :
+    (rk : RK) (sc rc : Option (Array Int)) (pk : Array Int) (sn rn st : Int) (x : Sk)
+    (rpk sk' pk' : Array Int) (T : G) (g : Array Int) :
     «Session.recv_ck» (Session_dh_ratchet (encR rk, sc, rc, sn, rn, encSk x, pk, rpk, st) g
-      (encG T) sk' pk').1 = encS (R.stretch (rk, CyclicGroup.elemPow T (decE x))).2 := by
+      (encG T) sk' pk').1 = some (encS (R.stretch (rk, CyclicGroup.elemPow T (decE x))).2) := by
   simp only [Session_dh_ratchet, Session, «Session.root_key», «Session.my_sk», «Session.recv_ck»,
     dh_enc h, kdf_rk_enc h]
 

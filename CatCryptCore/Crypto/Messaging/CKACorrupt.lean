@@ -9,6 +9,7 @@ public import CatCryptCore.Crypto.Messaging.CKA
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.OracleSimulation
 public import CatCryptCore.Crypto.OracleGameUpToBad
+public import CatCryptCore.Crypto.SamplerCert
 public import CatCryptCore.Crypto.SPCompPMF
 public import CatCryptCore.ForMathlib.PMFUniform
 public import CatCryptCore.ForMathlib.PMFSupport
@@ -62,7 +63,19 @@ is a lifted distribution of a step on a draw of an exponent and a group element
 exponent and the key of the challenge (`OracleAdv.run_nf_eq_eager`); the eager game and the
 simulator, which knows `g^a`, `g^b` and `z` only, give equal outputs under the simulation
 relation `DHRel` (`dhRel_step`, `OracleAdv.run_nf_map_fst_eq_of_rel`): the corruption gates
-keep the hidden exponents out of every corruption answer (`not_dhHidden_of_allowCorr`).
+keep the hidden exponents out of every corruption answer (`not_dhHidden_of_allowCorr`). The
+steps, the relation and the simulation are stated for keys in any finite type `E` with
+exponentiations `pow : E → Gr` and `epow : Gr → E → Gr` satisfying
+`epow (pow x) y = epow (pow y) x`, and for all delays `2 ≤ ΔFS`, `2 ≤ ΔPCS`.
+
+The CKA `dhCKAOf G decE` draws its secret keys uniformly from a key space `Sk` and uses them
+through an exponent map `decE : Sk → CG.Exp`; a corruption reveals the secret key, which `decE`
+need not determine. The simulation applies with `pow x = g ^ decE x` and
+`epow h x = h ^ decE x`: the corruption advantage of `dhCKAOf G decE` is the advantage of the
+reduction `ckaCorruptDDHRedOf decE ΔFS ΔPCS A` against the DDH games whose two exponents are
+drawn as `decE` of uniform keys (`dhCKAOf_corrupt_advantage_eq_advAt`). Replacing these two
+draws by uniform exponents in the real and in the ideal game costs `4 c.δ` for a sampler
+certificate `c` of the law of `decE` at a uniform key (`dhCKAOf_corrupt_advantage_le`).
 
 The passive game `cka_real`/`cka_ideal` of `CatCryptCore.Crypto.Messaging.CKA` is the
 corruption game of the adversary `ckaPassiveAdv k m`, which challenges epoch `k + 1`, never
@@ -82,6 +95,11 @@ bound `sm_advantage_le` are therefore corruption-game advantages (`sm_advantage_
   the eager game and of the simulator
 * `ckaCorruptDDHTreeOf`, `ckaCorruptDDHRedA.tree`, `ckaCorruptDDHRed.tree`, `ckaCorruptDDHRed`,
   `ckaCorruptDDHRedA` — the DDH reduction
+* `dhCKAOf`, `dhCKAOfCoins`, `dhInitPOf` — the Diffie–Hellman CKA over a key space `Sk` with an
+  exponent map `decE`
+* `ckaCorruptDDHRedOf.tree`, `ckaCorruptDDHRedOf` — its DDH reduction, for the delays `ΔFS`,
+  `ΔPCS`
+* `ddhSampledUnif` — the DDH games over an exponent sampler with a uniform ideal third exponent
 
 ## Main results
 
@@ -92,14 +110,21 @@ bound `sm_advantage_le` are therefore corruption-game advantages (`sm_advantage_
 * `dhCKA_corrupt_advantage_eq_ddh`, `dhCKA_corrupt_advantageA_eq_ddh` — the corruption
   advantage of `dhCKA` with `ΔFS = 2`, `ΔPCS = 2` equals the DDH advantage of the reduction
 * `dhCKA_corrupt_advantage_le` — the same as an upper bound
+* `dhCKAOf_corrupt_advantage_eq_advAt` — with `2 ≤ ΔFS`, `2 ≤ ΔPCS`, the corruption advantage
+  of `dhCKAOf G decE` is the advantage of `ckaCorruptDDHRedOf decE ΔFS ΔPCS A` against
+  `ddhSampledUnif G` at the law of `decE` at a uniform key
+* `dhCKAOf_corrupt_advantage_le` — `CKA_Corrupt_Advantage (dhCKAOf G decE) ΔFS ΔPCS A ≤
+  DDH_Advantage G (ckaCorruptDDHRedOf decE ΔFS ΔPCS A) + 4 * c.δ` for a sampler certificate `c`
+  of that law against the uniform exponent
 * `cka_advantage_dh_eq_corrupt`, `sm_advantage_le_corrupt`, `sm_dh_advantage_le_corrupt` — the
   passive and the double-ratchet bounds as special cases
 * `ckaCorruptDDHTreeOf.erase_timed`, `ckaCorruptDDHTreeOf.timeBound_timed` — the costed
   reduction (`derive_timed`) and its time
 * `ckaCorruptDDHRed.compile_tree`, `ckaCorruptDDHRed.timeBound_timed`,
-  `ckaCorruptDDHRedA.compile_tree`, `ckaCorruptDDHRedA.timeBound_timed` — the costed trees
-  `ckaCorruptDDHRed.tree.timed`, `ckaCorruptDDHRedA.tree.timed` of the two DDH reductions
-  (`derive_timed`), their runs and their times
+  `ckaCorruptDDHRedA.compile_tree`, `ckaCorruptDDHRedA.timeBound_timed`,
+  `ckaCorruptDDHRedOf.compile_tree`, `ckaCorruptDDHRedOf.timeBound_timed` — the costed trees
+  `ckaCorruptDDHRed.tree.timed`, `ckaCorruptDDHRedA.tree.timed`, `ckaCorruptDDHRedOf.tree.timed`
+  of the three DDH reductions (`derive_timed`), their runs and their times
 
 ## References
 
@@ -762,24 +787,24 @@ end CKAGameSt
 
 section DHRel
 
-variable {G : Type} [CG : CyclicGroup G]
+variable {E Gr : Type}
 
-/-- **The simulation relation** between a state `s` of the eager game, in which the send of
-epoch `t - 1` used the exponent `a`, and a state `σ` of the simulator: equal counters,
-messages and public values, and equal exponents outside the hidden windows; and the
-invariants of the eager game: the counters are equal or the last sender is one epoch ahead,
-the next sender holds the public value of its peer's exponent, the message in transit is the
-public value of its sender's exponent, and the peer of the challenged party holds `a` in its
+/-- **The simulation relation**, for the public values `pow x` of the keys `x`, between a state
+`s` of the eager game, in which the send of epoch `t - 1` used the key `a`, and a state `σ` of
+the simulator: equal counters, messages and public values, and equal keys outside the hidden
+windows; and the invariants of the eager game: the counters are equal or the last sender is one
+epoch ahead, the next sender holds the public value of its peer's key, the message in transit is
+the public value of its sender's key, and the peer of the challenged party holds `a` in its
 hidden window. -/
-structure DHRel (a : CG.Exp) (t : ℕ) (s σ : CKAGameSt (G × CG.Exp) G) : Prop where
+structure DHRel (pow : E → Gr) (a : E) (t : ℕ) (s σ : CKAGameSt (Gr × E) Gr) : Prop where
   t_eq : s.t = σ.t
   msg_eq : s.msg = σ.msg
   h_eq : ∀ p, (s.st p).1 = (σ.st p).1
   y_eq : ∀ p, ¬ dhHidden t s p → (s.st p).2 = (σ.st p).2
   shape : s.t .A = s.t .B ∨ ∃ p, s.t p = s.t p.other + 1 ∧ ckaSender (s.t p) = p
   inv1 : s.t .A = s.t .B →
-    (s.st (ckaSender (s.t .A + 1))).1 = CG.pow (s.st (ckaSender (s.t .A + 1)).other).2
-  inv2 : ∀ p, s.t p = s.t p.other + 1 → s.msg = CG.pow (s.st p).2
+    (s.st (ckaSender (s.t .A + 1))).1 = pow (s.st (ckaSender (s.t .A + 1)).other).2
+  inv2 : ∀ p, s.t p = s.t p.other + 1 → s.msg = pow (s.st p).2
   inv3 : 1 ≤ t → t - 1 ≤ s.t (ckaSender t).other → s.t (ckaSender t).other ≤ t →
     (s.st (ckaSender t).other).2 = a
 
@@ -793,10 +818,11 @@ theorem dhHidden_recvd_of_ne {St Msg : Type} (t : ℕ) (s : CKAGameSt St Msg) {p
     (hq : q ≠ p) (x : St) : dhHidden t (s.recvd p x) q ↔ dhHidden t s q := by
   simp only [dhHidden, CKAGameSt.recvd_t, hq, ite_false]
 
-/-- A party that the gates with `ΔFS = 2` and `ΔPCS = 2` allow to corrupt is outside its
+/-- A party that the gates with `2 ≤ ΔFS` and `2 ≤ ΔPCS` allow to corrupt is outside its
 hidden window. -/
-theorem not_dhHidden_of_allowCorr {St Msg : Type} {t : ℕ} {s : CKAGameSt St Msg}
-    {p : CKAParty} (h : ckaAllowCorr 2 2 t s p = true) : ¬ dhHidden t s p := by
+theorem not_dhHidden_of_allowCorr {St Msg : Type} {ΔFS ΔPCS t : ℕ} {s : CKAGameSt St Msg}
+    {p : CKAParty} (hFS : 2 ≤ ΔFS) (hPCS : 2 ≤ ΔPCS) (h : ckaAllowCorr ΔFS ΔPCS t s p = true) :
+    ¬ dhHidden t s p := by
   intro ⟨h1, h2⟩
   have hp : s.t p ≤ max (s.t .A) (s.t .B) := by
     cases p
@@ -808,15 +834,15 @@ theorem not_dhHidden_of_allowCorr {St Msg : Type} {t : ℕ} {s : CKAGameSt St Ms
 
 namespace DHRel
 
-variable {G : Type} [CG : CyclicGroup G] {a : CG.Exp} {t : ℕ} {s σ : CKAGameSt (G × CG.Exp) G}
+variable {E Gr : Type} {pow : E → Gr} {a : E} {t : ℕ} {s σ : CKAGameSt (Gr × E) Gr}
 
-/-- The simulation relation after a send of party `p` with the exponents `x` (eager game) and
-`x'` (simulator), equal outside the hidden window. -/
-theorem sent (h : DHRel a t s σ) {p : CKAParty} (hc : s.canSend p = true) (x x' : CG.Exp)
-    (T : G) (hT : T = CG.pow x)
+/-- The simulation relation after a send of party `p` with the keys `x` (eager game) and `x'`
+(simulator), equal outside the hidden window. -/
+theorem sent (h : DHRel pow a t s σ) {p : CKAParty} (hc : s.canSend p = true) (x x' : E)
+    (T : Gr) (hT : T = pow x)
     (hx : ¬ dhHidden t (s.sent p ((s.st p).1, x) T) p → x = x')
     (ha : p = (ckaSender t).other → 1 ≤ t → t - 1 ≤ s.t p + 1 → s.t p + 1 ≤ t → x = a) :
-    DHRel a t (s.sent p ((s.st p).1, x) T) (σ.sent p ((σ.st p).1, x') T) := by
+    DHRel pow a t (s.sent p ((s.st p).1, x) T) (σ.sent p ((σ.st p).1, x') T) := by
   rw [CKAGameSt.canSend_iff] at hc
   obtain ⟨hAB, hp⟩ := hc
   have htp : s.t p = s.t .A := CKAGameSt.t_eq_of_eq hAB p
@@ -866,8 +892,8 @@ theorem sent (h : DHRel a t s σ) {p : CKAParty} (hc : s.canSend p = true) (x x'
       exact h.inv3 h1 hlo hhi
 
 /-- The simulation relation after a receive of party `p`. -/
-theorem recvd (h : DHRel a t s σ) {p : CKAParty} (hc : s.canRecv p = true) :
-    DHRel a t (s.recvd p (s.msg, (s.st p).2)) (σ.recvd p (σ.msg, (σ.st p).2)) := by
+theorem recvd (h : DHRel pow a t s σ) {p : CKAParty} (hc : s.canRecv p = true) :
+    DHRel pow a t (s.recvd p (s.msg, (s.st p).2)) (σ.recvd p (σ.msg, (σ.st p).2)) := by
   rw [CKAGameSt.canRecv_iff] at hc
   have hahead : ckaSender (s.t p.other) = p.other := by
     rcases h.shape with hAB | ⟨q, hq1, hq2⟩
@@ -1108,22 +1134,22 @@ end DHStepLemmas
 
 section DHSim
 
-variable {G : Type} [CG : CyclicGroup G]
+variable {E Gr : Type}
 
-/-- **The simulation step.** From related states, the eager game with the exponents `a = va.1`,
-`b = vb.1` and the group element `vb.2`, and the simulator with the triple
-`(g^a, g^b, z)`, where `z` is `vb.2` in the ideal game and `g^{ab}` in the real one, give equal
-answers and related states. -/
-theorem dhRel_step (t : ℕ) (ideal : Bool) (va vb : CG.Exp × G) (z : G)
-    (hz : z = if ideal then vb.2 else CG.pow (CG.expMul va.1 vb.1))
-    (s σ : CKAGameSt (G × CG.Exp) G) (h : DHRel va.1 t s σ) (q : CKAQuery)
-    (e : CG.Exp × G) :
-    (dhCKAEagerStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal va vb s q e).1 =
-        (dhCKASimStepOf CG.pow CyclicGroup.elemPow 2 2 t (CG.pow va.1) (CG.pow vb.1) z σ q
-          e).1 ∧
-      DHRel va.1 t (dhCKAEagerStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal va vb s q e).2
-        (dhCKASimStepOf CG.pow CyclicGroup.elemPow 2 2 t (CG.pow va.1) (CG.pow vb.1) z σ q
-          e).2 := by
+/-- **The simulation step.** Let the exponentiations commute,
+`epow (pow x) y = epow (pow y) x`, and let `2 ≤ ΔFS`, `2 ≤ ΔPCS`. From related states, the
+eager game with the keys `a = va.1`, `b = vb.1` and the group element `vb.2`, and the simulator
+with the triple `(pow a, pow b, z)`, where `z` is `vb.2` in the ideal game and `epow (pow a) b`
+in the real one, give equal answers and related states. -/
+theorem dhRel_step (pow : E → Gr) (epow : Gr → E → Gr)
+    (hcomm : ∀ x y, epow (pow x) y = epow (pow y) x) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (hPCS : 2 ≤ ΔPCS) (t : ℕ) (ideal : Bool) (va vb : E × Gr) (z : Gr)
+    (hz : z = if ideal then vb.2 else epow (pow va.1) vb.1)
+    (s σ : CKAGameSt (Gr × E) Gr) (h : DHRel pow va.1 t s σ) (q : CKAQuery) (e : E × Gr) :
+    (dhCKAEagerStepOf pow epow ΔFS ΔPCS t ideal va vb s q e).1 =
+        (dhCKASimStepOf pow epow ΔFS ΔPCS t (pow va.1) (pow vb.1) z σ q e).1 ∧
+      DHRel pow va.1 t (dhCKAEagerStepOf pow epow ΔFS ΔPCS t ideal va vb s q e).2
+        (dhCKASimStepOf pow epow ΔFS ΔPCS t (pow va.1) (pow vb.1) z σ q e).2 := by
   have hcs := CKAGameSt.canSend_eq_of_t h.t_eq
   have hcr := CKAGameSt.canRecv_eq_of_t h.t_eq
   have hco := CKAGameSt.allowCorr_eq_of_t h.t_eq
@@ -1148,7 +1174,7 @@ theorem dhRel_step (t : ℕ) (ideal : Bool) (va vb : CG.Exp × G) (z : G)
         refine ⟨?_, h.sent hc va.1 e.1 _ rfl ?_ fun _ _ _ _ => rfl⟩
         · have h1 := h.inv1 hAB
           rw [hp] at h1
-          rw [h1, ← h.y_eq _ hnh, elemPow_pow_comm]
+          rw [h1, ← h.y_eq _ hnh, hcomm]
         · intro hh; exfalso; apply hh
           refine ⟨by simp; omega, ?_⟩
           rw [ite_eq_right (by rw [hP]; exact CKAParty.ne_other p)]
@@ -1195,7 +1221,7 @@ theorem dhRel_step (t : ℕ) (ideal : Bool) (va vb : CG.Exp × G) (z : G)
           rw [hp] at h1
           have h3 := h.inv3 (by omega) (by rw [hP]; omega) (by rw [hP]; omega)
           rw [hP] at h3
-          rw [h1, h3, CyclicGroup.elemPow_pow]
+          rw [h1, h3]
       · intro hh; exfalso; apply hh
         refine ⟨by simp; omega, ?_⟩
         rw [ite_eq_left (by rw [hP])]
@@ -1207,15 +1233,15 @@ theorem dhRel_step (t : ℕ) (ideal : Bool) (va vb : CG.Exp × G) (z : G)
   | corrupt p =>
     simp only [dhCKAEagerStepOf, OracleAdv.eagerStep, dhCritA, dhCritB, Bool.false_eq_true,
       ite_false, dhCKAStepOf, dhCKASimStepOf, hco]
-    rcases (Bool.eq_false_or_eq_true (ckaAllowCorr 2 2 t s p)).symm with hg | hg
+    rcases (Bool.eq_false_or_eq_true (ckaAllowCorr ΔFS ΔPCS t s p)).symm with hg | hg
     · simp only [hg, ite_false, Bool.false_eq_true]; exact ⟨by trivial, h⟩
     · simp only [hg, ite_true]
       refine ⟨?_, h⟩
-      rw [Prod.ext (h.h_eq p) (h.y_eq p (not_dhHidden_of_allowCorr hg))]
+      rw [Prod.ext (h.h_eq p) (h.y_eq p (not_dhHidden_of_allowCorr hFS hPCS hg))]
   | sendLeak p =>
     simp only [dhCKAEagerStepOf, OracleAdv.eagerStep, dhCritA, dhCritB, Bool.false_eq_true,
       ite_false, dhCKAStepOf, dhCKASimStepOf, hcl]
-    rcases (Bool.eq_false_or_eq_true (ckaAllowLeak 2 t s p)).symm with hl | hl
+    rcases (Bool.eq_false_or_eq_true (ckaAllowLeak ΔPCS t s p)).symm with hl | hl
     · simp only [hl, ite_false, Bool.false_eq_true]; exact ⟨by trivial, h⟩
     · simp only [hl, ite_true]
       simp only [ckaAllowLeak, Bool.and_eq_true, decide_eq_true_eq] at hl
@@ -1240,6 +1266,42 @@ theorem OracleAdv.runSP_eq_liftPMF {S D R : Type} (O : S → D → SPComp (R × 
   | query d k ih =>
     simp only [OracleAdv.runSP, hO, ih, liftPMF_bind_liftPMF, OracleAdv.run_query]
 
+section DHDraw
+
+variable (E Gr : Type) [Fintype E] [Nonempty E] [Fintype Gr] [Nonempty Gr]
+
+/-- The value drawn at each query of the game of a Diffie–Hellman CKA with keys in `E` and
+public values in `Gr`: a uniform key and an independent uniform group element. -/
+noncomputable def dhDrawOf : PMF (E × Gr) :=
+  (PMF.uniformFintype E).bind fun x => (PMF.uniformFintype Gr).map fun u => (x, u)
+
+variable {E Gr}
+
+theorem dhDrawOf_bind {β : Type} (f : E × Gr → PMF β) :
+    (dhDrawOf E Gr).bind f =
+      (PMF.uniformFintype E).bind fun x => (PMF.uniformFintype Gr).bind fun u => f (x, u) := by
+  unfold dhDrawOf
+  rw [PMF.bind_bind]
+  congr 1; funext x
+  rw [PMF.bind_map]; rfl
+
+theorem dhDrawOf_map {β : Type} (g : E × Gr → β) :
+    (dhDrawOf E Gr).map g = (PMF.uniformFintype E).bind fun x =>
+      (PMF.uniformFintype Gr).bind fun u => PMF.pure (g (x, u)) := by
+  rw [← PMF.bind_pure_comp, dhDrawOf_bind]; rfl
+
+/-- The distribution of the output of the game of a Diffie–Hellman CKA with keys in `E`, the
+exponentiations `pow` and `epow` and the challenge epoch `t`: an initial key `x₀`, then the run
+of the oracle in normal form with the step `dhCKAStepOf`. -/
+noncomputable def dhCKAGamePMFOf (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ)
+    (ideal : Bool) (play : Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) α) : PMF α :=
+  (PMF.uniformFintype E).bind fun x₀ =>
+    (OracleAdv.run (OracleAdv.nfOracle (dhDrawOf E Gr)
+      (dhCKAStepOf pow epow ΔFS ΔPCS t ideal)) (play (pow x₀))
+      (CKAGameSt.init (pow x₀) (pow x₀, x₀) (pow x₀, x₀))).map Prod.fst
+
+end DHDraw
+
 section DHGame
 
 variable (G : Type) [CG : CyclicGroup G]
@@ -1256,17 +1318,14 @@ theorem dhCKACoins_sound : CKACoins.Sound (dhCKA G) := by
 /-- The value drawn at each query of the game of `dhCKA`: a uniform exponent and an
 independent uniform group element. -/
 noncomputable def dhDraw : PMF (CG.Exp × G) :=
-  (PMF.uniformFintype CG.Exp).bind fun x => (PMF.uniformFintype G).map fun u => (x, u)
+  dhDrawOf CG.Exp G
 
 variable {G}
 
 theorem dhDraw_bind {β : Type} (f : CG.Exp × G → PMF β) :
     (dhDraw G).bind f =
-      (PMF.uniformFintype CG.Exp).bind fun x => (PMF.uniformFintype G).bind fun u => f (x, u) := by
-  unfold dhDraw
-  rw [PMF.bind_bind]
-  congr 1; funext x
-  rw [PMF.bind_map]; rfl
+      (PMF.uniformFintype CG.Exp).bind fun x => (PMF.uniformFintype G).bind fun u => f (x, u) :=
+  dhDrawOf_bind f
 
 theorem dhDraw_bind_fst {β : Type} (f : CG.Exp → PMF β) :
     (dhDraw G).bind (fun v => f v.1) = (PMF.uniformFintype CG.Exp).bind f := by
@@ -1275,8 +1334,8 @@ theorem dhDraw_bind_fst {β : Type} (f : CG.Exp → PMF β) :
 
 theorem dhDraw_map {β : Type} (g : CG.Exp × G → β) :
     (dhDraw G).map g = (PMF.uniformFintype CG.Exp).bind fun x =>
-      (PMF.uniformFintype G).bind fun u => PMF.pure (g (x, u)) := by
-  rw [← PMF.bind_pure_comp, dhDraw_bind]; rfl
+      (PMF.uniformFintype G).bind fun u => PMF.pure (g (x, u)) :=
+  dhDrawOf_map g
 
 /-- **The oracle of `dhCKA` in normal form.** Each oracle computation of the game of `dhCKA`
 is the lifted distribution of the step `dhCKAStepOf` on a draw of `dhDraw`. -/
@@ -1328,10 +1387,7 @@ theorem runSP_dhCKA (ΔFS ΔPCS t : ℕ) (ideal : Bool)
 /-- The distribution of the output of the game of `dhCKA` with the challenge epoch `t`. -/
 noncomputable def dhCKAGamePMF (ΔFS ΔPCS t : ℕ) (ideal : Bool)
     (play : G → OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α) : PMF α :=
-  (PMF.uniformFintype CG.Exp).bind fun x₀ =>
-    (OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
-      (dhCKAStepOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ideal)) (play (CG.pow x₀))
-      (CKAGameSt.init (CG.pow x₀) (CG.pow x₀, x₀) (CG.pow x₀, x₀))).map Prod.fst
+  dhCKAGamePMFOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ideal play
 
 /-- The corruption game of `dhCKA` is the lifted distribution `dhCKAGamePMF` after the choice
 of the challenge epoch. -/
@@ -1339,13 +1395,116 @@ theorem dhCKA_game_eq (ΔFS ΔPCS : ℕ) (ideal : Bool)
     (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp α) :
     cka_corrupt_game (dhCKA G) ΔFS ΔPCS ideal A =
       liftPMF (A.tStar.bind fun t => dhCKAGamePMF ΔFS ΔPCS t ideal (A.play t)) := by
-  unfold cka_corrupt_game dhCKAGamePMF
+  unfold cka_corrupt_game dhCKAGamePMF dhCKAGamePMFOf
   simp only [runSP_dhCKA]
   simp only [dhCKA, sample_eq_liftPMF, liftPMF_bind_pure,
     liftPMF_bind_liftPMF, PMF.bind_map]
   rfl
 
 end DHGame
+
+/-! ### The Diffie–Hellman CKA over a key space -/
+
+section DHKeys
+
+variable (G : Type) [CG : CyclicGroup G] {Sk : Type} [Fintype Sk] [Nonempty Sk]
+
+/-- **The Diffie–Hellman CKA over a key space.** Secret keys are drawn uniformly from `Sk`
+and act as the exponents `decE x`. A party state `(h, y)` holds the last public value `h` of
+the peer, used when sending, and the own last secret key `y`, used when receiving. Sending
+draws `x` and outputs `g ^ decE x` with the key `h ^ decE x`; receiving `T` derives
+`T ^ decE y`. The corruption of a party reveals its secret key, not only its exponent. -/
+noncomputable def dhCKAOf (decE : Sk → CG.Exp) : CKADef (G × Sk) G G where
+  init := SPComp.bind (SPComp.sample Sk) fun x =>
+    SPComp.pure (CG.pow (decE x), (CG.pow (decE x), x), (CG.pow (decE x), x))
+  send s := SPComp.bind (SPComp.sample Sk) fun x =>
+    SPComp.pure ((s.1, x), CG.pow (decE x), CyclicGroup.elemPow s.1 (decE x))
+  recv r T := ((T, r.2), CyclicGroup.elemPow T (decE r.2))
+
+/-- The sending algorithm of `dhCKAOf` with its secret key as explicit randomness. -/
+noncomputable instance dhCKAOfCoins (decE : Sk → CG.Exp) : CKACoins (dhCKAOf G decE) Sk where
+  sendR s x := ((s.1, x), CG.pow (decE x), CyclicGroup.elemPow s.1 (decE x))
+
+/-- The explicit-randomness sending algorithm of `dhCKAOf` is its sending algorithm. -/
+theorem dhCKAOfCoins_sound (decE : Sk → CG.Exp) : CKACoins.Sound (dhCKAOf G decE) := by
+  intro s
+  simp only [dhCKAOf, CKACoins.sendR]
+
+/-- The distribution of the initialisation of `dhCKAOf`. -/
+noncomputable def dhInitPOf (decE : Sk → CG.Exp) : PMF (G × (G × Sk) × (G × Sk)) :=
+  (PMF.uniformFintype Sk).map fun x => (CG.pow (decE x), (CG.pow (decE x), x), (CG.pow (decE x), x))
+
+theorem dhCKAOf_init_eq (decE : Sk → CG.Exp) :
+    (dhCKAOf G decE).init = liftPMF (dhInitPOf G decE) := by
+  simp only [dhCKAOf, dhInitPOf, sample_eq_liftPMF, liftPMF_bind_pure]
+
+variable {G}
+
+/-- **The oracle of `dhCKAOf` in normal form.** Each oracle computation of the game of
+`dhCKAOf G decE` is the lifted distribution of the step `dhCKAStepOf` with the exponentiations
+`x ↦ g ^ decE x` and `(h, x) ↦ h ^ decE x` on a draw of `dhDrawOf Sk G`. -/
+theorem dhCKAOf_oracle_eq (decE : Sk → CG.Exp) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (s : CKAGameSt (G × Sk) G) (q : CKAQuery) :
+    ckaCorruptOracle (dhCKAOf G decE) ΔFS ΔPCS t ideal s q =
+      liftPMF ((dhDrawOf Sk G).map (dhCKAStepOf (fun x => CG.pow (decE x))
+        (fun h x => CyclicGroup.elemPow h (decE x)) ΔFS ΔPCS t ideal s q)) := by
+  rw [dhDrawOf_map]
+  cases q with
+  | send p =>
+    simp only [ckaCorruptOracle, dhCKAStepOf]
+    rcases (Bool.eq_false_or_eq_true (s.canSend p)).symm with hc | hc
+    · simp only [hc, Bool.false_eq_true, ite_false, PMF.bind_const, liftPMF_pure]
+    · simp only [hc, ite_true, dhCKAOf, PMF.bind_const,
+        sample_eq_liftPMF, liftPMF_pure, liftPMF_bind_liftPMF, PMF.bind_bind, PMF.pure_bind]
+  | recv p =>
+    simp only [ckaCorruptOracle, dhCKAStepOf, dhCKAOf]
+    rcases (Bool.eq_false_or_eq_true (s.canRecv p)).symm with hc | hc
+    · simp only [hc, Bool.false_eq_true, ite_false, PMF.bind_const, liftPMF_pure]
+    · simp only [hc, ite_true, PMF.bind_const, liftPMF_pure]
+  | chall p =>
+    simp only [ckaCorruptOracle, dhCKAStepOf]
+    rcases (Bool.eq_false_or_eq_true (s.canSend p && s.t p + 1 == t)).symm with hc | hc
+    · simp only [hc, Bool.false_eq_true, ite_false, PMF.bind_const, liftPMF_pure]
+    · cases ideal with
+      | true =>
+        simp only [hc, ite_true, dhCKAOf,
+          sample_eq_liftPMF, liftPMF_pure, liftPMF_bind_liftPMF, PMF.bind_bind, PMF.pure_bind]
+      | false =>
+        simp only [hc, ite_true, Bool.false_eq_true, ite_false, dhCKAOf,
+          PMF.bind_const, sample_eq_liftPMF, liftPMF_pure,
+          liftPMF_bind_liftPMF, PMF.bind_bind, PMF.pure_bind]
+  | corrupt p =>
+    simp only [ckaCorruptOracle, dhCKAStepOf, PMF.bind_const, liftPMF_pure]
+  | sendLeak p =>
+    simp only [ckaCorruptOracle, dhCKAStepOf]
+    rcases (Bool.eq_false_or_eq_true (ckaAllowLeak ΔPCS t s p)).symm with hc | hc
+    · simp only [hc, Bool.false_eq_true, ite_false, PMF.bind_const, liftPMF_pure]
+    · simp only [hc, ite_true, CKACoins.sendR, PMF.bind_const, sample_eq_liftPMF, liftPMF_pure,
+        liftPMF_bind_liftPMF]
+
+theorem runSP_dhCKAOf (decE : Sk → CG.Exp) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (A : OracleAdv CKAQuery (CKAAns (G × Sk) G G Sk) α) (s : CKAGameSt (G × Sk) G) :
+    OracleAdv.runSP (ckaCorruptOracle (dhCKAOf G decE) ΔFS ΔPCS t ideal) A s =
+      liftPMF (OracleAdv.run (OracleAdv.nfOracle (dhDrawOf Sk G)
+        (dhCKAStepOf (fun x => CG.pow (decE x)) (fun h x => CyclicGroup.elemPow h (decE x))
+          ΔFS ΔPCS t ideal)) A s) :=
+  OracleAdv.runSP_eq_liftPMF _ _ (dhCKAOf_oracle_eq decE ΔFS ΔPCS t ideal) A s
+
+/-- The corruption game of `dhCKAOf G decE` is the lifted distribution `dhCKAGamePMFOf` with
+the exponentiations `x ↦ g ^ decE x` and `(h, x) ↦ h ^ decE x` after the choice of the
+challenge epoch. -/
+theorem dhCKAOf_game_eq (decE : Sk → CG.Exp) (ΔFS ΔPCS : ℕ) (ideal : Bool)
+    (A : CKACorruptAdv (G × Sk) G G Sk α) :
+    cka_corrupt_game (dhCKAOf G decE) ΔFS ΔPCS ideal A =
+      liftPMF (A.tStar.bind fun t => dhCKAGamePMFOf (fun x => CG.pow (decE x))
+        (fun h x => CyclicGroup.elemPow h (decE x)) ΔFS ΔPCS t ideal (A.play t)) := by
+  unfold cka_corrupt_game dhCKAGamePMFOf
+  simp only [runSP_dhCKAOf]
+  simp only [dhCKAOf, sample_eq_liftPMF, liftPMF_bind_pure,
+    liftPMF_bind_liftPMF, PMF.bind_map]
+  rfl
+
+end DHKeys
 
 /-! ### The reduction -/
 
@@ -1644,68 +1803,84 @@ theorem ckaCorruptDDHRedA.timeBound_timed {E Gr : Type} [Fintype E] [Nonempty E]
     (ckaCorruptDDHTreeOf.timeBound_timed pow powCost epow epowCost 2 2 tStar play playCost
       tr.1 tr.2.1 tr.2.2 hA hq ha hP hX)).mono (by omega)
 
-section DHProof
+/-- The oracle tree without queries of the DDH reduction of the corruption game with the delays
+`ΔFS`, `ΔPCS` for a Boolean adversary: on the triple `tr`, the tree `ckaCorruptDDHTreeOf`. The
+exponentiations `pow` and `epow` are parameters, so that their costs are parameters of the
+derived costed tree. -/
+noncomputable def ckaCorruptDDHRedOf.tree {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr]
+    [Nonempty Gr] (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) Bool) (tr : Gr × Gr × Gr) :
+    OracleAdv Empty Unit Bool :=
+  ckaCorruptDDHTreeOf pow epow ΔFS ΔPCS tStar play tr.1 tr.2.1 tr.2.2
 
-variable {G : Type} [CG : CyclicGroup G]
+derive_timed ckaCorruptDDHRedOf.tree
+
+/-- **The DDH reduction for the Diffie–Hellman CKA over a key space** `ckaCorruptDDHRedOf decE
+ΔFS ΔPCS A`: the tree `ckaCorruptDDHRedOf.tree` with the exponentiations `x ↦ g ^ decE x` and
+`(h, x) ↦ h ^ decE x`, run as a distribution. -/
+noncomputable def ckaCorruptDDHRedOf {G : Type} [CG : CyclicGroup G] {Sk : Type} [Fintype Sk]
+    [Nonempty Sk] (decE : Sk → CG.Exp) (ΔFS ΔPCS : ℕ) (A : CKACorruptAdv (G × Sk) G G Sk Bool) :
+    G × G × G → SPComp Bool := fun tr =>
+  liftPMF ((OracleAdv.run emptyOracle (ckaCorruptDDHRedOf.tree (fun x => CG.pow (decE x))
+    (fun h x => CyclicGroup.elemPow h (decE x)) ΔFS ΔPCS A.tStar A.play tr) ()).map Prod.fst)
+
+/-- The derived costed tree of `ckaCorruptDDHRedOf`, at a costed adversary `play` that erases
+to the interaction of `A`, runs to `ckaCorruptDDHRedOf decE ΔFS ΔPCS A`. -/
+theorem ckaCorruptDDHRedOf.compile_tree {G : Type} [CG : CyclicGroup G] {Sk : Type}
+    [Fintype Sk] [Nonempty Sk] (decE : Sk → CG.Exp) (ΔFS ΔPCS : ℕ)
+    (A : CKACorruptAdv (G × Sk) G G Sk Bool) (powCost : Sk → ℕ) (epowCost : G → Sk → ℕ)
+    (play : ℕ → G → OracleAdv.Timed CKAQuery (CKAAns (G × Sk) G G Sk) Bool)
+    (playCost : ℕ → G → ℕ) (hplay : ∀ t g, (play t g).erase = A.play t g) (tr : G × G × G) :
+    liftPMF ((OracleAdv.run emptyOracle (ckaCorruptDDHRedOf.tree.timed
+      (fun x => CG.pow (decE x)) powCost (fun h x => CyclicGroup.elemPow h (decE x)) epowCost
+      ΔFS ΔPCS A.tStar play playCost tr).2.erase ()).map Prod.fst) =
+      ckaCorruptDDHRedOf decE ΔFS ΔPCS A tr := by
+  rw [ckaCorruptDDHRedOf.tree.erase_timed]
+  have h : (fun t g => (play t g).erase) = A.play := funext fun t => funext (hplay t)
+  rw [h]
+  rfl
+
+/-- **Time of `ckaCorruptDDHRedOf`.** For a costed adversary of time at most `T`, at most `q`
+queries and call cost at most `a`, and exponentiations of costs at most `P` and `X`, the
+derived costed tree of the reduction has time at most
+`T + ∑_{j < q} (2 P + X + 21 j + 50) + a + 4 P + 13`: the bound of
+`ckaCorruptDDHTreeOf.timeBound_timed` and one unit for the call in front. -/
+theorem ckaCorruptDDHRedOf.timeBound_timed {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr]
+    [Nonempty Gr] (pow : E → Gr) (powCost : E → ℕ) (epow : Gr → E → Gr)
+    (epowCost : Gr → E → ℕ) (ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv.Timed CKAQuery (CKAAns (Gr × E) Gr Gr E) Bool)
+    (playCost : ℕ → Gr → ℕ) (tr : Gr × Gr × Gr) {T q a P X : ℕ}
+    (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
+    (ha : ∀ t g, playCost t g ≤ a) (hP : ∀ x, powCost x ≤ P) (hX : ∀ g x, epowCost g x ≤ X) :
+    OracleAdv.Timed.StepTimeBound
+      (ckaCorruptDDHRedOf.tree.timed pow powCost epow epowCost ΔFS ΔPCS tStar play playCost tr)
+      (T + ∑ j ∈ Finset.range q, ckaSimQueryTime P X j + a + 4 * P + 13) := by
+  unfold ckaCorruptDDHRedOf.tree.timed
+  exact (OracleAdv.Timed.stepTimeBound_delay
+    (ckaCorruptDDHTreeOf.timeBound_timed pow powCost epow epowCost ΔFS ΔPCS tStar play playCost
+      tr.1 tr.2.1 tr.2.2 hA hq ha hP hX)).mono (by omega)
+
+section DHProofX0
+
+variable {E Gr : Type}
 
 theorem dhCritA_one {St Msg : Type} (s : CKAGameSt St Msg) (q : CKAQuery) :
     dhCritA 1 s q = false := by
   cases q <;> simp [dhCritA]
 
-/-- The two eager hops: the exponent of the send of epoch `t - 1` and the exponent and the
-group element of the challenge are drawn in advance. -/
-theorem run_dhCKAStep_eager (t : ℕ) (ideal : Bool)
-    (A : OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α) (s : CKAGameSt (G × CG.Exp) G) :
-    OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
-        (dhCKAStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal)) A s =
-      (dhDraw G).bind fun va => (dhDraw G).bind fun vb =>
-        OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
-          (dhCKAEagerStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal va vb)) A s := by
-  rw [OracleAdv.run_nf_eq_eager (dhDraw G) _ (dhCritA t) (dhDoneA t)
-    (dhDoneA_crit _ _ _ _ _ _) (dhDoneA_step _ _ _ _ _ _) (dhDoneA_noCrit t)]
-  congr 1; funext va
-  exact OracleAdv.run_nf_eq_eager (dhDraw G) _ (dhCritB t) (dhDoneB t)
-    (dhDoneB_crit _ _ _ _ _ _ va) (dhDoneB_eager _ _ _ _ _ _ va) (dhDoneB_noCrit t) A s
-
-/-- The initial exponent of the eager game: the exponent `a` of the DDH triple at the
-challenge epoch `1`, a fresh exponent otherwise. -/
+/-- The initial key of the eager game: the key `a` of the send of epoch `t - 1` at the
+challenge epoch `1`, a fresh key otherwise. -/
 def dhX0 {X : Type} (t : ℕ) (a x₀ : X) : X := if t = 1 then a else x₀
 
-/-- The game of `dhCKA` as the eager game, with the initial exponent `dhX0 t va.1 x₀`. -/
-theorem dhCKAGamePMF_eager (t : ℕ) (ideal : Bool)
-    (play : G → OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α) :
-    dhCKAGamePMF 2 2 t ideal play =
-      (PMF.uniformFintype CG.Exp).bind fun x₀ => (dhDraw G).bind fun va => (dhDraw G).bind fun vb =>
-        (OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
-          (dhCKAEagerStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal va vb))
-          (play (CG.pow (dhX0 t va.1 x₀)))
-          (CKAGameSt.init (CG.pow (dhX0 t va.1 x₀)) (CG.pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀)
-            (CG.pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀))).map Prod.fst := by
-  unfold dhCKAGamePMF
-  by_cases ht : t = 1
-  · subst ht
-    have hA : ∀ va : CG.Exp × G,
-        OracleAdv.eagerStep (dhCKAStepOf CG.pow CyclicGroup.elemPow 2 2 1 ideal) (dhCritA 1) va =
-          dhCKAStepOf CG.pow CyclicGroup.elemPow 2 2 1 ideal := by
-      intro va; funext s q e
-      simp only [OracleAdv.eagerStep, dhCritA_one, Bool.false_eq_true, ite_false]
-    simp only [dhCKAEagerStepOf, hA, dhX0, ite_true, PMF.bind_const]
-    rw [dhDraw_bind]
-    simp only [PMF.bind_const]
-    congr 1; funext x₀
-    rw [OracleAdv.run_nf_eq_eager (dhDraw G) _ (dhCritB 1) (dhDoneB 1)
-      (fun s q e h => by
-        have := dhDoneB_crit CG.pow CyclicGroup.elemPow 2 2 1 ideal (Classical.arbitrary _) s q e h
-        rwa [hA] at this)
-      (dhDoneB_step _ _ _ _ _ _) (dhDoneB_noCrit 1), PMF.map_bind]
-  · simp only [dhX0, ht, ite_false, run_dhCKAStep_eager, PMF.map_bind]
+theorem dhX0_apply {X Y : Type} (f : X → Y) (t : ℕ) (a x₀ : X) :
+    f (dhX0 t a x₀) = if t = 1 then f a else f x₀ := by
+  unfold dhX0; split <;> rfl
 
 /-- The initial states of the eager game and of the simulator are related. -/
-theorem dhRel_init (t : ℕ) (a x₀ : CG.Exp) :
-    DHRel a t (CKAGameSt.init (CG.pow (dhX0 t a x₀)) (CG.pow (dhX0 t a x₀), dhX0 t a x₀)
-        (CG.pow (dhX0 t a x₀), dhX0 t a x₀))
-      (CKAGameSt.init (CG.pow (dhX0 t a x₀)) (CG.pow (dhX0 t a x₀), x₀)
-        (CG.pow (dhX0 t a x₀), x₀)) := by
+theorem dhRel_init (pow : E → Gr) (t : ℕ) (a x₀ : E) :
+    DHRel pow a t (CKAGameSt.init (pow (dhX0 t a x₀)) (pow (dhX0 t a x₀), dhX0 t a x₀)
+        (pow (dhX0 t a x₀), dhX0 t a x₀))
+      (CKAGameSt.init (pow (dhX0 t a x₀)) (pow (dhX0 t a x₀), x₀) (pow (dhX0 t a x₀), x₀)) := by
   refine ⟨rfl, rfl, fun p => by cases p <;> rfl, ?_, Or.inl rfl, fun _ => rfl, ?_, ?_⟩
   · intro p hp
     by_cases ht : t = 1
@@ -1718,55 +1893,182 @@ theorem dhRel_init (t : ℕ) (a x₀ : CG.Exp) :
     cases p <;> simp [CKAGameSt.init] at hp
   · intro h1 hlo _
     have ht : t = 1 := by
-      have : (CKAGameSt.init (CG.pow (dhX0 t a x₀)) (CG.pow (dhX0 t a x₀), dhX0 t a x₀)
-          (CG.pow (dhX0 t a x₀), dhX0 t a x₀) : CKAGameSt (G × CG.Exp) G).t
+      have : (CKAGameSt.init (pow (dhX0 t a x₀)) (pow (dhX0 t a x₀), dhX0 t a x₀)
+          (pow (dhX0 t a x₀), dhX0 t a x₀) : CKAGameSt (Gr × E) Gr).t
           (ckaSender t).other = 0 := rfl
       omega
     subst ht
     rfl
 
-/-- **The eager game is the simulation.** -/
-theorem dhCKA_eager_eq_sim (t : ℕ) (ideal : Bool) (va vb : CG.Exp × G) (x₀ : CG.Exp)
-    (play : G → OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α) :
-    (OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
-        (dhCKAEagerStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal va vb))
-        (play (CG.pow (dhX0 t va.1 x₀)))
-        (CKAGameSt.init (CG.pow (dhX0 t va.1 x₀)) (CG.pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀)
-          (CG.pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀))).map Prod.fst =
-      (OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
-        (dhCKASimStepOf CG.pow CyclicGroup.elemPow 2 2 t (CG.pow va.1) (CG.pow vb.1)
-          (if ideal then vb.2 else CG.pow (CG.expMul va.1 vb.1))))
-        (play (CG.pow (dhX0 t va.1 x₀)))
-        (CKAGameSt.init (CG.pow (dhX0 t va.1 x₀)) (CG.pow (dhX0 t va.1 x₀), x₀)
-          (CG.pow (dhX0 t va.1 x₀), x₀))).map Prod.fst :=
-  OracleAdv.run_nf_map_fst_eq_of_rel (dhDraw G) _ _ (DHRel va.1 t)
-    (fun s σ h q e => dhRel_step t ideal va vb _ rfl s σ h q e) _ _ _ (dhRel_init t va.1 x₀)
+/-- Reordering of four draws. -/
+theorem bind_reorder {X β : Type} (μ : PMF X) (τ : PMF ℕ) (F : ℕ → X → X → X → PMF β) :
+    (μ.bind fun a => μ.bind fun b => τ.bind fun t => μ.bind fun x₀ => F t x₀ a b) =
+      τ.bind fun t => μ.bind fun x₀ => μ.bind fun a => μ.bind fun b => F t x₀ a b := by
+  have h1 : ∀ a, (μ.bind fun b => τ.bind fun t => μ.bind fun x₀ => F t x₀ a b) =
+      τ.bind fun t => μ.bind fun x₀ => μ.bind fun b => F t x₀ a b := by
+    intro a
+    rw [PMF.bind_comm μ τ]
+    congr 1; funext t
+    exact PMF.bind_comm _ _ _
+  simp only [h1]
+  rw [PMF.bind_comm μ τ]
+  congr 1; funext t
+  rw [PMF.bind_comm μ μ]
+
+/-- Reordering of five draws. -/
+theorem bind_reorder_five {X Y β : Type} (μ : PMF X) (ν : PMF Y) (τ : PMF ℕ)
+    (F : ℕ → X → X → X → Y → PMF β) :
+    (τ.bind fun t => μ.bind fun x₀ => μ.bind fun a => μ.bind fun b => ν.bind fun u =>
+      F t x₀ a b u) =
+      μ.bind fun a => μ.bind fun b => ν.bind fun u => τ.bind fun t => μ.bind fun x₀ =>
+        F t x₀ a b u := by
+  refine (bind_reorder μ τ fun t x₀ a b => ν.bind (F t x₀ a b)).symm.trans ?_
+  congr 1; funext a; congr 1; funext b
+  rw [PMF.bind_comm ν τ]
+  congr 1; funext t
+  exact PMF.bind_comm _ _ _
+
+end DHProofX0
+
+section DHProofOf
+
+variable {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr] [Nonempty Gr]
+
+/-- The two eager hops: the key of the send of epoch `t - 1` and the key and the group element
+of the challenge are drawn in advance. -/
+theorem run_dhCKAStep_eager (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (A : OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) α) (s : CKAGameSt (Gr × E) Gr) :
+    OracleAdv.run (OracleAdv.nfOracle (dhDrawOf E Gr)
+        (dhCKAStepOf pow epow ΔFS ΔPCS t ideal)) A s =
+      (dhDrawOf E Gr).bind fun va => (dhDrawOf E Gr).bind fun vb =>
+        OracleAdv.run (OracleAdv.nfOracle (dhDrawOf E Gr)
+          (dhCKAEagerStepOf pow epow ΔFS ΔPCS t ideal va vb)) A s := by
+  rw [OracleAdv.run_nf_eq_eager (dhDrawOf E Gr) _ (dhCritA t) (dhDoneA t)
+    (dhDoneA_crit _ _ _ _ _ _) (dhDoneA_step _ _ _ _ _ _) (dhDoneA_noCrit t)]
+  congr 1; funext va
+  exact OracleAdv.run_nf_eq_eager (dhDrawOf E Gr) _ (dhCritB t) (dhDoneB t)
+    (dhDoneB_crit _ _ _ _ _ _ va) (dhDoneB_eager _ _ _ _ _ _ va) (dhDoneB_noCrit t) A s
+
+/-- The game of the Diffie–Hellman CKA as the eager game, with the initial key
+`dhX0 t va.1 x₀`. -/
+theorem dhCKAGamePMFOf_eager (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ)
+    (ideal : Bool) (play : Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) α) :
+    dhCKAGamePMFOf pow epow ΔFS ΔPCS t ideal play =
+      (PMF.uniformFintype E).bind fun x₀ => (dhDrawOf E Gr).bind fun va =>
+        (dhDrawOf E Gr).bind fun vb =>
+          (OracleAdv.run (OracleAdv.nfOracle (dhDrawOf E Gr)
+            (dhCKAEagerStepOf pow epow ΔFS ΔPCS t ideal va vb))
+            (play (pow (dhX0 t va.1 x₀)))
+            (CKAGameSt.init (pow (dhX0 t va.1 x₀)) (pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀)
+              (pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀))).map Prod.fst := by
+  unfold dhCKAGamePMFOf
+  by_cases ht : t = 1
+  · subst ht
+    have hA : ∀ va : E × Gr,
+        OracleAdv.eagerStep (dhCKAStepOf pow epow ΔFS ΔPCS 1 ideal) (dhCritA 1) va =
+          dhCKAStepOf pow epow ΔFS ΔPCS 1 ideal := by
+      intro va; funext s q e
+      simp only [OracleAdv.eagerStep, dhCritA_one, Bool.false_eq_true, ite_false]
+    simp only [dhCKAEagerStepOf, hA, dhX0, ite_true, PMF.bind_const]
+    rw [dhDrawOf_bind]
+    simp only [PMF.bind_const]
+    congr 1; funext x₀
+    rw [OracleAdv.run_nf_eq_eager (dhDrawOf E Gr) _ (dhCritB 1) (dhDoneB 1)
+      (fun s q e h => by
+        have := dhDoneB_crit pow epow ΔFS ΔPCS 1 ideal (Classical.arbitrary _) s q e h
+        rwa [hA] at this)
+      (dhDoneB_step _ _ _ _ _ _) (dhDoneB_noCrit 1), PMF.map_bind]
+  · simp only [dhX0, ht, ite_false, run_dhCKAStep_eager, PMF.map_bind]
+
+/-- **The eager game is the simulation**, for commuting exponentiations and the delays
+`2 ≤ ΔFS`, `2 ≤ ΔPCS`. -/
+theorem dhCKA_eager_eq_sim (pow : E → Gr) (epow : Gr → E → Gr)
+    (hcomm : ∀ x y, epow (pow x) y = epow (pow y) x) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (hPCS : 2 ≤ ΔPCS) (t : ℕ) (ideal : Bool) (va vb : E × Gr) (x₀ : E)
+    (play : Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) α) :
+    (OracleAdv.run (OracleAdv.nfOracle (dhDrawOf E Gr)
+        (dhCKAEagerStepOf pow epow ΔFS ΔPCS t ideal va vb))
+        (play (pow (dhX0 t va.1 x₀)))
+        (CKAGameSt.init (pow (dhX0 t va.1 x₀)) (pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀)
+          (pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀))).map Prod.fst =
+      (OracleAdv.run (OracleAdv.nfOracle (dhDrawOf E Gr)
+        (dhCKASimStepOf pow epow ΔFS ΔPCS t (pow va.1) (pow vb.1)
+          (if ideal then vb.2 else epow (pow va.1) vb.1)))
+        (play (pow (dhX0 t va.1 x₀)))
+        (CKAGameSt.init (pow (dhX0 t va.1 x₀)) (pow (dhX0 t va.1 x₀), x₀)
+          (pow (dhX0 t va.1 x₀), x₀))).map Prod.fst :=
+  OracleAdv.run_nf_map_fst_eq_of_rel (dhDrawOf E Gr) _ _ (DHRel pow va.1 t)
+    (fun s σ h q e => dhRel_step pow epow hcomm hFS hPCS t ideal va vb _ rfl s σ h q e) _ _ _
+    (dhRel_init pow t va.1 x₀)
 
 /-- The run of the reduction tree is the run of the adversary against the simulation step. -/
-theorem ckaCorruptDDHTreeOf_run (ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
-    (play : ℕ → G → OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α) (ga gb z : G) :
-    (OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS tStar
-        play ga gb z) ()).map Prod.fst =
-      tStar.bind fun t => (PMF.uniformFintype CG.Exp).bind fun x₀ =>
-        (OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
-          (dhCKASimStepOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ga gb z))
-          (play t (if t = 1 then ga else CG.pow x₀))
-          (CKAGameSt.init (if t = 1 then ga else CG.pow x₀) (if t = 1 then ga else CG.pow x₀, x₀)
-            (if t = 1 then ga else CG.pow x₀, x₀))).map Prod.fst := by
+theorem ckaCorruptDDHTreeOf_run (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS : ℕ)
+    (tStar : PMF ℕ) (play : ℕ → Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) α)
+    (ga gb z : Gr) :
+    (OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf pow epow ΔFS ΔPCS tStar play ga gb z)
+        ()).map Prod.fst =
+      tStar.bind fun t => (PMF.uniformFintype E).bind fun x₀ =>
+        (OracleAdv.run (OracleAdv.nfOracle (dhDrawOf E Gr)
+          (dhCKASimStepOf pow epow ΔFS ΔPCS t ga gb z))
+          (play t (if t = 1 then ga else pow x₀))
+          (CKAGameSt.init (if t = 1 then ga else pow x₀) (if t = 1 then ga else pow x₀, x₀)
+            (if t = 1 then ga else pow x₀, x₀))).map Prod.fst := by
   unfold ckaCorruptDDHTreeOf
   simp only [OracleAdv.run_rand, PMF.map_bind]
   congr 1; funext t; congr 1; funext x₀
   rw [OracleAdv.run_simulate_fst]
-  have hsim : OracleAdv.simOracle (ckaCorruptSimImplOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ga
-      gb z) emptyOracle = OracleAdv.nfOracle (dhDraw G) (fun σu q e =>
-        ((dhCKASimStepOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ga gb z σu.1 q e).1,
-          ((dhCKASimStepOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ga gb z σu.1 q e).2, ()))) := by
+  have hsim : OracleAdv.simOracle (ckaCorruptSimImplOf pow epow ΔFS ΔPCS t ga gb z)
+      emptyOracle = OracleAdv.nfOracle (dhDrawOf E Gr) (fun σu q e =>
+        ((dhCKASimStepOf pow epow ΔFS ΔPCS t ga gb z σu.1 q e).1,
+          ((dhCKASimStepOf pow epow ΔFS ΔPCS t ga gb z σu.1 q e).2, ()))) := by
     funext σu q
     simp only [OracleAdv.simOracle, ckaCorruptSimImplOf, OracleAdv.run_rand, OracleAdv.run_ret,
-      OracleAdv.nfOracle, dhDraw_map, PMF.map_bind, PMF.pure_map]
+      OracleAdv.nfOracle, dhDrawOf_map, PMF.map_bind, PMF.pure_map]
   rw [hsim]
-  exact OracleAdv.run_nf_map_fst_eq_of_rel (dhDraw G) _ _ (fun σu σ => σu.1 = σ)
+  exact OracleAdv.run_nf_map_fst_eq_of_rel (dhDrawOf E Gr) _ _ (fun σu σ => σu.1 = σ)
     (fun σu σ h q e => by subst h; exact ⟨rfl, rfl⟩) _ _ _ rfl
+
+/-- The real game of the Diffie–Hellman CKA with commuting exponentiations and the delays
+`2 ≤ ΔFS`, `2 ≤ ΔPCS`, as a distribution, is the distribution of the triple
+`(pow a, pow b, epow (pow a) b)` of two uniform keys followed by the reduction tree. -/
+theorem dhCKAGamePMFOf_real (pow : E → Gr) (epow : Gr → E → Gr)
+    (hcomm : ∀ x y, epow (pow x) y = epow (pow y) x) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (hPCS : 2 ≤ ΔPCS) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) α) :
+    (tStar.bind fun t => dhCKAGamePMFOf pow epow ΔFS ΔPCS t false (play t)) =
+      ((PMF.uniformFintype E).bind fun a => (PMF.uniformFintype E).bind fun b =>
+        PMF.pure (pow a, pow b, epow (pow a) b)).bind fun tr =>
+          (OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf pow epow ΔFS ΔPCS tStar play tr.1
+            tr.2.1 tr.2.2) ()).map Prod.fst := by
+  simp only [dhCKAGamePMFOf_eager]
+  simp only [dhCKA_eager_eq_sim pow epow hcomm hFS hPCS]
+  simp only [PMF.bind_bind, PMF.pure_bind, ckaCorruptDDHTreeOf_run, dhX0_apply pow, dhDrawOf_bind,
+    PMF.bind_const, Bool.false_eq_true, ite_false]
+  exact (bind_reorder _ _ _).symm
+
+/-- The ideal game of the Diffie–Hellman CKA with commuting exponentiations and the delays
+`2 ≤ ΔFS`, `2 ≤ ΔPCS`, as a distribution, is the distribution of the triple `(pow a, pow b, u)`
+of two uniform keys and a uniform group element followed by the reduction tree. -/
+theorem dhCKAGamePMFOf_ideal (pow : E → Gr) (epow : Gr → E → Gr)
+    (hcomm : ∀ x y, epow (pow x) y = epow (pow y) x) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (hPCS : 2 ≤ ΔPCS) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) α) :
+    (tStar.bind fun t => dhCKAGamePMFOf pow epow ΔFS ΔPCS t true (play t)) =
+      ((PMF.uniformFintype E).bind fun a => (PMF.uniformFintype E).bind fun b =>
+        (PMF.uniformFintype Gr).bind fun u => PMF.pure (pow a, pow b, u)).bind fun tr =>
+          (OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf pow epow ΔFS ΔPCS tStar play tr.1
+            tr.2.1 tr.2.2) ()).map Prod.fst := by
+  simp only [dhCKAGamePMFOf_eager]
+  simp only [dhCKA_eager_eq_sim pow epow hcomm hFS hPCS]
+  simp only [PMF.bind_bind, PMF.pure_bind, ckaCorruptDDHTreeOf_run, dhX0_apply pow, dhDrawOf_bind,
+    PMF.bind_const, ite_true]
+  exact bind_reorder_five _ _ _ _
+
+end DHProofOf
+
+section DHProof
+
+variable {G : Type} [CG : CyclicGroup G]
 
 theorem DDH_real_eq_liftPMF :
     DDH_real G = liftPMF ((PMF.uniformFintype CG.Exp).bind fun a =>
@@ -1789,23 +2091,8 @@ theorem bind_uniform_pow {β : Type} (K : G → PMF β) :
   rfl
 
 theorem pow_dhX0 (t : ℕ) (a x₀ : CG.Exp) :
-    CG.pow (dhX0 t a x₀) = if t = 1 then CG.pow a else CG.pow x₀ := by
-  unfold dhX0; split <;> rfl
-
-/-- Reordering of four draws. -/
-theorem bind_reorder {X β : Type} (μ : PMF X) (τ : PMF ℕ) (F : ℕ → X → X → X → PMF β) :
-    (μ.bind fun a => μ.bind fun b => τ.bind fun t => μ.bind fun x₀ => F t x₀ a b) =
-      τ.bind fun t => μ.bind fun x₀ => μ.bind fun a => μ.bind fun b => F t x₀ a b := by
-  have h1 : ∀ a, (μ.bind fun b => τ.bind fun t => μ.bind fun x₀ => F t x₀ a b) =
-      τ.bind fun t => μ.bind fun x₀ => μ.bind fun b => F t x₀ a b := by
-    intro a
-    rw [PMF.bind_comm μ τ]
-    congr 1; funext t
-    exact PMF.bind_comm _ _ _
-  simp only [h1]
-  rw [PMF.bind_comm μ τ]
-  congr 1; funext t
-  rw [PMF.bind_comm μ μ]
+    CG.pow (dhX0 t a x₀) = if t = 1 then CG.pow a else CG.pow x₀ :=
+  dhX0_apply CG.pow t a x₀
 
 /-- Reordering of the draws of the ideal games. -/
 theorem bind_reorder_ideal {β : Type} (τ : PMF ℕ) (F : ℕ → CG.Exp → CG.Exp → CG.Exp → G → PMF β) :
@@ -1815,18 +2102,10 @@ theorem bind_reorder_ideal {β : Type} (τ : PMF ℕ) (F : ℕ → CG.Exp → CG
       (PMF.uniformFintype CG.Exp).bind fun a => (PMF.uniformFintype CG.Exp).bind fun b =>
         (PMF.uniformFintype CG.Exp).bind fun c => τ.bind fun t =>
           (PMF.uniformFintype CG.Exp).bind fun x₀ => F t x₀ a b (CG.pow c) := by
-  have h : ∀ a b, ((PMF.uniformFintype CG.Exp).bind fun c => τ.bind fun t =>
-      (PMF.uniformFintype CG.Exp).bind fun x₀ => F t x₀ a b (CG.pow c)) =
-      τ.bind fun t => (PMF.uniformFintype CG.Exp).bind fun x₀ =>
-        (PMF.uniformFintype G).bind fun u => F t x₀ a b u := by
-    intro a b
-    rw [PMF.bind_comm (PMF.uniformFintype CG.Exp) τ]
-    congr 1; funext t
-    rw [PMF.bind_comm (PMF.uniformFintype CG.Exp) (PMF.uniformFintype CG.Exp)]
-    congr 1; funext x₀
-    exact bind_uniform_pow _
-  simp only [h]
-  exact (bind_reorder _ _ _).symm
+  rw [bind_reorder_five]
+  congr 1; funext a; congr 1; funext b
+  exact (bind_uniform_pow fun u => τ.bind fun t =>
+    (PMF.uniformFintype CG.Exp).bind fun x₀ => F t x₀ a b u).symm
 
 /-- The real game of `dhCKA` with the delays `(2, 2)`, as a distribution, is the real DDH
 distribution followed by the reduction tree. -/
@@ -1836,11 +2115,10 @@ theorem dhCKA_real_pmf (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp α) :
         PMF.pure (CG.pow a, CG.pow b, CG.pow (CG.expMul a b))).bind fun tr =>
           (OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow CyclicGroup.elemPow 2 2
             A.tStar A.play tr.1 tr.2.1 tr.2.2) ()).map Prod.fst := by
-  simp only [dhCKAGamePMF_eager]
-  simp only [dhCKA_eager_eq_sim]
-  simp only [PMF.bind_bind, PMF.pure_bind, ckaCorruptDDHTreeOf_run, pow_dhX0, dhDraw_bind,
-    PMF.bind_const, Bool.false_eq_true, ite_false]
-  exact (bind_reorder _ _ _).symm
+  have h := dhCKAGamePMFOf_real CG.pow CyclicGroup.elemPow elemPow_pow_comm le_rfl le_rfl
+    A.tStar A.play
+  simp only [CyclicGroup.elemPow_pow] at h
+  exact h
 
 /-- The ideal game of `dhCKA` with the delays `(2, 2)`, as a distribution, is the ideal DDH
 distribution followed by the reduction tree. -/
@@ -1851,11 +2129,11 @@ theorem dhCKA_ideal_pmf (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp α) :
           PMF.pure (CG.pow a, CG.pow b, CG.pow c)).bind fun tr =>
           (OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow CyclicGroup.elemPow 2 2
             A.tStar A.play tr.1 tr.2.1 tr.2.2) ()).map Prod.fst := by
-  simp only [dhCKAGamePMF_eager]
-  simp only [dhCKA_eager_eq_sim]
-  simp only [PMF.bind_bind, PMF.pure_bind, ckaCorruptDDHTreeOf_run, pow_dhX0, dhDraw_bind,
-    PMF.bind_const, ite_true]
-  exact bind_reorder_ideal _ _
+  refine (dhCKAGamePMFOf_ideal CG.pow CyclicGroup.elemPow elemPow_pow_comm le_rfl le_rfl
+    A.tStar A.play).trans ?_
+  refine congrArg (fun P => PMF.bind P _) (congrArg _ (funext fun a => congrArg _ (funext fun b =>
+    ?_)))
+  exact (bind_uniform_pow fun u => PMF.pure (CG.pow a, CG.pow b, u)).symm
 
 /-- **CKA security of `dhCKA` with state corruption and randomness leakage, with a
 distinguisher.** For every adversary `A` with output in `α` and every distinguisher `D`, the
@@ -1897,6 +2175,90 @@ theorem cka_advantage_dh_eq_corrupt (k m : ℕ) (D : CKAView G G → SPComp Bool
   (cka_advantage_eq_corrupt (dhCKA G) 2 2 k m D).trans (dhCKA_corrupt_advantageA_eq_ddh _ D)
 
 end DHProof
+
+/-! ### The Diffie–Hellman CKA over a key space: the bound -/
+
+section DHKeysProof
+
+variable (G : Type) [CG : CyclicGroup G]
+
+/-- The DDH games over an exponent sampler with a uniform third exponent in the ideal game: two
+draws `a`, `b` from the sampler in both games; the real game shows `(g^a, g^b, g^(a·b))`, the
+ideal game `(g^a, g^b, g^c)` for a uniform exponent `c`. -/
+noncomputable def ddhSampledUnif : SampledGame CG.Exp (DDHTriple G) where
+  nR := 2
+  nI := 2
+  real xs := SPComp.pure (CG.pow (xs 0), CG.pow (xs 1), CG.pow (CG.expMul (xs 0) (xs 1)))
+  ideal xs := (SPComp.sample CG.Exp).bind fun c =>
+    SPComp.pure (CG.pow (xs 0), CG.pow (xs 1), CG.pow c)
+
+variable {G} {Sk : Type} [Fintype Sk] [Nonempty Sk]
+
+/-- At the uniform sampler the advantage against `ddhSampledUnif G` is the DDH advantage. -/
+theorem ddhSampledUnif_advAt_uniform (D : DDHTriple G → SPComp Bool) :
+    (ddhSampledUnif G).advAt (SDistr.uniform CG.Exp) D = DDH_Advantage G D := by
+  simp only [SampledGame.advAt, SampledGame.realAt, SampledGame.idealAt, ddhSampledUnif,
+    sampleFrom_replicateFin_succ_bind, sampleFrom_replicateFin_zero_bind,
+    CatCrypt.NonUniform.sampleFrom_uniform]
+  rfl
+
+/-- The real game of `ddhSampledUnif G` at the image of the uniform key under `decE`. -/
+theorem ddhSampledUnif_realAt_keys (decE : Sk → CG.Exp) :
+    (ddhSampledUnif G).realAt ((SDistr.uniform Sk).bind fun x => SDistr.pure (decE x)) =
+      liftPMF ((PMF.uniformFintype Sk).bind fun a => (PMF.uniformFintype Sk).bind fun b =>
+        PMF.pure (CG.pow (decE a), CG.pow (decE b), CG.pow (CG.expMul (decE a) (decE b)))) := by
+  simp only [SampledGame.realAt, ddhSampledUnif, sampleFrom_replicateFin_succ_bind,
+    sampleFrom_replicateFin_zero_bind, sampleFrom_uniform_map_bind]
+  simp only [sample_eq_liftPMF, liftPMF_pure, liftPMF_bind_liftPMF, Fin.cons_zero, Fin.cons_one]
+
+/-- The ideal game of `ddhSampledUnif G` at the image of the uniform key under `decE`. -/
+theorem ddhSampledUnif_idealAt_keys (decE : Sk → CG.Exp) :
+    (ddhSampledUnif G).idealAt ((SDistr.uniform Sk).bind fun x => SDistr.pure (decE x)) =
+      liftPMF ((PMF.uniformFintype Sk).bind fun a => (PMF.uniformFintype Sk).bind fun b =>
+        (PMF.uniformFintype G).bind fun u => PMF.pure (CG.pow (decE a), CG.pow (decE b), u)) := by
+  simp only [SampledGame.idealAt, ddhSampledUnif, sampleFrom_replicateFin_succ_bind,
+    sampleFrom_replicateFin_zero_bind, sampleFrom_uniform_map_bind]
+  simp only [sample_eq_liftPMF, liftPMF_pure, liftPMF_bind_liftPMF, Fin.cons_zero, Fin.cons_one]
+  refine congrArg liftPMF (congrArg _ (funext fun a => congrArg _ (funext fun b => ?_)))
+  exact bind_uniform_pow fun u => PMF.pure (CG.pow (decE a), CG.pow (decE b), u)
+
+/-- **The corruption game of the Diffie–Hellman CKA over a key space as a DDH game over a
+sampler.** With `2 ≤ ΔFS` and `2 ≤ ΔPCS`, the corruption advantage of `dhCKAOf G decE` equals
+the advantage of the reduction `ckaCorruptDDHRedOf decE ΔFS ΔPCS A` against the DDH games
+`ddhSampledUnif G` whose two exponents are drawn as `decE` of uniform keys. -/
+theorem dhCKAOf_corrupt_advantage_eq_advAt (decE : Sk → CG.Exp) {ΔFS ΔPCS : ℕ}
+    (hFS : 2 ≤ ΔFS) (hPCS : 2 ≤ ΔPCS) (A : CKACorruptAdv (G × Sk) G G Sk Bool) :
+    CKA_Corrupt_Advantage (dhCKAOf G decE) ΔFS ΔPCS A =
+      (ddhSampledUnif G).advAt ((SDistr.uniform Sk).bind fun x => SDistr.pure (decE x))
+        (ckaCorruptDDHRedOf decE ΔFS ΔPCS A) := by
+  have hcomm : ∀ x y : Sk, CyclicGroup.elemPow (CG.pow (decE x)) (decE y) =
+      CyclicGroup.elemPow (CG.pow (decE y)) (decE x) := fun x y => elemPow_pow_comm _ _
+  unfold CKA_Corrupt_Advantage SampledGame.advAt AdvantageA cka_corrupt_real cka_corrupt_ideal
+    ckaCorruptDDHRedOf ckaCorruptDDHRedOf.tree
+  rw [dhCKAOf_game_eq, dhCKAOf_game_eq, dhCKAGamePMFOf_real _ _ hcomm hFS hPCS,
+    dhCKAGamePMFOf_ideal _ _ hcomm hFS hPCS, ddhSampledUnif_realAt_keys,
+    ddhSampledUnif_idealAt_keys]
+  simp only [liftPMF_bind_liftPMF, CyclicGroup.elemPow_pow]
+
+/-- **CKA security of the Diffie–Hellman CKA over a key space with state corruption and
+randomness leakage.** Let `c` be a sampler certificate of the image of the uniform key of `Sk`
+under the exponent map `decE` against the uniform exponent, and let `2 ≤ ΔFS`, `2 ≤ ΔPCS`. For
+every adversary `A`, the corruption advantage of `dhCKAOf G decE` is at most the DDH advantage of
+the reduction `ckaCorruptDDHRedOf decE ΔFS ΔPCS A` plus `4 c.δ`: the exponents of the sends of
+the epochs `t* - 1` and `t*` are drawn as `decE` of uniform keys, once in the real and once in
+the ideal game. -/
+theorem dhCKAOf_corrupt_advantage_le (decE : Sk → CG.Exp) (c : SamplerCert CG.Exp)
+    (hμ : c.μ = (SDistr.uniform Sk).bind fun x => SDistr.pure (decE x))
+    (hν : c.ν = SDistr.uniform CG.Exp) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 2 ≤ ΔPCS)
+    (A : CKACorruptAdv (G × Sk) G G Sk Bool) :
+    CKA_Corrupt_Advantage (dhCKAOf G decE) ΔFS ΔPCS A ≤
+      DDH_Advantage G (ckaCorruptDDHRedOf decE ΔFS ΔPCS A) + 4 * c.δ := by
+  rw [dhCKAOf_corrupt_advantage_eq_advAt decE hFS hPCS A, ← hμ,
+    ← ddhSampledUnif_advAt_uniform, ← hν]
+  refine ((ddhSampledUnif G).advAt_le c _).trans (le_of_eq ?_)
+  norm_num [ddhSampledUnif]
+
+end DHKeysProof
 
 /-! ## The double ratchet bound as a special case -/
 
