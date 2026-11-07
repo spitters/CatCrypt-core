@@ -53,6 +53,16 @@ point (`timeBound_simulateHat_table`). The time of the simulation is then
 roOracle` from the empty table (companion `fun _ => 1`), with the unit of the call of the step,
 `a = 4`, `b = 1`, `g = 3` and `M₀ = 1`: `T + q * (4 + (1 + 3 q))`.
 
+## In `derive_time_bound`
+
+The simulation rule of `derive_time_bound` (`CatCryptCore.Tactics.DeriveTimeBound`,
+`foldSimulation?`) closes a simulation node of a costed tree by `timeBound_simulateHat_potLe`,
+at the potential `Pot M s := ∀ k, c s k ≤ M` of the cost companion `c s` of the state: it derives
+the step facts under the hypothesis `Pot M s` by the rules of a step (time `a + b * M`, and
+`Pot (M + g)` at every leaf), so that `a`, `b`, `g` and the bound `n₀` of the initial companion
+are read off the derivation. The pointwise form `timeBound_simulateHat_table` states the same
+facts with the companion read at the query in place of its bound `M`.
+
 ## Main results
 
 * `OracleAdv.Timed.timeBound_simulateHat_potLe` — the potential corollary, with the potential
