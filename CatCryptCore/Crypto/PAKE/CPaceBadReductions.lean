@@ -32,7 +32,8 @@ probability at most `Φ s₀ · (Ψ s₀ + c n) · ε`.
 A step of the simulated world changes the secrets and the session information of the simulator
 only at a new session (`simWorldD_zs`), keeps the queried passwords, and adds at most one entry
 to the table of `H2` and to the programmed inputs (`simWorldD_cands_h2`); a step of the real
-world adds at most one entry to its table of `H2` (`realDet_h2`).
+world adds at most one entry to its table of `H2` (`realDet_h2`). The end of an activation adds
+at most two notices to the state of `F_lePAKE` (`drive1D_notices_length`).
 
 ## The simulated world with handles
 
@@ -277,6 +278,31 @@ theorem drive1D_frame [DecidableEq Pw] [Inhabited K] (s : SimSt S W Pw K) (d : D
   obtain ⟨⟨td, cands, info, zs, keyed, pend, h2, phase⟩, pr⟩ := s
   rcases d with g | o
   · cases phase <;> simp [drive1D, simResumeV, simAnswer]
+  · simp [drive1D]
+
+/-- A step of `F_lePAKE` adds at most one notice. -/
+theorem fStepD_notices_length [DecidableEq Pw] (t : St Pw K) (e : FEv Pw K) (kf : K) :
+    (fStepD t e kf).1.notices.length ≤ t.notices.length + 1 := by
+  rcases e with h | a
+  · cases h <;> simp only [fStepD, leHonStep, addSession] <;> (try split) <;> simp
+  · cases a <;> simp only [fStepD, leAdvD, pollStep, testStep, setRec, registerStep, newKeyStep,
+      lateStep] <;> (repeat' split) <;> simp
+
+/-- The end of an activation adds at most two notices to the state of `F_lePAKE`, one at each
+of its calls. -/
+theorem drive1D_notices_length [DecidableEq Pw] [Inhabited K] (s : SimSt S W Pw K)
+    (d : Dec Pw W K) (t : St Pw K) (k : K × K) :
+    (drive1D fStepD simResumeV simAnswer s d t k).2.1.notices.length ≤ t.notices.length + 2 := by
+  rcases d with g | o
+  · have h1 := fStepD_notices_length t g k.1
+    simp only [drive1D]
+    split
+    · dsimp only
+      omega
+    · rename_i g' _
+      have := fStepD_notices_length (fStepD t g k.1).1 g' k.2
+      dsimp only
+      omega
   · simp [drive1D]
 
 /-- **The frame of a step of the simulated world**: the core after the step is the core after
@@ -1483,6 +1509,20 @@ def sweepQ (s : SimSt S W Pw K) : List (HQ S W Pw) :=
       match s.1.zs pid with
       | some u => s.1.cands.map fun pw => .inr (pid, u, pw, peerMsg pid x, x.2.2.2)
       | none => []
+
+omit [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [DecidableEq Pw] [Fintype K]
+  [Nonempty K] [Inhabited K] in
+/-- The final sweep asks at most two match tests per input of the simulator's tables and queried
+password. -/
+theorem sweepQ_length (s : SimSt S W Pw K) :
+    (sweepQ s).length ≤ 2 * s.1.cands.length * (s.2.length + s.1.h2.length) := by
+  unfold sweepQ
+  rw [List.length_flatMap]
+  refine (List.sum_le_length_nsmul _ (2 * s.1.cands.length) fun y hy => ?_).trans ?_
+  · obtain ⟨x, -, rfl⟩ := List.mem_map.1 hy
+    simp only [List.flatMap_cons, List.flatMap_nil, List.length_append, List.append_nil]
+    split <;> split <;> simp <;> omega
+  · simp [Nat.mul_comm]
 
 /-- Asks the queries of a list in order. -/
 def queryAll : List (HQ S W Pw) → OracleAdv (HQ S W Pw) (HA W) Unit
