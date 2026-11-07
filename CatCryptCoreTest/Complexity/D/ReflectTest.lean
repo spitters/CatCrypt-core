@@ -345,7 +345,10 @@ def recLen : List ℕ → ℕ
   | [] => 0
   | _ :: xs => recLen xs + 1
 
-/-- error: reflect_d: the recursion `List.brecOn` (use List.foldl or Nat.iterate) -/
+/--
+error: reflect_d: the structural recursion `CatCrypt.Complexity.D.ReflectTest.recLen` over `List
+  ℕ`, which is not a represented inductive type (use List.foldl or Nat.iterate)
+-/
 #guard_msgs in
 reflect_d recLen
 

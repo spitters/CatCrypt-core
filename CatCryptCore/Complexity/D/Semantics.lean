@@ -173,6 +173,11 @@ def conAt {X : Ty} : (S : Sig) → ((a : (Sig.den S).1) → ((Sig.den S).2 a →
     let v' : Val a × (f.den → Val X) := v
     mk (.inr v'.1) v'.2
 
+/-- The value of `mu S` that a constructor builds from its argument `v`: the node of the shape and
+the children that `v` selects. -/
+def Sig.node (S : Sig) (v : Val (S.conTy (.mu S))) : Val (.mu S) :=
+  conAt S (fun a k => (WType.mk a k : Val (.mu S))) v
+
 /-- The interpreter of D into costed trees, with `tk` at every evaluation step. -/
 def Tm.interp {Γ : List Ty} : {τ : Ty} → Tm Γ τ → Env Γ → CTree (Val τ)
   | _, .var x, ρ => .ret (ρ _ x)
@@ -452,6 +457,48 @@ theorem tabDep_rel (f : FTy) {X Y : f.den → Type} {R : (j : f.den) → X j →
   obtain ⟨x, y, hx, hy, hxy⟩ := hh j
   simp only [hx, hy, sigmaAt_mk]
   exact hxy
+
+/-- A tabulation over `Fin n` of leaves is the leaf of their values. -/
+theorem tabFin_ret {X : Type} : ∀ (n : ℕ) (w : Fin n → X),
+    tabFin n (fun i => .ret (w i)) = .ret w
+  | 0, w => congrArg CTree.ret (funext fun i => i.elim0)
+  | n + 1, w => by
+    rw [tabFin, CTree.bind_ret, tabFin_ret n (fun i => w i.succ), CTree.bind_ret]
+    exact congrArg CTree.ret (Fin.cons_self_tail w)
+
+theorem tabTab_ret (r : FTy) (tr : ∀ {Y : Type}, (r.den → CTree Y) → CTree (r.den → Y))
+    (htr : ∀ {Y : Type} (w : r.den → Y), tr (fun a => .ret (w a)) = .ret w) {X : Type} :
+    ∀ (q : ℕ) (w : (Fin q → r.den) → X), tabTab r tr q (fun v => .ret (w v)) = .ret w
+  | 0, w => by
+    rw [tabTab, CTree.bind_ret]
+    exact congrArg CTree.ret (funext fun v => by rw [show v = Fin.elim0 from funext fun i => i.elim0])
+  | q + 1, w => by
+    rw [tabTab]
+    have hin : ∀ a : r.den, tabTab r tr q
+        (fun h => CTree.ret (w (Fin.cons a h : Fin (q + 1) → r.den))) =
+        CTree.ret fun h => w (Fin.cons a h : Fin (q + 1) → r.den) := fun a =>
+      tabTab_ret r tr htr q _
+    simp only [hin]
+    rw [htr, CTree.bind_ret]
+    exact congrArg CTree.ret (funext fun v => by simp only [Fin.cons_self_tail])
+
+/-- A tabulation of leaves is the leaf of their values. -/
+theorem tabT_ret : ∀ (f : FTy) {X : Type} (w : f.den → X), tabT f (fun j => .ret (w j)) = .ret w
+  | .unit, _, _ => rfl
+  | .bool, _, w => congrArg CTree.ret (funext fun b => by cases b <;> rfl)
+  | .word n, _, w => by
+    rw [tabT, tabFin_ret (2 ^ n) (fun i => w (BitVec.ofFin i)), CTree.bind_ret]
+    rfl
+  | .fin n, _, w => tabFin_ret (n + 1) w
+  | .tab q r, _, w => tabTab_ret r (fun g' => tabT r g') (fun w' => tabT_ret r w') q w
+
+/-- A dependent tabulation of leaves is the leaf of their values. -/
+theorem tabDep_ret (f : FTy) {X : f.den → Type} (d : (j : f.den) → X j) (w : (j : f.den) → X j) :
+    tabDep f d (fun j => .ret (w j)) = .ret w := by
+  rw [tabDep]
+  simp only [CTree.bind_ret]
+  rw [tabT_ret f (fun j => (⟨j, w j⟩ : (j : f.den) × X j)), CTree.bind_ret]
+  exact congrArg CTree.ret (funext fun j => sigmaAt_mk (FTy.decEq f) d j (w j))
 
 /-- A constructor at related arguments builds equal nodes, the children of a first-order
 signature being equal. -/
