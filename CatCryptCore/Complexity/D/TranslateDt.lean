@@ -19,8 +19,8 @@ argument), a conditional and a match on a sum or a list cost one plus the scruti
 branch taken, constructors, projections, literals, variables and abstractions are free, an
 operation on words or `Bool` costs one, a left fold costs the registered cost
 `List.foldl.timedCost` of its step closure, an iteration one plus the step per round
-(`iterCost`), a constructor `con` costs the tabulation of its children, one plus the cost of the
-function of the children at each position (`tabCost`, `conHat`), an eliminator `fold` one plus
+(`iterCost`), a constructor `con` nothing, its children being a table (`conHat`), as
+`derive_timed` charges a constructor, an eliminator `fold` one plus
 the cost of the step function of the root, a recursive result one plus the cost of the step
 function at the child each time the step applies it (`foldHat`, `stepHat`), a table `ptab` the
 sum of the charges of its components (`tabCost`), a read `papp` and a pair `spair` nothing, a
@@ -54,8 +54,8 @@ erasure `Tm.dt_run`, `Tm.dt_erase`.
 The fragment: variables of a type other than a function type, calls of function variables and
 of pure costed closures, abstractions with a pure body (`Tm.Pure`: no effect and no call of a
 function variable), `letE`, `seq`, literals, pairs and projections, sums and `case`, lists and
-`lcase`, `ite`, `foldl` and `iter` with a step that is a pure costed closure, `con` with a function of
-the children and `fold` with step functions that are pure costed closures, `ptab` with pure
+`lcase`, `ite`, `foldl` and `iter` with a step that is a pure costed closure, `con`, `fold` with
+step functions that are pure costed closures, `ptab` with pure
 components (a table is built from data, as an abstraction with a pure body), `papp`, `spair`,
 `scase` and `fcase`, operations of unit cost (on words and `Bool`), `sample`, `get`, `set`,
 `query` and `fail`. Operations on `ℕ` and on
@@ -64,8 +64,8 @@ components (a table is built from data, as an abstraction with a pure body), `pa
 ## Main definitions
 
 * `Ty.hat`, `Ty.hatE`, `Sim`, `SimE`, `EnvHat`, `SimEnv`
-* `tabCost`, `conHat`, `stepHat`, `foldHat`: the charges of a tabulation, a constructor, a step
-  and an eliminator
+* `tabCost`, `conHat`, `stepHat`, `foldHat`: the charge of a tabulation, the node of a
+  constructor, the charges of a step and of an eliminator
 * `Tm.dtC`, `Tm.allowC`: the charges and the allowance at a charge `cc a ≤ 1` of a call;
   `Tm.dt`, `Tm.allow`: at the charge `callCost` of `derive_timed`
 * `Tm.Pure`, `Tm.InDtFrag`, `iterCost`
@@ -74,9 +74,9 @@ components (a table is built from data, as an abstraction with a pure body), `pa
 
 * `TimedSimTree.bindCont`, `TimedSim.bindCont`: the costed bind against a D bind under any
   continuation.
-* `tabT_stepN`, `conAt_sim`, `stepAt_sim`, `foldW_sim`: a tabulation, a constructor and an
-  eliminator at pure costed closures are leaves within their charges, by induction on the
-  signature and on the value
+* `tabT_stepN`, `stepAt_sim`, `foldW_sim`: a tabulation and an eliminator at pure costed
+  closures are leaves within their charges, by induction on the signature and on the value;
+  `conAt_sim`: a constructor builds the node of its translated argument
 * `tabCost_add`, `tabDep_stepN`: the charge of a tabulation is additive, and a dependent
   tabulation of leaves is a leaf within the sum of their costs
 * `Tm.dtC_timedSim`, `Tm.dt_timedSim`, `Tm.cost_le_dt`, `Tm.dt_run`, `Tm.dt_erase`
@@ -451,19 +451,18 @@ def tabCost : (f : FTy) → (f.den → ℕ) → ℕ
   | .fin n, c => tabCostFin (n + 1) c
   | .tab q r, c => tabCostTab r (tabCost r) q c
 
-/-- The costed value of a constructor of `S` at a translated argument, the node built by `mk`:
-the charge of the tabulation of its children, one plus the cost of the function of the children
-at each position, and the node. -/
-noncomputable def conHat {S₀ : Sig} : (S : Sig) → S.FO →
+/-- The node of a constructor of `S` at a translated argument, built by `mk`; the children of a
+constructor with positions are the table in its argument. -/
+def conHat {S₀ : Sig} : (S : Sig) → S.FO →
     ((a : (Sig.den S).1) → ((Sig.den S).2 a → Val (.mu S₀)) → Val (.mu S₀)) →
-    Ty.hat (S.conTy (.mu S₀)) → ℕ × Val (.mu S₀)
-  | .base a, h, mk, u => (0, mk (a.toVal h u) fun p => Empty.elim p)
+    Ty.hat (S.conTy (.mu S₀)) → Val (.mu S₀)
+  | .base a, h, mk, u => mk (a.toVal h u) fun p => Empty.elim p
   | .ext S _ none, h, mk, .inl u => conHat S h.1 (fun b k => mk (.inl b) k) u
-  | .ext _ a none, h, mk, .inr u => (0, mk (.inr (a.toVal h.2 u)) fun p => Empty.elim p)
+  | .ext _ a none, h, mk, .inr u => mk (.inr (a.toVal h.2 u)) fun p => Empty.elim p
   | .ext S _ (some _), h, mk, .inl u => conHat S h.1 (fun b k => mk (.inl b) k) u
   | .ext _ a (some f), h, mk, .inr u =>
-    let u' : a.hat × ((f.den → Val (.mu S₀)) × (f.den → ℕ)) := u
-    (tabCost f fun j => 1 + u'.2.2 j, mk (.inr (a.toVal h.2 u'.1)) u'.2.1)
+    let u' : a.hat × (f.den → Val (.mu S₀)) := u
+    mk (.inr (a.toVal h.2 u'.1)) u'.2
 
 /-- The costed step of an eliminator of `S` at a node of shape `a`, from the translated step
 functions `p`, the children `kids` and the costed recursive results `rec`: the value and the
@@ -480,8 +479,8 @@ noncomputable def stepHat {S₀ : Sig} {c : Ty} : (S : Sig) → S.FO →
     (p'.1 (a.ofVal h.2 x), p'.2 (a.ofVal h.2 x))
   | .ext _ a (some f), h, p, .inr x, kids, rec =>
     let p' : Ty.hat (.arr (Sig.altTy a (some f) (.mu S₀) c) c) := p.2
-    let arg : a.hat × (((f.den → Val (.mu S₀)) × (f.den → ℕ)) × ((f.den → c.hat) × (f.den → ℕ))) :=
-      (a.ofVal h.2 x, (kids, fun _ => 0), (fun j => (rec j).1, fun j => (rec j).2))
+    let arg : a.hat × ((f.den → Val (.mu S₀)) × ((f.den → c.hat) × (f.den → ℕ))) :=
+      (a.ofVal h.2 x, kids, (fun j => (rec j).1, fun j => (rec j).2))
     (p'.1 arg, p'.2 arg)
 
 /-- The costed eliminator of `mu S` with the translated step functions `p`: the value and the
@@ -615,8 +614,7 @@ noncomputable def dtC (cc : Ty → ℕ) :
     (0, .sample r.den (FTy.instFintype r) (FTy.instNonempty r) (fun _ => 0) fun v => .ret v)
   | _, _, .fail, _ => (0, .fail)
   | _, _, .con (S := S) hS x, η => bindT (x.dtC cc η) fun u =>
-    ((conHat S hS (fun a k => (WType.mk a k : Val (.mu S))) u).1,
-      .ret (conHat S hS (fun a k => (WType.mk a k : Val (.mu S))) u).2)
+    (0, .ret (conHat S hS (fun a k => (WType.mk a k : Val (.mu S))) u))
   | _, _, .fold hS g x, η => bindT (g.dtC cc η) fun p => bindT (x.dtC cc η) fun w =>
     (1 + (foldHat hS p w).2, .ret (foldHat hS p w).1)
   | _, _, .ptab (f := f) (B := B) ts, η =>
@@ -1011,20 +1009,18 @@ theorem tabDep_stepN (f : FTy) {X : f.den → Type} (d : (j : f.den) → X j)
   have ht := tabT_stepN f (g := fun j => (g j).bind fun x => .ret (⟨j, x⟩ : (j : f.den) × X j))
     (m := m) (w := fun j => ⟨j, w j⟩) fun j => by rw [hg j, Reflect.stepN_ret_bind]
   rw [tabDep, ht, Reflect.stepN_ret_bind]
-  exact congrArg _ (congrArg CTree.ret (funext fun j => sigmaAt_mk d j (w j)))
+  exact congrArg _ (congrArg CTree.ret (funext fun j => sigmaAt_mk (FTy.decEq f) d j (w j)))
 
-/-- A constructor at an argument of D related to a translated argument whose function of the
-children is a pure costed closure: the evaluation is the leaf of the costed node after at most
-the charge of `conHat` in ticks. -/
+/-- A constructor at an argument of D related to a translated argument builds the node of the
+translated argument. -/
 theorem conAt_sim {S₀ : Sig} : ∀ (S : Sig) (hS : S.FO)
     (mk : (a : (Sig.den S).1) → ((Sig.den S).2 a → Val (.mu S₀)) → Val (.mu S₀))
     {u : Ty.hat (S.conTy (.mu S₀))} {v : Val (S.conTy (.mu S₀))}, Sim _ u v →
-    ∃ m, conAt CTree.tick S mk v = stepN CTree.tick m (.ret (conHat S hS mk u).2) ∧
-      m ≤ (conHat S hS mk u).1
+    conAt S mk v = conHat S hS mk u
   | .base a, hS, mk, u, v, hs => by
     have he := Sim.toVal_eq a hS hs
     subst he
-    exact ⟨0, rfl, le_rfl⟩
+    rfl
   | .ext S a none, hS, mk, u, v, hs => by
     have h' : Sum.LiftRel (Sim (S.conTy (.mu S₀))) (Sim a) u v := hs
     cases h' with
@@ -1032,27 +1028,17 @@ theorem conAt_sim {S₀ : Sig} : ∀ (S : Sig) (hS : S.FO)
     | inr h =>
       have he := Sim.toVal_eq a hS.2 h
       subst he
-      exact ⟨0, rfl, le_rfl⟩
+      rfl
   | .ext S a (some f), hS, mk, u, v, hs => by
-    have h' : Sum.LiftRel (Sim (S.conTy (.mu S₀))) (Sim (.prod a (.arr (.base f) (.mu S₀)))) u
+    have h' : Sum.LiftRel (Sim (S.conTy (.mu S₀))) (Sim (.prod a (.pi f fun _ => .mu S₀))) u
         v := hs
     cases h' with
     | inl h => exact conAt_sim S hS.1 _ h
     | @inr x y h =>
       have he := Sim.toVal_eq a hS.2 h.1
-      have hk : ∀ j : f.den, ∃ (m : ℕ) (w : Val (.mu S₀)),
-          y.2 j = stepN CTree.tick m (.ret w) ∧ m ≤ x.2.2 j ∧ x.2.1 j = w :=
-        fun j => h.2 j j rfl
-      choose m w hw hm hx using hk
-      have ht := tabT_stepN f (g := fun j => CTree.tick (y.2 j)) (m := fun j => m j + 1)
-        (w := w) fun j => by rw [hw j]; rfl
-      refine ⟨tabCost f fun j => m j + 1, ?_, ?_⟩
-      · show (tabT f fun j => CTree.tick (y.2 j)).bind (fun h => .ret (mk (.inr y.1) h)) = _
-        rw [ht]
-        refine (Reflect.stepN_ret_bind _ w _).trans ?_
-        rw [he, show w = x.2.1 from funext fun j => (hx j).symm]
-        rfl
-      · exact tabCost_mono f fun j => by have := hm j; show m j + 1 ≤ 1 + x.2.2 j; omega
+      have hk : y.2 = x.2 := funext fun j => (h.2 j).symm
+      show mk (.inr y.1) y.2 = mk (.inr (a.toVal hS.2 x.1)) x.2
+      rw [he, hk]
 
 /-- A step of an eliminator at step functions related to translated step functions, at recursive
 results that are leaves within their costs: a leaf after at most the cost of `stepHat`, related
@@ -1068,8 +1054,7 @@ theorem stepAt_sim {S₀ : Sig} {c : Ty} : ∀ (S : Sig) (hS : S.FO)
   | .ext S _ _, hS, _, _, hpg, .inl x, kids, _, _, hr => stepAt_sim S hS.1 hpg.1 x kids hr
   | .ext _ a none, hS, _, _, hpg, .inr x, _, _, _, _ => hpg.2 _ _ (Sim.ofVal a hS.2 x)
   | .ext _ a (some f), hS, _, _, hpg, .inr x, kids, _, _, hr =>
-    hpg.2 _ _ ⟨Sim.ofVal a hS.2 x, fun j j' hj => ⟨0, kids j', rfl, le_rfl, by subst hj; rfl⟩,
-      fun j j' hj => by subst hj; exact hr j⟩
+    hpg.2 _ _ ⟨Sim.ofVal a hS.2 x, fun _ => rfl, fun j j' hj => by subst hj; exact hr j⟩
 
 /-- The eliminator at step functions related to translated step functions: a leaf after at
 most the cost of `foldHat`, related to its value. -/
@@ -1283,14 +1268,13 @@ theorem dtC_timedSim (cc : Ty → ℕ) (hcc : ∀ a, cc a ≤ 1) :
   | @con _ S hS x ih =>
     intro ht η ρ hρ
     have hev : (Tm.con hS x).eval ρ = (x.eval ρ).bind fun v =>
-        conAt (X := .mu S) CTree.tick S (fun a k => (WType.mk a k : Val (.mu S))) v := rfl
+        .ret (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v) := rfl
     rw [hev]
     refine (TimedSim.bindCont (m := 0) (ih ht hρ) fun u v huv => ?_).mono
       (by simp only [allowC]; omega)
-    obtain ⟨m, he, hm⟩ := conAt_sim (S₀ := S) S hS
+    have he := conAt_sim (S₀ := S) S hS
       (fun a (k : (Sig.den S).2 a → Val (.mu S)) => (WType.mk a k : Val (.mu S))) huv
-    rw [he]
-    exact TimedSim.stepN_ret (show Sim (.mu S) _ _ from rfl) (by omega)
+    exact TimedSim.stepN_ret (m := 0) (show Sim (.mu S) _ _ from he.symm) (by omega)
   | @fold _ S c hS g x ihg ihx =>
     intro ht η ρ hρ
     have hev : (Tm.fold hS g x).eval ρ = (g.eval ρ).bind fun gv =>

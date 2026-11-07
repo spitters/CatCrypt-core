@@ -41,7 +41,7 @@ a primitive operation), at the factor `K ≥ 1`.
   `TSim.cost_le`.
 * Data rules `DSim.var`, `DSim.lit`, `DSim.natLit`, `DSim.pair`, `DSim.fst`, `DSim.snd`,
   `DSim.prim`, `DSim.decide`, `DSim.app`, `DSim.letE`, `DSim.ite`, `DSim.le`, and for the
-  inductive types `DSim.con` (a constructor, its children tabulated) and `DSim.fold` (the
+  inductive types `DSim.con` (a constructor, free, its children a table) and `DSim.fold` (the
   eliminator against a cost `C` of a structural recursion, one per call plus the body, by
   induction on the value).
 -/
@@ -183,21 +183,16 @@ theorem le {t : Tm Γ τ} {v : Val τ} {n n' c c' : ℕ} (hn : n ≤ n') (hc : c
   obtain ⟨m, hm, l⟩ := h
   exact ⟨m, hm, by have := Nat.mul_le_mul_left K hc; omega⟩
 
-/-- A constructor of an inductive type: the evaluation of its argument, and the tabulation of its
-children (`conAt`) within the allowance `n₀` and `K` times the charge `cc`. -/
+/-- A constructor of an inductive type: the evaluation of its argument, the node at no cost of
+its own, its children being the table in the argument. -/
 theorem con {S : Sig} (hS : S.FO) {x : Tm Γ (S.conTy (.mu S))} {v : Val (S.conTy (.mu S))}
-    {w : Val (.mu S)} {n n₀ c cc : ℕ} (hx : DSim K n c x ρ v)
-    (h : ∃ m, conAt (X := .mu S) CTree.tick S (fun a k => (WType.mk a k : Val (.mu S))) v =
-      stepN CTree.tick m (.ret w) ∧ m ≤ n₀ + K * cc) :
-    DSim K (n + n₀) (c + cc) (.con hS x) ρ w := by
+    {n c : ℕ} (hx : DSim K n c x ρ v) :
+    DSim K n c (.con hS x) ρ (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v) := by
   obtain ⟨mx, hmx, lx⟩ := hx
-  obtain ⟨m, hm, lm⟩ := h
-  refine ⟨mx + m, ?_, ?_⟩
-  · show (x.eval ρ).bind (fun v =>
-      conAt (X := .mu S) CTree.tick S (fun a k => (WType.mk a k : Val (.mu S))) v) = _
-    rw [hmx, stepN_ret_bind, hm, stepN_tick_add]
-  · rw [Nat.mul_add]
-    omega
+  refine ⟨mx, ?_, lx⟩
+  show (x.eval ρ).bind (fun v =>
+    .ret (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v)) = _
+  rw [hmx, stepN_ret_bind]
 
 /-- The eliminator of an inductive type, by induction on the value: when at every node whose
 recursive results are leaves of the values of `F` within `K` times the charge `C` at the

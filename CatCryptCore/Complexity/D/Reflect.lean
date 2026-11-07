@@ -311,16 +311,14 @@ theorem iter {c : Ty} {n : Tm Γ .nat} {f : Tm Γ (.arr c c)} {i : Tm Γ c} {k :
   rw [hi]
   exact iterT_id hs k acc
 
-/-- `Den` at a constructor: the denotation of the argument, and the node its constructor builds
-from it in the denotation (the function of the children applied at every position). -/
+/-- `Den` at a constructor: the node its constructor builds from the denotation of the
+argument, the children of a constructor with positions being the table in the argument. -/
 theorem con {S : Sig} (hS : S.FO) {x : Tm Γ (S.conTy (.mu S))} {v : Val (S.conTy (.mu S))}
-    {w : Val (.mu S)} (hx : Den x ρ v)
-    (h : conAt (X := .mu S) (fun t => t) S (fun a k => (WType.mk a k : Val (.mu S))) v = .ret w) :
-    Den (.con hS x) ρ w := by
+    (hx : Den x ρ v) :
+    Den (.con hS x) ρ (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v) := by
   show (x.den ρ).bind (fun v =>
-    conAt (X := .mu S) (fun t => t) S (fun a k => (WType.mk a k : Val (.mu S))) v) = _
+    .ret (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v)) = _
   rw [hx, CTree.bind_ret]
-  exact h
 
 /-- `Den` at the eliminator, by induction on the value: when the step functions denote the
 recursion `F` at every node whose recursive results are the values of `F` at its children, the

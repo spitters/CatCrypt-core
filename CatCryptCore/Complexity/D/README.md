@@ -198,17 +198,18 @@ trees, oracle trees with answers in a finite ground type and strategies with cha
 finite ground type are instances.
 
 * `con`: a node from the argument of its constructor; the children of a constructor with
-  positions are given by a function of the positions, applied at every position (`tabT`): a
-  constructor costs nothing of its own, its children one β-step and the body each.
+  positions `some f` are a table, a value of the dependent product `pi f fun _ => mu S`, whose
+  components are evaluated where the table is built (`ptab`): a constructor costs nothing, as
+  `derive_timed` charges a constructor.
 * `fold`: the eliminator at a constant motive, a paramorphism with one step function per
   constructor, which receives the field, the children and the recursive results; one step per
   node it visits plus the step function there, the recursive results evaluated when the step
   applies them, as a call of a structural recursion costs one plus its body. A case analysis
   is the `fold` that applies no recursive result.
 
-The charges of `Tm.dt` (`TranslateDt`) price `con` by the tabulation of its children
-(`tabCost`, `conHat`) and `fold` by one plus the step at the root and one plus the step at a
-child per application of its result (`foldHat`); the soundness theorem `Tm.dtC_timedSim`
+The charges of `Tm.dt` (`TranslateDt`) price `con` at nothing (`conHat`) and `fold` by one plus
+the step at the root and one plus the step at a child per application of its result
+(`foldHat`); the soundness theorem `Tm.dtC_timedSim`
 covers both, by induction on the signature and on the value (`conAt_sim`, `foldW_sim`). The
 judgements of `Reflect` have the rules `Den.con`, `Den.fold` (the eliminator denotes a recursion
 `F` when its steps denote `F` at every node whose recursive results are the values of `F` at its

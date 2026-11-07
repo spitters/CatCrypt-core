@@ -48,10 +48,11 @@ shapes and positions of `S` (`Sig.den`).
 
 * `con hS x`: the node of the constructor that the argument `x : S.conTy (mu S)` selects (a
   sum over the constructors, the first innermost); a constructor with positions `some f` takes
-  its field and a function from `f` to its children.
+  its field and the table of its children, a value of `pi f fun _ => mu S`.
 * `fold hS g x`: the eliminator at a constant motive `c`, a paramorphism: `g : S.stepsTy (mu S)
   c` pairs one step function per constructor, which receives the field, and for positions
-  `some f` the children and the recursive results as functions of the positions. A case
+  `some f` the table of the children and the recursive results as a function of the
+  positions. A case
   analysis on a value of `mu S` is the `fold` whose steps do not apply the recursive results.
 
 Both require a first-order signature (`hS : S.FO`): the fields of a node are data.
@@ -259,17 +260,19 @@ end
 namespace Sig
 
 /-- The argument type of the constructor with field `a` and positions `k`, its children of type
-`X`: the field, and for positions `some f` a function from `f` to the children. -/
+`X`: the field, and for positions `some f` the table of the children, a dependent product over
+`f` at the constant family `X`. -/
 def kidTy (a : Ty) : Option FTy → Ty → Ty
   | none, _ => a
-  | some f, X => .prod a (.arr (.base f) X)
+  | some f, X => .prod a (.pi f fun _ => X)
 
 /-- The argument type of the step at the constructor with field `a` and positions `k`, its
 children of type `X` and its recursive results of type `c`: the field, and for positions
-`some f` the children and the recursive results as functions of the positions. -/
+`some f` the table of the children and the recursive results as a function of the positions,
+evaluated where the step applies it. -/
 def altTy (a : Ty) : Option FTy → Ty → Ty → Ty
   | none, _, _ => a
-  | some f, X, c => .prod a (.prod (.arr (.base f) X) (.arr (.base f) c))
+  | some f, X, c => .prod a (.prod (.pi f fun _ => X) (.arr (.base f) c))
 
 /-- The argument of a constructor of `S`, its children of type `X`: the sum over the constructors,
 the first innermost. -/
@@ -465,7 +468,7 @@ inductive Tm : List Ty → Ty → Type where
   | query {Γ : List Ty} (d r : FTy) : Tm Γ (.base d) → Tm Γ (.base r)
   | fail {Γ : List Ty} {τ : Ty} : Tm Γ τ
   /-- A constructor of `mu S`, from the argument of its constructor type `S.conTy (mu S)`; the
-  children at its recursive positions are given by a function of the positions. -/
+  children at its recursive positions are given by a table over the positions. -/
   | con {Γ : List Ty} {S : Sig} (hS : S.FO) : Tm Γ (S.conTy (.mu S)) → Tm Γ (.mu S)
   /-- The eliminator of `mu S` at the constant motive `c`, with one step function per
   constructor; a step receives the field, the children and the recursive results. -/

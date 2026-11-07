@@ -32,11 +32,11 @@ Both are defined by structural recursion on the term: D has only structural recu
 
 ## Inductive types
 
-`con` costs nothing of its own: the function of the children of a constructor with positions
-`some f` is applied at every element of `f` in a fixed order (`tabT`), one step node per
-application plus the cost of its body, and its leaves are the children of the node: the strict
-evaluation of a finite function into a table. `fold g x` places one step node and applies the
-step function of the constructor of the root (`stepAt`, `foldW`); the recursive results it
+`con` costs nothing: the children of a constructor with positions `some f` are a table, a value
+of `pi f fun _ => X`, whose components are evaluated where the table is built (`ptab`), so a
+constructor is free, as `derive_timed` charges a constructor. `fold g x` places one step node
+and applies the step function of the constructor of the root (`stepAt`, `foldW`); the
+recursive results it
 receives are evaluated when the step applies them, each application a step node, so that a fold
 costs one step per node it visits plus the step functions there, as a call of a structural
 recursion costs one plus its body, and a child whose result the step does not apply costs
@@ -88,8 +88,7 @@ def stepAt {X c : Ty} : (S : Sig) → Val (S.stepsTy X c) → (a : (Sig.den S).1
   | .ext _ _ none, g, .inr x, _, _ => g.2 x
   | .ext _ a (some f), g, .inr x, kids, rec =>
     let g' : Val (.arr (Sig.altTy a (some f) X c) c) := g.2
-    g' ((x, fun j => .ret (kids j), rec) :
-      Val a × ((f.den → CTree (Val X)) × (f.den → CTree (Val c))))
+    g' ((x, kids, rec) : Val a × ((f.den → Val X) × (f.den → CTree (Val c))))
 
 /-- The eliminator of `mu S` with the step functions `g`: the step at each node, its recursive
 results the eliminator at the children, evaluated when the step applies them. -/
@@ -149,9 +148,9 @@ def tabT : (f : FTy) → {X : Type} → (f.den → CTree X) → CTree (f.den →
 
 /-- The value of a dependent pair at the element `j`: its value when its index is `j`, the
 default `d j` otherwise. -/
-def sigmaAt {I : Type} [DecidableEq I] {X : I → Type} (d : (j : I) → X j) (s : (j : I) × X j)
-    (j : I) : X j :=
-  if e : s.1 = j then e ▸ s.2 else d j
+def sigmaAt {I : Type} (dec : DecidableEq I) {X : I → Type} (d : (j : I) → X j)
+    (s : (j : I) × X j) (j : I) : X j :=
+  @dite _ (s.1 = j) (dec s.1 j) (fun e => e ▸ s.2) fun _ => d j
 
 /-- Dependent tabulation over a finite ground type: the trees at every element in the order of
 `tabT`, their leaves collected into a dependent function. Each leaf is tagged with its element,
@@ -160,19 +159,19 @@ and the default `d` is the value at an element whose tag differs, which does not
 def tabDep (f : FTy) {X : f.den → Type} (d : (j : f.den) → X j)
     (g : (j : f.den) → CTree (X j)) : CTree ((j : f.den) → X j) :=
   (tabT f fun j => (g j).bind fun x => .ret (⟨j, x⟩ : (j : f.den) × X j)).bind fun h =>
-    .ret fun j => sigmaAt d (h j) j
+    .ret fun j => sigmaAt (FTy.decEq f) d (h j) j
 
-/-- A constructor of a signature `S` at its argument `v`, the node built by `mk`; the function of
-the children is applied at every position (`tabT`), one step node per application. -/
+/-- A constructor of a signature `S` at its argument `v`, the node built by `mk`; the children of
+a constructor with positions are the table in its argument. -/
 def conAt {X : Ty} : (S : Sig) → ((a : (Sig.den S).1) → ((Sig.den S).2 a → Val X) → Val X) →
-    Val (S.conTy X) → CTree (Val X)
-  | .base _, mk, v => .ret (mk v fun p => Empty.elim p)
+    Val (S.conTy X) → Val X
+  | .base _, mk, v => mk v fun p => Empty.elim p
   | .ext S _ none, mk, .inl v => conAt S (fun a k => mk (.inl a) k) v
-  | .ext _ _ none, mk, .inr v => .ret (mk (.inr v) fun p => Empty.elim p)
+  | .ext _ _ none, mk, .inr v => mk (.inr v) fun p => Empty.elim p
   | .ext S _ (some _), mk, .inl v => conAt S (fun a k => mk (.inl a) k) v
   | .ext _ a (some f), mk, .inr v =>
-    let v' : Val a × (f.den → CTree (Val X)) := v
-    (tabT f fun j => tk (v'.2 j)).bind fun h => .ret (mk (.inr v'.1) h)
+    let v' : Val a × (f.den → Val X) := v
+    mk (.inr v'.1) v'.2
 
 /-- The interpreter of D into costed trees, with `tk` at every evaluation step. -/
 def Tm.interp {Γ : List Ty} : {τ : Ty} → Tm Γ τ → Env Γ → CTree (Val τ)
@@ -215,7 +214,7 @@ def Tm.interp {Γ : List Ty} : {τ : Ty} → Tm Γ τ → Env Γ → CTree (Val 
   | _, .query d r x, ρ => (Tm.interp x ρ).bind fun v => .query d r v .ret
   | _, .fail, _ => .fail
   | _, .con (S := S) _ x, ρ =>
-    (Tm.interp x ρ).bind fun v => conAt tk S (fun a k => (WType.mk a k : Val (.mu S))) v
+    (Tm.interp x ρ).bind fun v => .ret (conAt S (fun a k => (WType.mk a k : Val (.mu S))) v)
   | _, .fold _ g x, ρ =>
     (Tm.interp g ρ).bind fun gv => (Tm.interp x ρ).bind fun w => tk (foldW gv w)
   | _, .ptab (f := f) (B := B) ts, ρ =>
@@ -435,9 +434,12 @@ theorem tabT_rel : ∀ (f : FTy) {X Y : Type} {R : f.den → X → Y → Prop} {
   | .fin n, _, _, _, _, _, hg => tabFin_rel (n + 1) hg
   | .tab q r, _, _, _, _, _, hg => tabTab_rel r (fun g' => tabT r g') (fun h => tabT_rel r h) q hg
 
-theorem sigmaAt_mk {I : Type} [DecidableEq I] {X : I → Type} (d : (j : I) → X j) (j : I)
-    (x : X j) : sigmaAt d ⟨j, x⟩ j = x := by
-  simp [sigmaAt]
+theorem sigmaAt_mk {I : Type} (dec : DecidableEq I) {X : I → Type} (d : (j : I) → X j)
+    (j : I) (x : X j) : sigmaAt dec d ⟨j, x⟩ j = x := by
+  unfold sigmaAt
+  cases dec j j with
+  | isTrue _ => rfl
+  | isFalse h => exact absurd rfl h
 
 /-- Dependent tabulations of related trees are related pointwise. -/
 theorem tabDep_rel (f : FTy) {X Y : f.den → Type} {R : (j : f.den) → X j → Y j → Prop}
@@ -451,16 +453,15 @@ theorem tabDep_rel (f : FTy) {X Y : f.den → Type} {R : (j : f.den) → X j →
   simp only [hx, hy, sigmaAt_mk]
   exact hxy
 
-/-- A constructor at related arguments: the evaluator and the denotation build equal nodes, the
-children of a first-order signature being equal. -/
+/-- A constructor at related arguments builds equal nodes, the children of a first-order
+signature being equal. -/
 theorem conAt_rel {X : Ty} (hX : ∀ x y, ValRel X x y → x = y) : ∀ (S : Sig), S.FO →
     ∀ (mk : (a : (Sig.den S).1) → ((Sig.den S).2 a → Val X) → Val X) {u v : Val (S.conTy X)},
-      ValRel (S.conTy X) u v →
-        CTree.Rel (· = ·) (conAt CTree.tick S mk u) (conAt (fun t => t) S mk v)
+      ValRel (S.conTy X) u v → conAt S mk u = conAt S mk v
   | .base a, hS, mk, u, v, huv => by
     have he : u = v := (ValRel.iff_eq_of_FO a hS u v).1 huv
     subst he
-    exact .ret rfl
+    rfl
   | .ext S a none, hS, mk, u, v, huv => by
     have h' : Sum.LiftRel (ValRel (S.conTy X)) (ValRel a) u v := huv
     cases h' with
@@ -468,18 +469,16 @@ theorem conAt_rel {X : Ty} (hX : ∀ x y, ValRel X x y → x = y) : ∀ (S : Sig
     | inr h =>
       have he := (ValRel.iff_eq_of_FO a hS.2 _ _).1 h
       subst he
-      exact .ret rfl
+      rfl
   | .ext S a (some f), hS, mk, u, v, huv => by
-    have h' : Sum.LiftRel (ValRel (S.conTy X)) (ValRel (.prod a (.arr (.base f) X))) u v := huv
+    have h' : Sum.LiftRel (ValRel (S.conTy X)) (ValRel (.prod a (.pi f fun _ => X))) u v := huv
     cases h' with
     | inl h => exact conAt_rel hX S hS.1 _ h
     | @inr x y h =>
       have he : x.1 = y.1 := (ValRel.iff_eq_of_FO a hS.2 _ _).1 h.1
-      refine (tabT_rel f (R := fun _ => ValRel X) fun j => .tick (h.2 j j rfl)).bind
-        fun H H' hH => ?_
-      refine .ret ?_
-      show mk (.inr x.1) H = mk (.inr y.1) H'
-      rw [he, show H = H' from funext fun j => hX _ _ (hH j)]
+      have hk : x.2 = y.2 := funext fun j => hX _ _ (h.2 j)
+      show mk (.inr x.1) x.2 = mk (.inr y.1) y.2
+      rw [he, hk]
 
 /-- A step of an eliminator at related step functions and related recursive results gives
 related trees, the fields of a first-order signature being related to themselves. -/
@@ -492,9 +491,9 @@ theorem stepAt_rel {X c : Ty} (hX : ∀ x : Val X, ValRel X x x) : ∀ (S : Sig)
   | .ext S _ _, hS, _, _, hg, .inl x, kids, _, _, hr => stepAt_rel hX S hS.1 hg.1 x kids hr
   | .ext _ a none, hS, _, _, hg, .inr x, _, _, _, _ =>
     hg.2 x x ((ValRel.iff_eq_of_FO a hS.2 x x).2 rfl)
-  | .ext _ a (some _), hS, _, _, hg, .inr x, _, _, _, hr =>
+  | .ext _ a (some _), hS, _, _, hg, .inr x, kids, _, _, hr =>
     hg.2 _ _ ⟨(ValRel.iff_eq_of_FO a hS.2 x x).2 rfl,
-      fun j j' hj => by subst hj; exact .ret (hX _), fun j j' hj => by subst hj; exact hr j⟩
+      fun j => hX (kids j), fun j j' hj => by subst hj; exact hr j⟩
 
 /-- The eliminator at related step functions: the evaluator and the denotation give related
 trees at every value. -/
@@ -578,7 +577,7 @@ theorem interp_rel {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) :
   | fail => intro ρ δ h; exact .fail
   | @con _ S hS x ih =>
     intro ρ δ h
-    exact (ih h).bind fun u v huv => conAt_rel (X := .mu S) (fun _ _ e => e) S hS _ huv
+    exact (ih h).bind fun u v huv => .ret (conAt_rel (X := .mu S) (fun _ _ e => e) S hS _ huv)
   | @fold _ S c hS g x ihg ihx =>
     intro ρ δ h
     exact (ihg h).bind fun gv gv' hg => (ihx h).bind fun w w' hw => by

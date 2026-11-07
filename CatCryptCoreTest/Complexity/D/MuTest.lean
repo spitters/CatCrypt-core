@@ -20,8 +20,8 @@ children indexed by `Bool`.
 * `xorT_den_all`: the denotation of `xorT` at every tree is the recursion `xorF`, by the rule of
   the eliminator (`Reflect.Den.fold`); `isLeafT_dsim`: a case analysis by the eliminator costs one
   step, by the linking rule of the eliminator (`TimedLink.DSim.fold`).
-* `nodeT`: a node built by `con` from a function of its two children; the function is
-  evaluated at both positions, a β-step and the conditional at each (`nodeT_cost`).
+* `nodeT`: a node built by `con` from the table of its two children (`ptab`); the constructor
+  and the table of leaves cost nothing (`nodeT_cost`).
 -/
 
 @[expose] public section
@@ -115,13 +115,12 @@ theorem isLeafT_dsim (w : Val tree) :
 /-- A leaf built by `con`. -/
 def leafT {Γ : List Ty} : Tm Γ tree := con treeSig_fo (inl (lit .unit ()))
 
-/-- A node with the byte `5` and two leaves, its children given by a function of the
-position. -/
+/-- A node with the byte `5` and two leaves, its children a table over the positions. -/
 def nodeT : Tm [] tree :=
-  con treeSig_fo (inr (pair (lit (.word 8) (5 : BitVec 8)) (lam (ite (var .here) leafT leafT))))
+  con treeSig_fo (inr (pair (lit (.word 8) (5 : BitVec 8)) (ptab fun _ => leafT)))
 
-/-- The children are tabulated at both positions: a β-step and the conditional at each. -/
-theorem nodeT_cost : nodeT.cost Env.nil = 4 := by
+/-- A constructor is free, and so is the table of its children, whose components are leaves. -/
+theorem nodeT_cost : nodeT.cost Env.nil = 0 := by
   decide +kernel
 
 end CatCrypt.Complexity.D.MuTest
