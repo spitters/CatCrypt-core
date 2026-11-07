@@ -23,8 +23,8 @@ for the systems of a protocol over the two games a realization at distance `0`
 
 For a key-derivation function sampled lazily into a table (`roAt`, the form of the key
 derivation of the Diffie–Hellman squares), the draw of a fresh value at a query can be made
-before the query: `roAt tb x` is a uniform key `k` followed by `roAtWith tb x k`, which answers
-from the table and otherwise records `k` (`roAt_eq_map_roAtWith`). A key drawn in advance for
+before the query: `roAt tb x` is a uniform key `k` followed by `roAtDrawn tb x k`, which answers
+from the table and otherwise records `k` (`roAt_eq_map_roAtDrawn`). A key drawn in advance for
 each pending session forms a pool (`drawPool`); consuming the key of one pending session leaves
 a pool of the others (`drawPool_consume`). These are the step conditions of the kernel when a
 session's key-derivation value is drawn eagerly at the start of the session and used at its
@@ -32,13 +32,13 @@ completion.
 
 ## Main definitions
 
-* `roAtWith` — the key derivation with a value drawn in advance
+* `roAtDrawn` — the key derivation with a value drawn in advance
 * `drawPool` — independent uniform keys for a list of sessions
 
 ## Main results
 
 * `OracleAdv.run_map_fst_eq_of_kernel`, `KeyedGame.accept_eq_of_kernel`, `Realizes.ofKernel`
-* `roAt_eq_map_roAtWith`
+* `roAt_eq_map_roAtDrawn`
 * `drawPool_consume`
 -/
 
@@ -122,15 +122,15 @@ variable {D K : Type} [DecidableEq D] [Fintype K] [Nonempty K]
 
 /-- The key derivation at `x` with the value `k` drawn in advance: the recorded value when `x`
 is in the table, and otherwise `k`, recorded. -/
-def roAtWith (tb : List (D × K)) (x : D) (k : K) : K × List (D × K) :=
+def roAtDrawn (tb : List (D × K)) (x : D) (k : K) : K × List (D × K) :=
   match tb.lookup x with
   | some v => (v, tb)
   | none => (k, (x, k) :: tb)
 
 /-- **A lazily sampled value is a value drawn in advance.** -/
-theorem roAt_eq_map_roAtWith (tb : List (D × K)) (x : D) :
-    roAt tb x = (PMF.uniformFintype K).map (roAtWith tb x) := by
-  unfold roAt roAtWith
+theorem roAt_eq_map_roAtDrawn (tb : List (D × K)) (x : D) :
+    roAt tb x = (PMF.uniformFintype K).map (roAtDrawn tb x) := by
+  unfold roAt roAtDrawn
   cases tb.lookup x with
   | some v => exact (PMF.map_const _ _).symm
   | none => rfl
