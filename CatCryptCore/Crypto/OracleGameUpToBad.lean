@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.SPCompPMF
 public import CatCryptCore.Crypto.UCTransparentMulti
 public import CatCryptCore.Crypto.OracleLazyMulti
+public import CatCryptCore.ForMathlib.PMFOuterMeasure
 
 /-!
 # Oracle games up to a bad event
@@ -44,6 +45,8 @@ lazily sampled random function with a table is the image of one uniform value un
 * `OracleAdv.run_flagWhen_le_of_inv`: a bad flag implied by another along an invariant.
 * `OracleAdv.run_flagWhen_mono`, `OracleAdv.run_flagWhen_or_le`: monotonicity and the union bound
   for bad flags.
+* `OracleAdv.run_flagWhen_le_potential`: a bad flag along a potential that decreases at every
+  call that may be bad.
 
 The system-level up-to-bad rule for systems lossless on an invariant is
 `UCCoupling.realizes_upto_bad_rel_inv` (`CatCryptCore.Crypto.Party.Relator`); the results here
@@ -529,6 +532,78 @@ theorem run_flagWhen_inst (O : σ → D → PMF (R × σ)) (bad : σ → D → R
     OracleAdv.run (@OracleAdv.flagWhen D R σ bad i O) A s =
       OracleAdv.run (@OracleAdv.flagWhen D R σ bad j O) A s := by
   rw [Subsingleton.elim i j]
+
+/-- **A bad flag along a potential.** Let every call either decrease the potential `Φ` by at
+least one and make a bad transition with probability at most `Ψ s * ε`, or make no bad transition
+and not increase `Φ`, and let every call increase `Ψ` by at most `c`. An adversary with at most
+`n` queries started at `s` with `Ψ s + c * n ≤ M` sets the flag with probability at most
+`Φ s * (M * ε)`. -/
+theorem run_flagWhen_le_potential (O : σ → D → PMF (R × σ))
+    (bad : σ → D → R × σ → Prop)
+    [∀ s d x, Decidable (bad s d x)] (Φ Ψ : σ → ℕ) (c M : ℕ) (ε : ℝ≥0∞)
+    (hΨ : ∀ s d, ∀ x ∈ (O s d).support, Ψ x.2 ≤ Ψ s + c)
+    (hstep : ∀ s d, ((∀ x ∈ (O s d).support, Φ x.2 + 1 ≤ Φ s) ∧
+        (O s d).toOuterMeasure {x | bad s d x} ≤ Ψ s * ε) ∨
+      ∀ x ∈ (O s d).support, ¬ bad s d x ∧ Φ x.2 ≤ Φ s)
+    (A : OracleAdv D R α) (n : ℕ) (hA : A.IsQueryBound n) (s : σ) (hs : Ψ s + c * n ≤ M) :
+    (run (flagWhen bad O) A (s, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      Φ s * (M * ε) := by
+  induction A generalizing s n with
+  | ret a => simp [PMF.toOuterMeasure_pure_apply]
+  | rand p k ih =>
+    rw [run_rand, PMF.toOuterMeasure_bind_apply]
+    calc _ ≤ ∑' b, p b * (Φ s * (M * ε)) :=
+          ENNReal.tsum_le_tsum fun b => by gcongr; exact ih b n (hA b) s hs
+      _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+  | query d k ih =>
+    cases n with
+    | zero => exact hA.elim
+    | succ n =>
+    rw [run_query, flagWhen, PMF.bind_map, PMF.toOuterMeasure_bind_apply]
+    have hIH : ∀ x ∈ (O s d).support,
+        (run (flagWhen bad O) (k x.1) (x.2, false)).toOuterMeasure {y | y.2.2 = true} ≤
+          Φ x.2 * (M * ε) := fun x hx =>
+      ih x.1 n (hA x.1) x.2 (by have := hΨ s d x hx; rw [Nat.mul_succ] at hs; omega)
+    have hΨs : (Ψ s : ℝ≥0∞) ≤ M := by exact_mod_cast (Nat.le_add_right _ _).trans hs
+    rcases hstep s d with ⟨hdec, hbad⟩ | hnone
+    · obtain ⟨x₀, hx₀⟩ := (O s d).support_nonempty
+      have hΦ : 1 ≤ Φ s := (Nat.le_add_left 1 _).trans (hdec x₀ hx₀)
+      calc _ ≤ ∑' x, O s d x *
+            ((if bad s d x then 1 else 0) + ((Φ s - 1 : ℕ) * (M * ε))) := by
+            refine ENNReal.tsum_le_tsum fun x => ?_
+            by_cases hx : x ∈ (O s d).support
+            · gcongr
+              by_cases hb : bad s d x
+              · simp only [Function.comp_apply, hb, decide_true, Bool.false_or, ite_true]
+                exact ((MeasureTheory.measure_mono (Set.subset_univ _)).trans_eq
+                  ((PMF.toOuterMeasure_apply_eq_one_iff _ _).mpr (Set.subset_univ _))).trans
+                  le_self_add
+              · simp only [Function.comp_apply, hb, decide_false, Bool.false_or, ite_false,
+                  zero_add]
+                refine (hIH x hx).trans ?_
+                gcongr
+                have := hdec x hx
+                exact_mod_cast (by omega : Φ x.2 ≤ Φ s - 1)
+            · simp [(PMF.apply_eq_zero_iff _ _).2 hx]
+        _ = (O s d).toOuterMeasure {x | bad s d x} + (Φ s - 1 : ℕ) * (M * ε) := by
+            simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul,
+              PMF.toOuterMeasure_eq_tsum_ite]
+        _ ≤ M * ε + (Φ s - 1 : ℕ) * (M * ε) := by gcongr; exact hbad.trans (by gcongr)
+        _ = Φ s * (M * ε) := by
+            obtain ⟨m, hm⟩ : ∃ m, Φ s = m + 1 := ⟨Φ s - 1, by omega⟩
+            rw [hm, Nat.add_sub_cancel]
+            push_cast
+            ring
+    · calc _ ≤ ∑' x, O s d x * (Φ s * (M * ε)) := by
+            refine ENNReal.tsum_le_tsum fun x => ?_
+            by_cases hx : x ∈ (O s d).support
+            · gcongr
+              simp only [Function.comp_apply, (hnone x hx).1, decide_false, Bool.false_or]
+              refine (hIH x hx).trans ?_
+              gcongr
+              exact_mod_cast (hnone x hx).2
+            · simp [(PMF.apply_eq_zero_iff _ _).2 hx]
+        _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
 end FlagMono
 

@@ -16,6 +16,7 @@ public import CatCryptCore.ForMathlib.PMFPi
 public import CatCryptCore.ForMathlib.PMFUniform
 public import CatCryptCore.ForMathlib.PMFUniformDefs
 public import CatCryptCore.ForMathlib.PMFOption
+public import CatCryptCore.ForMathlib.PMFOuterMeasure
 public import CatCryptCore.ForMathlib.ListLength
 public import CatCryptCore.ForMathlib.EmbeddingFinSucc
 

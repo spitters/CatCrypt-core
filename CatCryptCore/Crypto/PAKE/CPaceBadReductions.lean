@@ -22,8 +22,9 @@ terms, and obtains the realization of `F_lePAKE` by CPace with a concrete bound.
 
 ## A bad flag along a potential
 
-`OracleAdv.run_flagWhen_le_potential`: if every call either decreases a potential `Φ` and is bad
-with probability at most `Ψ s · ε`, or is not bad and does not increase `Φ`, and every call
+The collision bounds use `OracleAdv.run_flagWhen_le_potential`
+(`CatCryptCore.Crypto.OracleGameUpToBad`): if every call either decreases a potential `Φ` and is
+bad with probability at most `Ψ s · ε`, or is not bad and does not increase `Φ`, and every call
 increases `Ψ` by at most `c`, then an adversary with at most `n` queries sets the flag with
 probability at most `Φ s₀ · (Ψ s₀ + c n) · ε`.
 
@@ -75,90 +76,6 @@ open CatCrypt.Core CatCrypt.Prob
 open scoped ENNReal
 
 variable {D R α σ : Type}
-
-/-- The probability of an event under a distribution, as a sum of indicator weights. -/
-theorem toOuterMeasure_eq_tsum_ite (p : PMF σ) (P : σ → Prop) [DecidablePred P] :
-    p.toOuterMeasure {x | P x} = ∑' x, p x * (if P x then 1 else 0) := by
-  rw [PMF.toOuterMeasure_apply]
-  refine tsum_congr fun x => ?_
-  by_cases h : P x <;> simp [Set.indicator, h]
-
-/-- **A bad flag along a potential.** Let every call either decrease the potential `Φ` by at
-least one and make a bad transition with probability at most `Ψ s * ε`, or make no bad transition
-and not increase `Φ`, and let every call increase `Ψ` by at most `c`. An adversary with at most
-`n` queries started at `s` with `Ψ s + c * n ≤ M` sets the flag with probability at most
-`Φ s * (M * ε)`. -/
-theorem run_flagWhen_le_potential (O : σ → D → PMF (R × σ))
-    (bad : σ → D → R × σ → Prop)
-    [∀ s d x, Decidable (bad s d x)] (Φ Ψ : σ → ℕ) (c M : ℕ) (ε : ℝ≥0∞)
-    (hΨ : ∀ s d, ∀ x ∈ (O s d).support, Ψ x.2 ≤ Ψ s + c)
-    (hstep : ∀ s d, ((∀ x ∈ (O s d).support, Φ x.2 + 1 ≤ Φ s) ∧
-        (O s d).toOuterMeasure {x | bad s d x} ≤ Ψ s * ε) ∨
-      ∀ x ∈ (O s d).support, ¬ bad s d x ∧ Φ x.2 ≤ Φ s)
-    (A : OracleAdv D R α) (n : ℕ) (hA : A.IsQueryBound n) (s : σ) (hs : Ψ s + c * n ≤ M) :
-    (run (flagWhen bad O) A (s, false)).toOuterMeasure {y | y.2.2 = true} ≤
-      Φ s * (M * ε) := by
-  induction A generalizing s n with
-  | ret a => simp [PMF.toOuterMeasure_pure_apply]
-  | rand p k ih =>
-    rw [run_rand, PMF.toOuterMeasure_bind_apply]
-    calc _ ≤ ∑' b, p b * (Φ s * (M * ε)) :=
-          ENNReal.tsum_le_tsum fun b => by gcongr; exact ih b n (hA b) s hs
-      _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
-  | query d k ih =>
-    cases n with
-    | zero => exact hA.elim
-    | succ n =>
-    rw [run_query, flagWhen, PMF.bind_map, PMF.toOuterMeasure_bind_apply]
-    have hIH : ∀ x ∈ (O s d).support,
-        (run (flagWhen bad O) (k x.1) (x.2, false)).toOuterMeasure {y | y.2.2 = true} ≤
-          Φ x.2 * (M * ε) := fun x hx =>
-      ih x.1 n (hA x.1) x.2 (by have := hΨ s d x hx; rw [Nat.mul_succ] at hs; omega)
-    have hΨs : (Ψ s : ℝ≥0∞) ≤ M := by exact_mod_cast (Nat.le_add_right _ _).trans hs
-    rcases hstep s d with ⟨hdec, hbad⟩ | hnone
-    · obtain ⟨x₀, hx₀⟩ := (O s d).support_nonempty
-      have hΦ : 1 ≤ Φ s := (Nat.le_add_left 1 _).trans (hdec x₀ hx₀)
-      calc _ ≤ ∑' x, O s d x *
-            ((if bad s d x then 1 else 0) + ((Φ s - 1 : ℕ) * (M * ε))) := by
-            refine ENNReal.tsum_le_tsum fun x => ?_
-            by_cases hx : x ∈ (O s d).support
-            · gcongr
-              by_cases hb : bad s d x
-              · simp only [Function.comp_apply, hb, decide_true, Bool.false_or, ite_true]
-                exact ((MeasureTheory.measure_mono (Set.subset_univ _)).trans_eq
-                  ((PMF.toOuterMeasure_apply_eq_one_iff _ _).mpr (Set.subset_univ _))).trans
-                  le_self_add
-              · simp only [Function.comp_apply, hb, decide_false, Bool.false_or, ite_false,
-                  zero_add]
-                refine (hIH x hx).trans ?_
-                gcongr
-                have := hdec x hx
-                exact_mod_cast (by omega : Φ x.2 ≤ Φ s - 1)
-            · simp [(PMF.apply_eq_zero_iff _ _).2 hx]
-        _ = (O s d).toOuterMeasure {x | bad s d x} + (Φ s - 1 : ℕ) * (M * ε) := by
-            simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul,
-              toOuterMeasure_eq_tsum_ite]
-        _ ≤ M * ε + (Φ s - 1 : ℕ) * (M * ε) := by gcongr; exact hbad.trans (by gcongr)
-        _ = Φ s * (M * ε) := by
-            obtain ⟨m, hm⟩ : ∃ m, Φ s = m + 1 := ⟨Φ s - 1, by omega⟩
-            rw [hm, Nat.add_sub_cancel]
-            push_cast
-            ring
-    · calc _ ≤ ∑' x, O s d x * (Φ s * (M * ε)) := by
-            refine ENNReal.tsum_le_tsum fun x => ?_
-            by_cases hx : x ∈ (O s d).support
-            · gcongr
-              simp only [Function.comp_apply, (hnone x hx).1, decide_false, Bool.false_or]
-              refine (hIH x hx).trans ?_
-              gcongr
-              exact_mod_cast (hnone x hx).2
-            · simp [(PMF.apply_eq_zero_iff _ _).2 hx]
-        _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
-
-/-- The probability of an event under the image of a distribution. -/
-theorem toOuterMeasure_eq_of_map_eq {β γ : Type} {p : PMF β} {q : PMF γ} {f : β → γ}
-    (h : p.map f = q) (A : Set γ) : p.toOuterMeasure (f ⁻¹' A) = q.toOuterMeasure A := by
-  rw [← h, PMF.toOuterMeasure_map_apply]
 
 /-- A map of the inner oracle state that commutes with the inner oracle commutes with the
 composite oracle of a simulator. -/
@@ -1705,8 +1622,8 @@ theorem dm_ideal_le_eager (x : S) (hx : x ≠ 0) (td : Pw → Sˣ)
   have hinit : reconW (fun _ u => x * u) td (hInit G (S := S) (W := W) (Pw := Pw) (K := K)) =
       setTd td (hInit G) := rfl
   rw [hinit] at hT
-  have e1 := OracleAdv.toOuterMeasure_eq_of_map_eq hT {y | DMc G td y.2.1}
-  have e2 := OracleAdv.toOuterMeasure_eq_of_map_eq
+  have e1 := PMF.toOuterMeasure_eq_of_map_eq hT {y | DMc G td y.2.1}
+  have e2 := PMF.toOuterMeasure_eq_of_map_eq
     (run_dm_proj G x td (msgDM G (G.pub x)) B (hInit G) [])
     ((Prod.map id fun y => reconW (fun _ u => x * u) td y.1) ⁻¹' {y | DMc G td y.2.1})
   rw [← e1, ← e2, run_dmAdv, PMF.map_comp, ← PMF.toOuterMeasure_apply_singleton,
@@ -2219,7 +2136,7 @@ theorem ps_ideal_le (a b : S) (td : Pw → Sˣ)
   have hinit : reconW (zPS a b) td (hInit G (S := S) (W := W) (Pw := Pw) (K := K)) =
       setTd td (hInit G) := rfl
   rw [hinit] at hT
-  have e1 := OracleAdv.toOuterMeasure_eq_of_map_eq hT {y | PSst G td y.2 ∧ ZsInv y.2.1.1}
+  have e1 := PMF.toOuterMeasure_eq_of_map_eq hT {y | PSst G td y.2 ∧ ZsInv y.2.1.1}
   rw [← e1, psOracle_eq, OracleAdv.run_simulate, PMF.map_comp,
     ← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
   refine PMF.toOuterMeasure_mono _ fun z hz => ?_
@@ -2696,7 +2613,7 @@ theorem uqp_avg_le (pw₀ : Pw) (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : 
           ENNReal.tsum_le_tsum fun r => by gcongr; exact hstep r
       _ = ∑' y, (OracleAdv.run O₂ B (hInit G)) y * (PMF.uniformFintype Sˣ).toOuterMeasure
           {r | Mt G (Function.update g pw₀ r) pw₀ y.2.1 ∧ ZsInv y.2.1.1} := by
-          simp only [OracleAdv.toOuterMeasure_eq_tsum_ite, ← ENNReal.tsum_mul_left]
+          simp only [PMF.toOuterMeasure_eq_tsum_ite, ← ENNReal.tsum_mul_left]
           rw [ENNReal.tsum_comm]
           refine tsum_congr fun y => tsum_congr fun r => ?_
           ring
