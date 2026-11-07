@@ -85,6 +85,8 @@ mention no particular scheme: a scheme that simulates `acdSM` inherits every bou
   relabelled
 * `smCorruptGame_acd`, `smAdaptiveGame_acd`, `acdSM_corruptAdvantage_eq`,
   `acdSM_adaptiveAdvantage_eq` — the games of `acdSM` are those of `SMCorrupt`
+* `acdSM_corruptAdvantage_le`, `acdSM_adaptiveAdvantage_le` — the bounds of
+  `sm_corrupt_advantage_le` and `sm_adaptive_corrupt_advantage_le` for `acdSM`
 * `smCorruptGame_sim`, `smAdaptiveGame_sim`, `SMScheme.Sim.corruptAdvantage_eq`,
   `SMScheme.Sim.adaptiveAdvantage_eq` — the transfer along a simulation
 * `dhCKAOf_correct`, `dhCKAOfCoins_sound`, `dhCKAOf_init_eq` — the Diffie–Hellman CKA over a
