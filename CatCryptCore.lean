@@ -614,6 +614,7 @@ public import CatCryptCore.Crypto.Party.SyntacticCategory
 public import CatCryptCore.Crypto.Party.StoreHybrid
 public import CatCryptCore.Crypto.Party.SecretStateHybrid
 public import CatCryptCore.Crypto.Party.LoopTimed
+public import CatCryptCore.Container.Amortized
 public import CatCryptCore.Container.ExpectedDN
 public import CatCryptCore.Container.WTypes
 public import CatCryptCore.Container.Code

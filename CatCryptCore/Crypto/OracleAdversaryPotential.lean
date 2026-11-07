@@ -5,6 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
+public import CatCryptCore.Container.Amortized
 public import CatCryptCore.Tactics.DeriveTimed
 
 /-!
@@ -29,13 +30,24 @@ most
 (`timeBound_simulateHat_potential`). The bound is quadratic in the query count `q` when `b` and
 `g` are positive.
 
-It is the instance of `timeBound_simulateHat_inv` (the time of a costed simulation under a state
-invariant indexed by the query count, `T + ∑_{j < q} t (i + j)`) at the invariant that the
-potential after `j` queries is at most `Φ s₀ + j * g` and the per-query time
-`t j = a + b * (Φ s₀ + j * g)`; each of the `q` terms is at most the last one. The general form
-`timeBound_simulateHat_potLe` reads the potential through a predicate `Pot n s`, "the potential
-of `s` is at most `n`", so that a potential that is a bound on a family (a cost companion
-`D → ℕ`, bounded at every point) or that holds under an invariant needs no supremum.
+The general form is the amortized bound `timeBound_simulateHat_amortized`, read in the
+Diller–Nahm category over a state object (`CatCryptCore/Container/Amortized.lean`). The handler
+is simulated by the potential step `Container.Clocked.potStep C g`, the morphism on the object of
+potentials whose backward map demands `C n` clock ticks for a data token at potential `n` and
+whose forward map is `n ↦ n + g`: a step from a state of potential at most `n` takes time at most
+`C n` and reaches states of potential at most `n + g`. The time of the simulation is `T` plus the
+cost at `n₀` of the `q`-fold composite of the potential step, `∑_{j < q} C (n₀ + j * g)`
+(`Container.Clocked.iter_potStep_cost`). It is the instance of `timeBound_simulateHat_inv` (the
+time of a costed simulation under a state invariant indexed by the query count,
+`T + ∑_{j < q} t (i + j)`) at the invariant that the potential after `j` queries is at most
+`n₀ + j * g`. It reads the potential through a predicate `Pot n s`, "the potential of `s` is at
+most `n`", so that a potential that is a bound on a family (a cost companion `D → ℕ`, bounded at
+every point) or that holds under an invariant needs no supremum.
+
+`timeBound_simulateHat_potLe` is its instance at the affine demand `C n = a + b * n`, whose `q`
+demands are each at most the last one (`Container.Clocked.iter_potStep_cost_le`);
+`timeBound_simulateHat_potential` and `timeBound_simulateHat_table` are instances of that, and so
+is the simulation rule of `derive_time_bound`, which applies `timeBound_simulateHat_potLe`.
 
 ## The costed table
 
@@ -65,8 +77,10 @@ facts with the companion read at the query in place of its bound `M`.
 
 ## Main results
 
-* `OracleAdv.Timed.timeBound_simulateHat_potLe` — the potential corollary, with the potential
-  bounded by a predicate
+* `OracleAdv.Timed.timeBound_simulateHat_amortized` — the amortized bound: the handler simulated
+  by the potential step of the Diller–Nahm category
+* `OracleAdv.Timed.timeBound_simulateHat_potLe` — its instance at an affine cost, with the
+  potential bounded by a predicate
 * `OracleAdv.Timed.timeBound_simulateHat_potential` — the potential corollary for a potential
   `Φ : Ŝ → ℕ`
 * `OracleAdv.Timed.timeBound_simulateHat_table` — the instance for a costed table: the potential
@@ -85,8 +99,34 @@ namespace CatCrypt.Crypto.OracleAdv.Timed
 
 variable {D R α : Type}
 
-/-- **Potential time bound of a costed simulation**, with the potential bounded by a predicate.
-Let `Pot n s` state that the costed state `s` has potential at most `n`; let every program of
+/-- **Amortized time bound of a costed simulation**, the general form. Let `Pot n s` state that
+the costed state `s` has potential at most `n`, and let the handler be simulated by the potential
+step `Container.Clocked.potStep C g` of the Diller–Nahm category, whose demand at a state of
+potential `n` is `C n` clock ticks: every program of `impl` from a state of potential at most `n`
+has time at most `C n` and returns states of potential at most `n + g`. Then an adversary of time
+`T` with at most `q` queries, simulated from a state of potential at most `n₀`, has time at most
+`T` plus the cost at `n₀` of the `q`-fold composite of the potential step. -/
+theorem timeBound_simulateHat_amortized {D' R' S Ŝ : Type} (ε : Ŝ → S) (ι : S → Ŝ)
+    (impl : Ŝ → D → ℕ × Timed D' R' (R × Ŝ)) (Pot : ℕ → Ŝ → Prop) (C : ℕ → ℕ) (g : ℕ)
+    (himpl : ∀ n s d, Pot n s →
+      StepTimeBound (impl s d) (C n) ∧ AllRet (fun y => Pot (n + g) y.2) (impl s d).2)
+    {A : Timed D R α} {T q : ℕ} (hA : A.TimeBound T) (hq : A.erase.IsQueryBound q)
+    {n₀ : ℕ} {s₀ : Ŝ} (hs₀ : Pot n₀ s₀) :
+    StepTimeBound (simulateHat ε ι impl A s₀)
+      (T + ((Container.Clocked.potStep C g).iter q).cost n₀) := by
+  have h := timeBound_simulateHat_inv ε ι impl (fun i s => Pot (n₀ + i * g) s)
+    (fun i => C (n₀ + i * g))
+    (fun i s d hs => by
+      refine ⟨(himpl _ s d hs).1, ?_⟩
+      have h2 := (himpl _ s d hs).2
+      rwa [show n₀ + i * g + g = n₀ + (i + 1) * g by ring] at h2)
+    hA hq 0 s₀ (by simpa using hs₀)
+  rw [Container.Clocked.iter_potStep_cost]
+  simpa using h
+
+/-- **Potential time bound of a costed simulation**, with the potential bounded by a predicate:
+the amortized bound at the affine cost `a + b * n` of a step from a state of potential at most
+`n`. Let `Pot n s` state that the costed state `s` has potential at most `n`; let every program of
 `impl` from a state of potential at most `n` have time at most `a + b * n` and return states of
 potential at most `n + g`. Then an adversary of time `T` with at most `q` queries, simulated
 from a state of potential at most `n₀`, has time at most `T + q * (a + b * (n₀ + q * g))`. -/
@@ -96,21 +136,10 @@ theorem timeBound_simulateHat_potLe {D' R' S Ŝ : Type} (ε : Ŝ → S) (ι : S 
       StepTimeBound (impl s d) (a + b * n) ∧ AllRet (fun y => Pot (n + g) y.2) (impl s d).2)
     {A : Timed D R α} {T q : ℕ} (hA : A.TimeBound T) (hq : A.erase.IsQueryBound q)
     {n₀ : ℕ} {s₀ : Ŝ} (hs₀ : Pot n₀ s₀) :
-    StepTimeBound (simulateHat ε ι impl A s₀) (T + q * (a + b * (n₀ + q * g))) := by
-  have h := timeBound_simulateHat_inv ε ι impl (fun i s => Pot (n₀ + i * g) s)
-    (fun i => a + b * (n₀ + i * g))
-    (fun i s d hs => by
-      refine ⟨(himpl _ s d hs).1, ?_⟩
-      have h2 := (himpl _ s d hs).2
-      rwa [show n₀ + i * g + g = n₀ + (i + 1) * g by ring] at h2)
-    hA hq 0 s₀ (by simpa using hs₀)
-  refine h.mono (Nat.add_le_add_left ?_ T)
-  calc ∑ j ∈ Finset.range q, (a + b * (n₀ + (0 + j) * g))
-      ≤ ∑ _j ∈ Finset.range q, (a + b * (n₀ + q * g)) := Finset.sum_le_sum fun j hj => by
-        have hjq : 0 + j ≤ q := by have := Finset.mem_range.1 hj; omega
-        exact Nat.add_le_add_left (Nat.mul_le_mul_left _
-          (Nat.add_le_add_left (Nat.mul_le_mul_right _ hjq) _)) _
-    _ = q * (a + b * (n₀ + q * g)) := by simp
+    StepTimeBound (simulateHat ε ι impl A s₀) (T + q * (a + b * (n₀ + q * g))) :=
+  (timeBound_simulateHat_amortized ε ι impl Pot (fun n => a + b * n) g himpl hA hq hs₀).mono
+    (Nat.add_le_add_left (Container.Clocked.iter_potStep_cost_le
+      (fun _ _ h => Nat.add_le_add_left (Nat.mul_le_mul_left _ h) _) g q n₀) T)
 
 /-- **Potential time bound of a costed simulation.** Let `Φ` be a potential on the costed
 states: every program of `impl` from a state `s` has time at most `a + b * Φ s` and returns
