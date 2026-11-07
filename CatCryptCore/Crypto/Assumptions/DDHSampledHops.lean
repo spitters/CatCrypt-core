@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Assumptions.DDHSampled
+public import CatCryptCore.Tactics.BindSwap
 
 /-!
 # DDH hops with the replaced value drawn by key generation
@@ -69,7 +70,7 @@ theorem ddhK_hop₀ (D : DDHDef W) {α : Type} (k : W → W → W → SPComp α)
       DDH_AdvantageK D (ddhRed₀ k A) := by
   unfold AdvantageA DDH_AdvantageK DDH_Game_Real DDH_Game_IdealK DDH_ViewIdealK ddhRed₀
   simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
-  congr 1 <;> rw [SPComp.isPure_bind_comm_left D.keygen D.keygen _ D.keygen_isPure]
+  congr 1 <;> bind_swap_nf [D.keygen_isPure]
 
 /-- **DH hop, the replaced value drawn by key generation**: the DH value `dh a.1 b.2` of the
 key pairs `b` and `a`, generated after the prefix `pre` and around the middle `mid`, replaced
@@ -87,22 +88,6 @@ theorem ddhK_hop (D : DDHDef W) {P Q α : Type} (pre : SPComp P)
       DDH_AdvantageK D (ddhRed pre mid k A) := by
   unfold AdvantageA DDH_AdvantageK DDH_Game_Real DDH_Game_IdealK DDH_ViewIdealK ddhRed
   simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
-  have hk := D.keygen_isPure
-  congr 1
-  · rw [SPComp.isPure_bind_comm_left D.keygen D.keygen _ hk]
-    conv_rhs => arg 2; ext b; rw [SPComp.isPure_bind_comm_left D.keygen pre _ hk]
-    conv_rhs =>
-      arg 2; ext b; arg 2; ext p; rw [SPComp.isPure_bind_comm_left D.keygen (mid p b.2) _ hk]
-    rw [SPComp.isPure_bind_comm_left D.keygen pre _ hk]
-  · rw [SPComp.isPure_bind_comm_left D.keygen D.keygen _ hk]
-    conv_rhs =>
-      arg 2; ext b; arg 2; ext a; rw [SPComp.isPure_bind_comm_left D.keygen pre _ hk]
-    conv_rhs =>
-      arg 2; ext b; arg 2; ext a; arg 2; ext p
-      rw [SPComp.isPure_bind_comm_left D.keygen (mid p b.2) _ hk]
-    conv_rhs => arg 2; ext b; rw [SPComp.isPure_bind_comm_left D.keygen pre _ hk]
-    conv_rhs =>
-      arg 2; ext b; arg 2; ext p; rw [SPComp.isPure_bind_comm_left D.keygen (mid p b.2) _ hk]
-    rw [SPComp.isPure_bind_comm_left D.keygen pre _ hk]
+  congr 1 <;> bind_swap_nf [D.keygen_isPure]
 
 end CatCrypt.Crypto.Assumptions

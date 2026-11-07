@@ -21,7 +21,7 @@ between `encReal c.μ` and `encIdeal c.μ` is the advantage of `encodedRed encPa
 
 ## Main results
 
-* `maskGame_realizes` — `Realizes (encReal μ) (encIdeal μ) (maskGame n) μ encPair`
+* `maskGame_realizes` — `SampledRealizes (encReal μ) (encIdeal μ) (maskGame n) μ encPair`
 * `encMask_advantage_le` — `AdvantageA (encReal c.μ) (encIdeal c.μ) A ≤
   (maskGame n).advAt c.ν (encodedRed encPair A) + 4 * c.δ`
 -/
@@ -70,7 +70,7 @@ noncomputable def encIdeal (μ : SDistr (ZMod n)) : SPComp (Residue n × Residue
 
 /-- The encoded games are the image of `maskGame n` at `μ` under `encPair`. -/
 theorem maskGame_realizes (μ : SDistr (ZMod n)) :
-    Realizes (encReal μ) (encIdeal μ) (maskGame n) μ encPair where
+    SampledRealizes (encReal μ) (encIdeal μ) (maskGame n) μ encPair where
   real := by
     simp only [encReal, SampledGame.realAt, maskGame, sampleFrom_replicateFin_succ_bind,
       sampleFrom_replicateFin_zero_bind, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]

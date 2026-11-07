@@ -221,7 +221,7 @@ theorem sample_bool_bind_const {β : Type} (k : SPComp β) :
 real view and the view with the ideal value drawn by key generation are the DDH games of
 `G25519 B` with exponents drawn from `signedClamp`, encoded by `encU3`. -/
 theorem ddhSampled_realizes_X25519 (h : X25519Hom B) :
-    Realizes (DDH_ViewReal concreteDDH_X25519) (DDH_ViewIdealK concreteDDH_X25519)
+    SampledRealizes (DDH_ViewReal concreteDDH_X25519) (DDH_ViewIdealK concreteDDH_X25519)
       (ddhSampled (G25519 B)) signedClamp encU3 where
   real := by
     simp only [DDH_ViewReal, SampledGame.realAt, ddhSampled, sampleFrom_replicateFin_succ_bind,

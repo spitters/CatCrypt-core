@@ -27,7 +27,7 @@ decodes the answer of the adversary by a left inverse `decS` of `encS`.
 
 * `SampledGame`, `SampledGame.realAt`, `SampledGame.idealAt`, `SampledGame.advAt`
 * `SampledGame.map`, `encodedRed` — the encoded game and the reduction to the unencoded one
-* `Realizes P Q G μ enc` — the pair `P`, `Q` is the encoded game `G` at the sampler `μ`
+* `SampledRealizes P Q G μ enc` — the pair `P`, `Q` is the encoded game `G` at the sampler `μ`
 * `SearchGame`, `SearchGame.winAt`, `SearchGame.map`, `searchRed`
 
 ## Main results
@@ -37,8 +37,8 @@ decodes the answer of the adversary by a left inverse `decS` of `encS`.
 * `sampleFrom_uniform_map_bind`, `sampleFrom_replicateFin_uniform_map_bind` — draws from the
   image of the uniform sampler on `S` under `f` are uniform draws from `S` followed by `f`
 * `SampledGame.advAt_map` — `(G.map enc).advAt μ A = G.advAt μ (encodedRed enc A)`
-* `Realizes.advantageA_eq` — the advantage of `A` between a realized pair is the advantage of
-  `encodedRed enc A` against the game
+* `SampledRealizes.advantageA_eq` — the advantage of `A` between a realized pair is the
+  advantage of `encodedRed enc A` against the game
 * `SearchGame.winAt_map_le` — the winning probability against the encoded search game is at
   most the winning probability of `searchRed encV decS A` against the search game
 -/
@@ -167,7 +167,7 @@ theorem advAt_map (enc : V → W) (G : SampledGame X V) (μ : SDistr X)
 end SampledGame
 
 /-- A game pair is the image of `G` at the sampler `μ` under `enc`. -/
-structure Realizes {X V W : Type} (P Q : SPComp W) (G : SampledGame X V) (μ : SDistr X)
+structure SampledRealizes {X V W : Type} (P Q : SPComp W) (G : SampledGame X V) (μ : SDistr X)
     (enc : V → W) : Prop where
   /-- The first game is the encoded real game. -/
   real : P = (G.realAt μ).map enc
@@ -176,8 +176,8 @@ structure Realizes {X V W : Type} (P Q : SPComp W) (G : SampledGame X V) (μ : S
 
 /-- The advantage of `A` between a realized pair is the advantage of `encodedRed enc A`
 against the game at the sampler. -/
-theorem Realizes.advantageA_eq {X V W : Type} {P Q : SPComp W} {G : SampledGame X V}
-    {μ : SDistr X} {enc : V → W} (h : Realizes P Q G μ enc) (A : W → SPComp Bool) :
+theorem SampledRealizes.advantageA_eq {X V W : Type} {P Q : SPComp W} {G : SampledGame X V}
+    {μ : SDistr X} {enc : V → W} (h : SampledRealizes P Q G μ enc) (A : W → SPComp Bool) :
     AdvantageA P Q A = G.advAt μ (encodedRed enc A) := by
   rw [h.real, h.ideal, advantageA_map]
   rfl

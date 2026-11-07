@@ -89,7 +89,7 @@ exponent sampler, `sm_extracted_advantage_le` bounds the advantage by the bound 
   `smCts` over the root chain of the Diffie–Hellman CKA keys
 * `smSampled_realAt_uniform`, `smSampled_idealAt` — the games of `smSampled` at the uniform
   sampler are `sm_real (dhCKA G)` and `sm_ideal (dhCKA G)`
-* `sm_extracted_realizes` — `Realizes (sm_extracted …) ((sm_ideal (dhCKA G) msgs).map
+* `sm_extracted_realizes` — `SampledRealizes (sm_extracted …) ((sm_ideal (dhCKA G) msgs).map
   (encView encG encC)) (smSampled R F D msgs) μ (encView encG encC)` at the image `μ` of the
   uniform sampler on `Sk` under `decE`
 * `sm_extracted_eq` — at a uniform image,
@@ -535,7 +535,7 @@ the image of the uniform sampler on `Sk` under `decE`, with views encoded by
 `encView encG encC`. -/
 theorem sm_extracted_realizes (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC)
     (msgs : List (List (W × W))) :
-    Realizes (sm_extracted RK G ptLen encR encG encSk decE encW msgs)
+    SampledRealizes (sm_extracted RK G ptLen encR encG encSk decE encW msgs)
       ((sm_ideal (dhCKA G) msgs).map (encView encG encC)) (smSampled R F D msgs)
       ((SDistr.uniform Sk).bind fun s => SDistr.pure (decE s)) (encView encG encC) where
   real := by

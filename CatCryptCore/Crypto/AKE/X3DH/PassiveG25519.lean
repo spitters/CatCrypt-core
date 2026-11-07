@@ -82,7 +82,7 @@ public parts of four key pairs of `concreteDDH_X25519` and the uniform key are t
 theorem kdfSampled_realizes_X25519 (h : X25519Hom B)
     (kdf : Vector UInt8 32 → Vector UInt8 32 → Vector UInt8 32 → Vector UInt8 32 →
       Vector UInt8 32) :
-    Realizes (KDF_Random_RealK ⟨concreteDDH_X25519, kdf⟩) KDF_Random_Ideal
+    SampledRealizes (KDF_Random_RealK ⟨concreteDDH_X25519, kdf⟩) KDF_Random_Ideal
       (kdfSampled B kdf) signedClamp id where
   real := by
     have h2 : ∀ x y z w : ZMod curve25519SubgroupOrder,
