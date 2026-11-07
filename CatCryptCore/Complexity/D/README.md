@@ -190,6 +190,29 @@ components (`tabCost`, `tabCost_add`); the soundness theorem `Tm.dtC_timedSim` c
 constructs (`tabDep_stepN` for the table), and with it `Tm.cost_le_dt`, `Tm.dt_run` and
 `Tm.dt_erase`. Test: `CatCryptCoreTest/Complexity/D/PiSigTest.lean`.
 
+## Indexed inductive families
+
+`Ty.imu f S i` is the inductive family over a finite ground index `f` of the indexed signatures
+`S : f.den → ISig f`, at the index `i`: a further constructor of an indexed signature names, at
+each recursive position, the index of the child there. Its values are the indexed W-type `IW` of
+the constructors with their fields. The index ranges over `f.den`, a type defined before `Ty`: an
+index over the values of a type of D would make `Ty` and `Val` an inductive-recursive pair. A
+static index needs no family: a type computed by recursion on a parameter is a code of D.
+
+* `icon`: the node at its index, its children a table whose component at a position is at the
+  index that position names; free.
+* `ifold`: the eliminator at a motive family `c : f.den → Ty`, from a value at `i` to `c i`, the
+  step functions a table over the indices; a step receives the field, the table of the children
+  and the table of the recursive results, closures on `unit` at the types of the motive at the
+  indices of the children; one step per node visited plus the step there, as `fold`.
+
+`ValRel` and `Sim` at `imu` are the lifting `IWLift` over the indexed W-type and
+`Ty.hat (imu f S i)` the indexed W-type of the translated fields; the charges of `Tm.dt` price
+`icon` at nothing (`conHatI`) and `ifold` as `fold` (`foldHatI`), and the soundness theorem
+`Tm.dtC_timedSim` covers both (`conAtI_sim`, `foldIW_sim`). Test:
+`CatCryptCoreTest/Complexity/D/IMuTest.lean` (binary trees of bounded depth, an eliminator at a
+constant motive and one into a motive family whose type changes with the depth).
+
 ## Inductive types
 
 `Ty.mu S` is the polynomial inductive type of a signature `S : Sig`: a list of constructors,

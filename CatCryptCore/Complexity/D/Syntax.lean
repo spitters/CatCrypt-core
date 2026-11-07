@@ -59,6 +59,24 @@ translation relate two nodes of one constructor by their fields and their childr
   positions. A case
   analysis on a value of `mu S` is the `fold` whose steps do not apply the recursive results.
 
+## Indexed inductive families
+
+`imu f S i` is the inductive family over a finite ground index `f` of the signatures
+`S : f.den → ISig f`, at the index `i`. An indexed signature `ISig f` is a signature whose
+further constructors name, at each recursive position `p`, the index `nx p` of the child there,
+so that a constructor at one index takes children at others (a strategy of a round with
+continuations at the next round, a tree whose depth bound decreases). The index ranges over
+`f.den`, defined before `Ty`, as the index of `pi` and `sig` does; an index over the values of a
+type of D would make `Ty` and `Val` inductive-recursive. The values are the indexed W-type `IW`
+of the constructors with their fields, each child at the index of its position.
+
+* `icon x`: the node at the index `i` of the constructor of `S i` that `x` selects, its children
+  a table whose component at `p` is at the index `nx p`.
+* `ifold g x`: the eliminator at a motive family `c : f.den → Ty`, from a value at `i` to `c i`;
+  `g` is a table over the indices of the step functions of each signature, a step at a node
+  receiving the field, the table of the children and the table of the recursive results, each a
+  closure on `unit` of type `c` at the index of the child, evaluated where the step applies it.
+
 ## Dependent products and sums
 
 `pi f B` and `sig f B` are the dependent product and sum of a family `B : f.den → Ty` of types
@@ -118,6 +136,10 @@ row G3d):
 * `Sig`, `RecPos`, `Sig.Ctor`, `Sig.Pos`, `Sig.Fld`, `Sig.den`, `Val.default`: signatures of
   inductive types, their recursive positions, their constructors with their positions and
   fields, shapes and positions, and an inhabitant of every type.
+* `ISig`, `ISig.Ctor`, `ISig.Pos`, `ISig.nx`, `ISig.Fld`, `IW`: signatures of indexed families,
+  their constructors, positions, child indices and fields, and indexed W-types.
+* `ISig.conTy`, `ISig.stepsTy`: the argument type of the constructors and the type of the step
+  functions of an eliminator of an indexed family.
 * `Sig.conTy`, `Sig.stepsTy`: the argument type of the constructors and the type of the step
   functions of an eliminator.
 * `Var`, `Env`: variables and environments.
@@ -135,6 +157,17 @@ set_option autoImplicit false
 namespace CatCrypt.Complexity.D
 
 /-! ## Types and values -/
+
+/-- The recursive positions of a constructor: none, or the elements of a finite ground type. -/
+def RecPos : Option FTy → Type
+  | none => Empty
+  | some f => f.den
+
+/-- Indexed W-types: at the index `i`, a shape `a : A i` and, at each position `b : B i a`, a child
+at the index `nx i a b`. -/
+inductive IW {I : Type} (A : I → Type) (B : (i : I) → A i → Type)
+    (nx : (i : I) → (a : A i) → B i a → I) : I → Type where
+  | mk (i : I) (a : A i) (k : (b : B i a) → IW A B nx (nx i a b)) : IW A B nx i
 
 mutual
 
@@ -161,6 +194,10 @@ inductive Ty : Type where
   /-- Dependent sums over a finite ground index: an element `j` of `f` and a value of type
   `B j`. -/
   | sig (f : FTy) (B : f.den → Ty)
+  /-- The inductive family over the finite ground index `f` of the signatures `S`, at the index
+  `i`: a value at `i` is a constructor of `S i` with its field and a child at the index that
+  each of its positions names. -/
+  | imu (f : FTy) (S : f.den → ISig f) (i : f.den)
 
 /-- Signatures of polynomial inductive types: a list of constructors, the first of which has no
 recursive position (so that the type is inhabited), each with a field type and the recursive
@@ -171,6 +208,15 @@ inductive Sig : Type where
   | base (a : Ty)
   /-- A further constructor, with the field type `a` and the recursive positions `k`. -/
   | ext (S : Sig) (a : Ty) (k : Option FTy)
+
+/-- Signatures of inductive families over a finite ground index `f`: as `Sig`, a further
+constructor naming the index `nx p` of its child at each position `p`. -/
+inductive ISig : FTy → Type where
+  /-- The first constructor, with the field type `a` and no recursive position. -/
+  | base {f : FTy} (a : Ty) : ISig f
+  /-- A further constructor, with the field type `a`, the recursive positions `k` and the index
+  of the child at each position. -/
+  | ext {f : FTy} (S : ISig f) (a : Ty) (k : Option FTy) (nx : RecPos k → f.den) : ISig f
 
 end
 
@@ -200,18 +246,19 @@ def Ty.FO : Ty → Prop
   | .mu S => S.FO
   | .pi _ B => ∀ j, (B j).FO
   | .sig _ B => ∀ j, (B j).FO
+  | .imu _ S _ => ∀ j, (S j).FO
 
 /-- First-order signatures: every field type is first-order. -/
 def Sig.FO : Sig → Prop
   | .base a => a.FO
   | .ext S a _ => S.FO ∧ a.FO
 
-end
+/-- First-order indexed signatures: every field type is first-order. -/
+def ISig.FO {f : FTy} : ISig f → Prop
+  | .base a => a.FO
+  | .ext S a _ _ => S.FO ∧ a.FO
 
-/-- The recursive positions of a constructor: none, or the elements of a finite ground type. -/
-def RecPos : Option FTy → Type
-  | none => Empty
-  | some f => f.den
+end
 
 /-- The constructors of a signature: those of the prefix, and the last one. -/
 def Sig.Ctor : Sig → Type
@@ -224,6 +271,23 @@ def Sig.Pos : (S : Sig) → S.Ctor → Type
   | .base _, _ => Empty
   | .ext S _ _, .inl c => Sig.Pos S c
   | .ext _ _ k, .inr _ => RecPos k
+
+/-- The constructors of an indexed signature. -/
+def ISig.Ctor {f : FTy} : ISig f → Type
+  | .base _ => Unit
+  | .ext S _ _ _ => ISig.Ctor S ⊕ Unit
+
+/-- The recursive positions of a constructor of an indexed signature. -/
+def ISig.Pos {f : FTy} : (S : ISig f) → S.Ctor → Type
+  | .base _ => fun _ => Empty
+  | .ext S _ k _ => Sum.elim (ISig.Pos S) fun _ => RecPos k
+
+/-- The index of the child at a position of a constructor of an indexed signature. -/
+def ISig.nx {f : FTy} : (S : ISig f) → (c : S.Ctor) → S.Pos c → f.den
+  | .base _ => fun _ p => Empty.elim p
+  | .ext S _ k nx => fun c => match c with
+    | .inl c => ISig.nx S c
+    | .inr _ => fun (p : RecPos k) => nx p
 
 mutual
 
@@ -241,12 +305,19 @@ def Val : Ty → Type
   | .mu S => WType (fun s : (c : S.Ctor) × Sig.Fld S c => S.Pos s.1)
   | .pi f B => (j : f.den) → Val (B j)
   | .sig f B => (j : f.den) × Val (B j)
+  | .imu _ S i => IW (fun j => (c : (S j).Ctor) × ISig.Fld (S j) c) (fun j a => (S j).Pos a.1)
+      (fun j a p => (S j).nx a.1 p) i
 
 /-- The values of the field of a constructor of a signature. -/
 def Sig.Fld : (S : Sig) → S.Ctor → Type
   | .base a, _ => Val a
   | .ext S _ _, .inl c => Sig.Fld S c
   | .ext _ a _, .inr _ => Val a
+
+/-- The values of the field of a constructor of an indexed signature. -/
+def ISig.Fld {f : FTy} : (S : ISig f) → S.Ctor → Type
+  | .base a => fun _ => Val a
+  | .ext S a _ _ => Sum.elim (ISig.Fld S) fun _ => Val a
 
 end
 
@@ -268,11 +339,17 @@ def Val.default : (τ : Ty) → Val τ
   | .mu S => WType.mk (Sig.leaf S).1 fun p => ((Sig.leaf S).2 p).elim
   | .pi _ B => fun j => Val.default (B j)
   | .sig f B => ⟨(FTy.instInhabited f).default, Val.default (B (FTy.instInhabited f).default)⟩
+  | .imu _ S i => IW.mk i (ISig.leaf (S i)).1 fun p => ((ISig.leaf (S i)).2 p).elim
 
 /-- A shape of a signature without positions: the first constructor at a value of its field. -/
 def Sig.leaf : (S : Sig) → (x : (c : S.Ctor) × S.Fld c) × (S.Pos x.1 → Empty)
   | .base a => ⟨⟨(), Val.default a⟩, id⟩
   | .ext S _ _ => ⟨⟨.inl (Sig.leaf S).1.1, (Sig.leaf S).1.2⟩, (Sig.leaf S).2⟩
+
+/-- A shape of an indexed signature without positions: its first constructor. -/
+def ISig.leaf {f : FTy} : (S : ISig f) → (x : (c : S.Ctor) × S.Fld c) × (S.Pos x.1 → Empty)
+  | .base a => ⟨⟨(), Val.default a⟩, id⟩
+  | .ext S _ _ _ => ⟨⟨Sum.inl (ISig.leaf S).1.1, (ISig.leaf S).1.2⟩, (ISig.leaf S).2⟩
 
 end
 
@@ -308,6 +385,40 @@ def stepsTy : Sig → Ty → Ty → Ty
   | .ext S a k, X, c => .prod (S.stepsTy X c) (.arr (altTy a k X c) c)
 
 end Sig
+
+namespace ISig
+
+variable {f : FTy}
+
+/-- The argument type of the constructor with field `a`, positions `k` and child indices `nx` of
+an indexed signature, its children in the family `X`: the field, and for positions `some g`
+the table of the children, the child at `p` of type `X (nx p)`. -/
+def kidTy (a : Ty) : (k : Option FTy) → (RecPos k → f.den) → (f.den → Ty) → Ty
+  | none, _, _ => a
+  | some g, nx, X => .prod a (.pi g fun p => X (nx p))
+
+/-- The argument type of the step at a constructor of an indexed signature, its children in
+the family `X` and its recursive results in the motive family `c`: the field, and for positions
+`some g` the table of the children and the table of the recursive results, each a closure on
+`unit` evaluated where the step applies it. -/
+def altTy (a : Ty) : (k : Option FTy) → (RecPos k → f.den) → (f.den → Ty) → (f.den → Ty) → Ty
+  | none, _, _, _ => a
+  | some g, nx, X, c =>
+    .prod a (.prod (.pi g fun p => X (nx p)) (.pi g fun p => .arr .unit (c (nx p))))
+
+/-- The argument of a constructor of an indexed signature: the sum over the constructors, the
+first innermost. -/
+def conTy : ISig f → (f.den → Ty) → Ty
+  | .base a, _ => a
+  | .ext S a k nx, X => .sum (S.conTy X) (kidTy a k nx X)
+
+/-- The step functions of an eliminator at a signature of an indexed family into `r`, the
+children in the family `X` and the recursive results in the motive family `c`. -/
+def stepsTy : ISig f → (f.den → Ty) → (f.den → Ty) → Ty → Ty
+  | .base a, _, _, r => .arr a r
+  | .ext S a k nx, X, c, r => .prod (S.stepsTy X c r) (.arr (altTy a k nx X c) r)
+
+end ISig
 
 /-! ## Variables and environments -/
 
@@ -495,6 +606,15 @@ inductive Tm : List Ty → Ty → Type where
   constructor; a step receives the field, the children and the recursive results. -/
   | fold {Γ : List Ty} {S : Sig} {c : Ty} :
       Tm Γ (S.stepsTy (.mu S) c) → Tm Γ (.mu S) → Tm Γ c
+  /-- A constructor of the inductive family `imu f S` at the index `i`, from the argument of a
+  constructor of `S i`. -/
+  | icon {Γ : List Ty} {f : FTy} {S : f.den → ISig f} {i : f.den} :
+      Tm Γ ((S i).conTy fun j => .imu f S j) → Tm Γ (.imu f S i)
+  /-- The eliminator of the inductive family `imu f S` at the motive family `c`: the table over
+  the indices of the step functions of each signature, at the index `i` of the value. -/
+  | ifold {Γ : List Ty} {f : FTy} {S : f.den → ISig f} {c : f.den → Ty} {i : f.den} :
+      Tm Γ (.pi f fun j => (S j).stepsTy (fun j' => .imu f S j') c (c j)) → Tm Γ (.imu f S i) →
+        Tm Γ (c i)
   /-- The table of the components `ts j`, one at every element `j` of the index. -/
   | ptab {Γ : List Ty} {f : FTy} {B : f.den → Ty} : ((j : f.den) → Tm Γ (B j)) → Tm Γ (.pi f B)
   /-- The component of a dependent product at the element `j` of its index. -/
@@ -561,6 +681,8 @@ def Tm.rename {Γ Δ : List Ty} : {τ : Ty} → Tm Γ τ → Ren Γ Δ → Tm Δ
   | _, .fail, _ => .fail
   | _, .con x, r => .con (x.rename r)
   | _, .fold g x, r => .fold (g.rename r) (x.rename r)
+  | _, .icon x, r => .icon (x.rename r)
+  | _, .ifold (c := c) g x, r => .ifold (c := c) (g.rename r) (x.rename r)
   | _, .ptab ts, r => .ptab fun j => (ts j).rename r
   | _, .papp (B := B) t j, r => .papp (t.rename r) j
   | _, .spair j x, r => .spair j (x.rename r)
