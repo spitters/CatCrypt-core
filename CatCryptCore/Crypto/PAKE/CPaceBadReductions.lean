@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.PAKE.CPaceBound
+public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
 
 /-!
 # Explicit bounds for the bad events of the CPace square
@@ -169,6 +170,7 @@ open CatCrypt.Crypto.UCConcrete CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UC
 open CatCrypt.Crypto.PAKE.DHExtract CatCrypt.Crypto.PAKE.CPaceSquare
 open CatCrypt.Crypto.PAKE.CPaceHops CatCrypt.Crypto.PAKE.CPaceBad CatCrypt.NonUniform
 open CatCrypt.Crypto.OracleGameUpToBad CatCrypt.Crypto.PAKE.CPaceBound
+open CatCrypt.Crypto.Assumptions
 open scoped ENNReal
 
 /-! ## The frame of a step of the simulated world -/
@@ -1763,5 +1765,436 @@ theorem dmExp_le [Inhabited Pw] (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : 
     _ = _ := by ring
 
 end DM
+
+/-! ## The passive-session experiment -/
+
+section PS
+
+variable {S W Pw K : Type} [Field S] [Fintype S] [DecidableEq S] [DecidableEq W]
+  [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K] [Inhabited K] (G : DHGroup S W)
+
+/-- Every session record is kept, with its password. -/
+def RecKeep (t t' : St Pw K) : Prop :=
+  ∀ x r, t.recs x = some r → ∃ r', t'.recs x = some r' ∧ r'.pw = r.pw
+
+omit [Field S] [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [DecidableEq Pw]
+  [Fintype K] [Nonempty K] [Inhabited K] in
+theorem RecKeep.trans {t₁ t₂ t₃ : St Pw K} (h₁ : RecKeep t₁ t₂) (h₂ : RecKeep t₂ t₃) :
+    RecKeep t₁ t₃ := fun x r hr => by
+  obtain ⟨r₂, h₂', e₂⟩ := h₁ x r hr
+  obtain ⟨r₃, h₃', e₃⟩ := h₂ x r₂ h₂'
+  exact ⟨r₃, h₃', e₃.trans e₂⟩
+
+omit [Field S] [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [DecidableEq Pw]
+  [Fintype K] [Nonempty K] [Inhabited K] in
+theorem RecKeep.setRec {t : St Pw K} {x : Inst} {r₀ r' : Rec Pw K} (h₀ : t.recs x = some r₀)
+    (hpw : r'.pw = r₀.pw) : RecKeep t (setRec t x r') := fun y r hr => by
+  by_cases hy : y = x
+  · subst hy
+    rw [h₀] at hr
+    cases hr
+    exact ⟨r', by simp [CatCrypt.Crypto.UCTransparent.FPAKE.setRec], hpw⟩
+  · exact ⟨r, by simp [CatCrypt.Crypto.UCTransparent.FPAKE.setRec, Function.update_of_ne hy, hr],
+      rfl⟩
+
+omit [Field S] [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [Fintype K]
+  [Nonempty K] [Inhabited K] in
+/-- A step of `F_lePAKE` keeps the session records with their passwords. -/
+theorem fStepD_recKeep (t : St Pw K) (g : FEv Pw K) (kf : K) : RecKeep t (fStepD t g kf).1 := by
+  have hrefl : RecKeep t t := fun x r hr => ⟨r, hr, rfl⟩
+  rcases g with (⟨sid, pid, peer, role, pw⟩ | ⟨sid, pid⟩) |
+    (_ | _ | ⟨sid, pid, g⟩ | ⟨sid, pid⟩ | ⟨sid, pid, k⟩ | ⟨sid, pid, g⟩)
+  · intro x r hr
+    simp only [fStepD, leHonStep, addSession]
+    split_ifs with h
+    · exact ⟨r, hr, rfl⟩
+    · by_cases hx : x = (sid, pid)
+      · subst hx; simp [hr] at h
+      · exact ⟨r, by simp [Function.update_of_ne hx, hr], rfl⟩
+  · exact hrefl
+  · exact hrefl
+  · intro x r hr
+    exact ⟨r, by simp only [fStepD, leAdvD, pollStep]; split <;> exact hr, rfl⟩
+  · simp only [fStepD, leAdvD, testStep]
+    split
+    · next r₀ h₀ => split_ifs <;> first | exact RecKeep.setRec h₀ rfl | exact hrefl
+    · exact hrefl
+  · simp only [fStepD, leAdvD, registerStep]
+    split
+    · next r₀ h₀ => split_ifs <;> first | exact RecKeep.setRec h₀ rfl | exact hrefl
+    · exact hrefl
+  · simp only [fStepD, leAdvD, newKeyStep]
+    split
+    · next r₀ h₀ => split_ifs <;> first | exact RecKeep.setRec h₀ rfl | exact hrefl
+    · exact hrefl
+  · simp only [fStepD, leAdvD, lateStep]
+    split
+    · next r₀ h₀ => split_ifs <;> first | exact RecKeep.setRec h₀ rfl | exact hrefl
+    · exact hrefl
+
+omit [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [Fintype K] [Nonempty K] in
+/-- The end of an activation keeps the session records with their passwords. -/
+theorem drive1D_recKeep (st : SimSt S W Pw K) (d : Dec Pw W K) (t : St Pw K) (k : K × K) :
+    RecKeep t (drive1D fStepD simResumeV simAnswer st d t k).2.1 := by
+  rcases d with g | o
+  · simp only [drive1D]
+    split
+    · exact fStepD_recKeep t g k.1
+    · exact (fStepD_recKeep t g k.1).trans (fStepD_recKeep _ _ k.2)
+  · exact fun x r hr => ⟨r, hr, rfl⟩
+
+/-- **The passive-session event is kept** by a step of the simulated world. -/
+theorem PSst_stable (td : Pw → Sˣ) (t : SimSt S W Pw K × St Pw K) (ht : ZsInv t.1.1)
+    (e : OEv Pw W) (r : (S × K) × K × K) (h : PSst G td t) :
+    PSst G td (CPaceHops.simWorldD G td (setTd td t) e r).1 := by
+  obtain ⟨-, hz, hi, -, hd⟩ := simWorldD_step_frame G td t ht e r
+  obtain ⟨pid, x, z', rc, hx, hz', hpm, hrc, hm⟩ := h
+  obtain ⟨rc', hrc', hpw⟩ := drive1D_recKeep (simStartD G td (setTd td t).1 e r.1).1
+    (simStartD G td (setTd td t).1 e r.1).2 t.2 r.2 (0, pid) rc hrc
+  refine ⟨pid, x, z', rc', hd x hx, hz _ _ hz', hpm, hrc', ?_⟩
+  rw [hpw]
+  exact matches_stable G td hz hi hm
+
+/-! ### The gap Diffie–Hellman reduction -/
+
+/-- The challenge value of the party `pid`: `A` for the party `0`, `B'` otherwise. -/
+def psBase (A B' : W) (pid : PartyId) : W := if pid = 0 then A else B'
+
+/-- The message of a party with handle `u` in the passive-session reduction: its challenge value
+times `g^u`. -/
+def msgPS (A B' : W) (pid : PartyId) (u : S) : W := G.mul (psBase A B' pid) (G.pub u)
+
+/-- The answers of the passive-session reduction with the decision oracle `O` and the table `td`
+of `H1` it draws: the match test of the key `k` is the decision `(msg, peer, k^{td pw})`. -/
+def psAns (O : W → W → W → Bool) (A B' : W) (td : Pw → Sˣ) : HQ S W Pw → HA W
+  | .inl pw => .inl (G.pub (td pw))
+  | .inr (pid, u, pw, peer, k) =>
+    .inr (decide (peer ≠ G.pub 0) && O (msgPS G A B' pid u) peer (G.exp k (td pw)))
+
+/-- The oracle of the answers of the passive-session reduction. -/
+noncomputable def psOracle (O : W → W → W → Bool) (A B' : W) (td : Pw → Sˣ) (_ : Unit)
+    (q : HQ S W Pw) : PMF (HA W × Unit) :=
+  PMF.pure (psAns G O A B' td q, ())
+
+/-- The candidate of the input `x` of `H2` and the party `pid`: when `x` is the input of `pid` on
+its partner's message and the decision oracle accepts it for the party's password, the value
+`k^{td pw}` with the contributions of the handles removed. -/
+def psCand (O : W → W → W → Bool) (A B' : W) (td : Pw → Sˣ) (w : SimSt S W Pw K × St Pw K)
+    (x : Inp W) (pid : PartyId) : Option W :=
+  match w.1.1.zs pid, w.1.1.zs (1 - pid), w.2.recs (0, pid) with
+  | some u, some u', some r =>
+    if peerMsg pid x = msgPS G A B' (1 - pid) u' ∧
+        O (msgPS G A B' pid u) (peerMsg pid x) (G.exp x.2.2.2 (td r.pw)) = true then
+      some (G.mul (G.exp x.2.2.2 (td r.pw))
+        (G.exp (G.mul (G.mul (G.exp (psBase A B' (1 - pid)) u) (G.exp (psBase A B' pid) u'))
+          (G.pub (u * u'))) (-1)))
+    else none
+  | _, _, _ => none
+
+/-- **The output of the passive-session reduction**: the first candidate over the inputs of the
+simulator's tables and the parties `0` and `1`. -/
+def psExtract (O : W → W → W → Bool) (A B' : W) (td : Pw → Sˣ) (w : SimSt S W Pw K × St Pw K) :
+    W :=
+  ((w.1.2.map Prod.fst ++ w.1.1.h2.map Prod.fst).findSome? fun x =>
+    ([0, 1] : List PartyId).findSome? fun pid => psCand G O A B' td w x pid).getD (G.pub 0)
+
+/-- The output distribution of the passive-session reduction: it draws the table of `H1`, runs
+`B` against the simulated world with handles, a party with handle `u` sending its challenge value
+times `g^u`, and outputs `psExtract`. -/
+noncomputable def psOut (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (O : W → W → W → Bool)
+    (A B' : W) : PMF W :=
+  (PMF.uniformFintype (Pw → Sˣ)).bind fun td =>
+    (OracleAdv.run (psOracle G O A B' td)
+      (OracleAdv.simulate (hImpl G (msgPS G A B')) B (hInit G)) ()).map fun y =>
+        psExtract G O A B' td y.1.2
+
+/-- **The gap Diffie–Hellman reduction for passive sessions.** -/
+noncomputable def psRed [SampleableType W] (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
+    GapDH_Adversary W :=
+  fun O A B' => liftPMF (psOut G B O A B')
+
+omit [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [DecidableEq Pw] [Fintype K]
+  [Nonempty K] [Inhabited K] in
+theorem exp_inv_eq_iff {t z : S} (ht : t ≠ 0) (peer k : W) :
+    G.exp peer (z * t⁻¹) = k ↔ G.exp k t = G.exp peer z := by
+  rw [G.exp_eq, G.exp_eq, G.exp_eq, ← G.pub_dlog k, G.pub.injective.eq_iff,
+    G.pub.injective.eq_iff, DHGroup.dlog_pub]
+  constructor
+  · intro h; rw [← h]; field_simp
+  · intro h
+    have := congrArg (· * t⁻¹) h
+    rw [mul_assoc, mul_inv_cancel₀ ht, mul_one] at this
+    rw [this]; ring
+
+omit [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [DecidableEq Pw] [Fintype K]
+  [Nonempty K] [Inhabited K] in
+theorem msgPS_pub (a b : S) (pid : PartyId) (u : S) :
+    msgPS G (G.pub a) (G.pub b) pid u = G.pub ((if pid = 0 then a else b) + u) := by
+  unfold msgPS psBase
+  split_ifs <;> exact G.mul_pub _ _
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K]
+  [Inhabited K] in
+/-- **The answers of the reduction are the ideal answers** of the shifts `u ↦ c_pid + u`, for the
+decision oracle of the group. -/
+theorem psAns_eq (O : W → W → W → Bool) (hO : ∀ z Y Z, O (G.pub z) Y Z = decide (Z = G.exp Y z))
+    (a b : S) (td : Pw → Sˣ) :
+    psAns G O (G.pub a) (G.pub b) td =
+      hAns G (fun pid u => (if pid = 0 then a else b) + u) td := by
+  funext q
+  rcases q with pw | ⟨pid, u, pw, peer, k⟩
+  · rfl
+  · simp only [psAns, hAns, msgPS_pub, hO]
+    congr 1
+    rw [kit, DHExtractKit.matchTest]
+    simp only [cpaceKit]
+    congr 1
+    exact decide_eq_decide.mpr (exp_inv_eq_iff G (td pw).ne_zero peer k).symm
+
+omit [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [DecidableEq Pw] [Fintype K]
+  [Nonempty K] [Inhabited K] in
+theorem psBase_pub (a b : S) (pid : PartyId) :
+    psBase (G.pub a) (G.pub b) pid = G.pub (if pid = 0 then a else b) := by
+  unfold psBase
+  split_ifs <;> rfl
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K]
+  [Inhabited K] in
+/-- **A candidate is the Diffie–Hellman value of the challenge.** -/
+theorem psCand_eq (O : W → W → W → Bool) (hO : ∀ z Y Z, O (G.pub z) Y Z = decide (Z = G.exp Y z))
+    (a b : S) (td : Pw → Sˣ) (w : SimSt S W Pw K × St Pw K) (x : Inp W) {pid : PartyId}
+    (hp : pid ≤ 1) {c : W} (h : psCand G O (G.pub a) (G.pub b) td w x pid = some c) :
+    c = G.pub (a * b) := by
+  unfold psCand at h
+  split at h
+  · next u u' r _ _ _ =>
+    split_ifs at h with hc
+    cases h
+    obtain ⟨hpm, hk⟩ := hc
+    rw [msgPS_pub, hO, decide_eq_true_eq, hpm, msgPS_pub, G.exp_pub] at hk
+    rw [hk, psBase_pub, psBase_pub, G.exp_pub, G.exp_pub, G.mul_pub, G.mul_pub, G.exp_pub,
+      G.mul_pub]
+    congr 1
+    rcases Nat.le_one_iff_eq_zero_or_eq_one.1 hp with rfl | rfl <;> simp <;> ring
+  · cases h
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K]
+  [Inhabited K] in
+/-- An input in the domain of the reconstructed tables is an input of the tables. -/
+theorem mem_keys_of_inDom (zOf : PartyId → S → S) (td : Pw → Sˣ) (w : SimSt S W Pw K × St Pw K)
+    (y : Inp W) (hy : InDom (reconW zOf td w).1 y) :
+    y ∈ w.1.2.map Prod.fst ++ w.1.1.h2.map Prod.fst := by
+  unfold InDom simLk at hy
+  cases hk : w.1.2.lookup y with
+  | some k => exact List.mem_append_left _ (mem_map_fst_of_lookup (by simp [hk]))
+  | none =>
+    have hk' : (reconW zOf td w).1.2.lookup y = none := hk
+    rw [hk'] at hy
+    exact List.mem_append_right _ (mem_map_fst_of_lookup hy)
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K]
+  [Inhabited K] in
+/-- **The output of the reduction on a found candidate** is the Diffie–Hellman value. -/
+theorem psExtract_eq (O : W → W → W → Bool)
+    (hO : ∀ z Y Z, O (G.pub z) Y Z = decide (Z = G.exp Y z)) (a b : S) (td : Pw → Sˣ)
+    (w : SimSt S W Pw K × St Pw K)
+    (hex : ∃ x ∈ w.1.2.map Prod.fst ++ w.1.1.h2.map Prod.fst, ∃ pid ∈ ([0, 1] : List PartyId),
+      (psCand G O (G.pub a) (G.pub b) td w x pid).isSome) :
+    psExtract G O (G.pub a) (G.pub b) td w = G.pub (a * b) := by
+  have hs : ((w.1.2.map Prod.fst ++ w.1.1.h2.map Prod.fst).findSome? fun x =>
+      ([0, 1] : List PartyId).findSome? fun pid =>
+        psCand G O (G.pub a) (G.pub b) td w x pid).isSome := by
+    obtain ⟨x, hx, pid, hp, hc⟩ := hex
+    exact List.findSome?_isSome_iff.2 ⟨x, hx, List.findSome?_isSome_iff.2 ⟨pid, hp, hc⟩⟩
+  obtain ⟨c, hc⟩ := Option.isSome_iff_exists.1 hs
+  obtain ⟨x, -, hx⟩ := List.exists_of_findSome?_eq_some hc
+  obtain ⟨pid, hp, hpc⟩ := List.exists_of_findSome?_eq_some hx
+  have hp1 : pid ≤ 1 := by
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+    rcases hp with rfl | rfl <;> decide
+  unfold psExtract
+  rw [hc, Option.getD_some]
+  exact psCand_eq G O hO a b td w x hp1 hpc
+
+/-- The shifts of the passive-session reduction. -/
+def zPS (a b : S) (pid : PartyId) (u : S) : S := (if pid = 0 then a else b) + u
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K]
+  [Inhabited K] in
+/-- **A passive-session query gives a candidate.** -/
+theorem psCand_of_PSst (O : W → W → W → Bool)
+    (hO : ∀ z Y Z, O (G.pub z) Y Z = decide (Z = G.exp Y z)) (a b : S) (td : Pw → Sˣ)
+    (w : SimSt S W Pw K × St Pw K) (hPS : PSst G td (reconW (zPS a b) td w))
+    (hI : ZsInv (reconW (zPS a b) td w).1.1) :
+    ∃ x ∈ w.1.2.map Prod.fst ++ w.1.1.h2.map Prod.fst, ∃ pid ∈ ([0, 1] : List PartyId),
+      (psCand G O (G.pub a) (G.pub b) td w x pid).isSome := by
+  obtain ⟨pid, x, z', r, hx, hz', hpm, hr, hm⟩ := hPS
+  obtain ⟨z, peer, role, hz, -, -, hmt⟩ := hm
+  have hz₁ : (w.1.1.zs (1 - pid)).map (zPS a b (1 - pid)) = some z' := hz'
+  obtain ⟨u', hu', rfl⟩ := Option.map_eq_some_iff.1 hz₁
+  have hz₂ : (w.1.1.zs pid).map (zPS a b pid) = some z := hz
+  obtain ⟨u, hu, rfl⟩ := Option.map_eq_some_iff.1 hz₂
+  have hp1 : pid ≤ 1 := by
+    by_contra hp
+    have := hI pid (Or.inr (Nat.lt_of_not_le hp))
+    rw [hz] at this
+    exact absurd this (by simp)
+  refine ⟨x, mem_keys_of_inDom (zPS a b) td w x hx, pid, ?_, ?_⟩
+  · rcases Nat.le_one_iff_eq_zero_or_eq_one.1 hp1 with rfl | rfl <;> simp
+  · have hr' : w.2.recs (0, pid) = some r := hr
+    have hcond : peerMsg pid x = msgPS G (G.pub a) (G.pub b) (1 - pid) u' ∧
+        O (msgPS G (G.pub a) (G.pub b) pid u) (peerMsg pid x) (G.exp x.2.2.2 (td r.pw)) = true := by
+      refine ⟨by rw [msgPS_pub]; exact hpm, ?_⟩
+      rw [msgPS_pub, hO, decide_eq_true_eq]
+      simp only [kit, DHExtractKit.matchTest, cpaceKit, Bool.and_eq_true] at hmt
+      exact (exp_inv_eq_iff G (td r.pw).ne_zero _ _).1 (of_decide_eq_true hmt.2)
+    unfold psCand
+    rw [hu, hu', hr']
+    dsimp only
+    split_ifs
+    rfl
+
+end PS
+
+/-! ### The passive-session bound at the gap Diffie–Hellman problem -/
+
+section GapDH
+
+variable {S W Pw K : Type} [Field S] [Fintype S] [DecidableEq S] [SampleableType W]
+  [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K] [Inhabited K] (G : DHGroup S W)
+
+/-- **The advantage of the passive-session reduction** as a probability over the challenge
+exponents. -/
+theorem gapDH_advantage_psRed (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
+    GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) =
+      ((PMF.uniformFintype S).bind fun a => (PMF.uniformFintype S).bind fun b =>
+        (psOut G B (ddhOracle (AKE.X3DHSquareGDH.gapDHDef G)) (G.pub a) (G.pub b)).map
+          fun c => decide (c = G.pub (a * b))) true := by
+  unfold GapDH_Advantage
+  rw [← prTrue_liftPMF _ Heap.empty]
+  congr 1
+  funext h
+  unfold GapDH_Game
+  have hk : (AKE.X3DHSquareGDH.gapDHDef G).keygen =
+      liftPMF ((PMF.uniformFintype S).map fun s => (G.pub s, G.pub s)) := rfl
+  simp only [SPComp.monad_bind_eq, psRed, hk]
+  rw [liftPMF_bind_apply, PMF.bind_map]
+  conv_rhs => unfold liftPMF
+  rw [PMF.map_bind]
+  refine congrArg _ (funext fun x => ?_)
+  simp only [Function.comp_apply]
+  rw [liftPMF_bind_apply, PMF.bind_map, PMF.map_bind]
+  refine congrArg _ (funext fun y => ?_)
+  simp only [Function.comp_apply]
+  rw [liftPMF_bind_apply, PMF.map_comp, AKE.X3DHSquareGDH.cdh_pub]
+  simp only [SPComp.monad_pure_eq, SPComp.pure, PMF.map, Function.comp_def, SDistr.pure]
+
+omit [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem psOracle_eq (a b : S) (td : Pw → Sˣ) :
+    psOracle G (ddhOracle (AKE.X3DHSquareGDH.gapDHDef G)) (G.pub a) (G.pub b) td =
+      hOracle G (zPS a b) td := by
+  funext u q
+  simp only [psOracle, hOracle]
+  rw [psAns_eq G _ (fun z Y Z => AKE.X3DHSquareGDH.ddhOracle_pub G z Y Z) a b td]
+  rfl
+
+/-- **The simulated world against the passive-session reduction.** A passive-session query at the
+end of the simulated world is found by the reduction on the challenge `(g^a, g^b)`. -/
+theorem ps_ideal_le (a b : S) (td : Pw → Sˣ)
+    (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
+    (OracleAdv.run (idealStep G td) B (setTd td (hInit G))).toOuterMeasure
+        {y | PSst G td y.2 ∧ ZsInv y.2.1.1} ≤
+      ((OracleAdv.run (psOracle G (ddhOracle (AKE.X3DHSquareGDH.gapDHDef G)) (G.pub a)
+        (G.pub b) td) (OracleAdv.simulate (hImpl G (msgPS G (G.pub a) (G.pub b))) B (hInit G))
+          ()).map fun y => decide (psExtract G (ddhOracle (AKE.X3DHSquareGDH.gapDHDef G))
+            (G.pub a) (G.pub b) td y.1.2 = G.pub (a * b))) true := by
+  classical
+  have hmsg : ∀ pid u, msgPS G (G.pub a) (G.pub b) pid u = G.pub (zPS a b pid u) :=
+    fun pid u => msgPS_pub G a b pid u
+  have hT := run_hImpl G (zPS a b) td (msgPS G (G.pub a) (G.pub b)) hmsg
+    (fun pid => Equiv.addLeft (if pid = 0 then a else b)) (fun _ => rfl) B (hInit G)
+  have hinit : reconW (zPS a b) td (hInit G (S := S) (W := W) (Pw := Pw) (K := K)) =
+      setTd td (hInit G) := rfl
+  rw [hinit] at hT
+  have e1 := OracleAdv.toOuterMeasure_eq_of_map_eq hT {y | PSst G td y.2 ∧ ZsInv y.2.1.1}
+  rw [← e1, psOracle_eq, OracleAdv.run_simulate, PMF.map_comp,
+    ← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
+  refine PMF.toOuterMeasure_mono _ fun z hz => ?_
+  simp only [Set.mem_preimage, Function.comp_apply, Set.mem_singleton_iff,
+    decide_eq_true_eq] at hz ⊢
+  exact psExtract_eq G _ (fun z Y Z => AKE.X3DHSquareGDH.ddhOracle_pub G z Y Z) a b td z.2.1
+    (psCand_of_PSst G _ (fun z Y Z => AKE.X3DHSquareGDH.ddhOracle_pub G z Y Z) a b td z.2.1
+      hz.1.1 hz.1.2)
+
+/-- **The passive-session experiment** is bounded by the gap Diffie–Hellman advantage of the
+explicit reduction `psRed G B`, which runs the simulated world with the two parties' messages
+shifted from the challenge and decides the match tests with the decision oracle. -/
+theorem psExp_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
+    psExp G B true ≤ GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) := by
+  classical
+  set F : S → S → (Pw → Sˣ) → ℝ≥0∞ := fun a b td =>
+    ((OracleAdv.run (psOracle G (ddhOracle (AKE.X3DHSquareGDH.gapDHDef G)) (G.pub a)
+        (G.pub b) td) (OracleAdv.simulate (hImpl G (msgPS G (G.pub a) (G.pub b))) B (hInit G))
+          ()).map fun y => decide (psExtract G (ddhOracle (AKE.X3DHSquareGDH.gapDHDef G))
+            (G.pub a) (G.pub b) td y.1.2 = G.pub (a * b))) true
+  have hinner : ∀ (td : Pw → Sˣ) (a b : S),
+      ((OracleAdv.run (OracleAdv.flagWhen (fun s _ x => PSst G td x.2.1.1) (jointSim G td)) B
+        (jointInit G, false)).map fun y => y.2.2) true ≤ F a b td := by
+    intro td a b
+    rw [flagExp_inner_apply G td (fun td _ s' => PSst G td s'.1) B,
+      jointSim_flag_eq G td (fun y => PSst G td y) B]
+    have h₁ := OracleAdv.run_flagWhen_le_of_inv (idealStep G td) (fun _ _ x => PSst G td x.2)
+      (fun _ _ x => PSst G td x.2 ∧ ZsInv x.2.1.1) (fun t => ZsInv t.1.1)
+      (fun t e ht x hx => by
+        have hI := (ideal_step_frame G td t ht e x hx).1
+        by_cases hd : PSst G td x.2
+        · exact Or.inl ⟨hd, hI⟩
+        · exact Or.inr ⟨hd, hI⟩) B (hInit G) (fun _ _ => rfl)
+    have h₂ := OracleAdv.run_flagWhen_le_final (idealStep G td)
+      (fun y => PSst G td y ∧ ZsInv y.1.1) (fun t e ht x hx => by
+        obtain ⟨r, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
+        exact ⟨PSst_stable G td t ht.2 e r ht.1, (simWorldD_step_frame G td t ht.2 e r).1⟩)
+      B (hInit G)
+    refine h₁.trans (h₂.trans ?_)
+    calc _ = (OracleAdv.run (idealStep G td) B (setTd td (hInit G))).toOuterMeasure
+          {y | PSst G td y.2 ∧ ZsInv y.2.1.1} := by
+          rw [← run_idealStep_setTd G td B (hInit G), PMF.toOuterMeasure_map_apply]
+          rfl
+      _ ≤ F a b td := ps_ideal_le G a b td B
+  have hgap : GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) =
+      ∑' a : S, PMF.uniformFintype S a * ∑' b : S, PMF.uniformFintype S b *
+        ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td * F a b td := by
+    rw [gapDH_advantage_psRed, PMF.bind_apply]
+    refine tsum_congr fun a => ?_
+    rw [PMF.bind_apply]
+    refine congrArg _ (tsum_congr fun b => ?_)
+    rw [psOut, PMF.map_bind, PMF.bind_apply]
+    refine congrArg _ (tsum_congr fun td => ?_)
+    rw [PMF.map_comp]
+    rfl
+  unfold psExp flagExp
+  rw [PMF.bind_apply, hgap]
+  calc _ ≤ ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td *
+        ∑' a : S, PMF.uniformFintype S a * ∑' b : S, PMF.uniformFintype S b * F a b td := by
+        refine ENNReal.tsum_le_tsum fun td => ?_
+        gcongr
+        calc _ = ∑' a : S, PMF.uniformFintype S a * ∑' b : S, PMF.uniformFintype S b *
+              ((OracleAdv.run (OracleAdv.flagWhen (fun s _ x => PSst G td x.2.1.1)
+                (jointSim G td)) B (jointInit G, false)).map fun y => y.2.2) true := by
+              simp only [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+          _ ≤ _ := by
+              refine ENNReal.tsum_le_tsum fun a => ?_
+              gcongr with b
+              exact hinner td a b
+    _ = _ := by
+        simp_rw [← ENNReal.tsum_mul_left]
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr fun a => ?_
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr fun b => ?_
+        refine tsum_congr fun td => ?_
+        ring
+
+end GapDH
 
 end CatCrypt.Crypto.PAKE.CPaceBadReductions
