@@ -2360,16 +2360,6 @@ theorem simWorldD_setTd (T : Pw → Sˣ) (t : SimSt S W Pw K × St Pw K) (a : Pw
   simp only [CPaceHops.simWorldD, setTd]
   rw [simStartD_td G T t.1 (some a) e r.1, drive1D_td]
 
-omit [Field S] [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [DecidableEq Pw]
-  [Fintype K] [Nonempty K] [Inhabited K] in
-theorem find?_congr' {α : Type} {l : List α} {p q : α → Bool} (h : ∀ x ∈ l, p x = q x) :
-    l.find? p = l.find? q := by
-  induction l with
-  | nil => rfl
-  | cons a l ih =>
-    simp only [List.find?_cons, h a List.mem_cons_self,
-      ih fun x hx => h x (List.mem_cons_of_mem a hx)]
-
 omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K]
   [Inhabited K] in
 /-- **Extraction reads the table of `H1` at the queried passwords only.** -/
@@ -2377,7 +2367,7 @@ theorem extractAt_congr (T₁ T₂ : Pw → Sˣ) (cands : List Pw) (h : ∀ pw �
     (z : S) (pid : PartyId) (x : Inp W) :
     extractAt G T₁ cands z pid x = extractAt G T₂ cands z pid x := by
   unfold extractAt DHExtractKit.extract
-  refine find?_congr' fun pw hpw => ?_
+  refine List.find?_congr fun pw hpw => ?_
   simp only [kit, DHExtractKit.matchTest, cpaceKit, h pw hpw]
   rfl
 
