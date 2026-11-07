@@ -7,6 +7,7 @@ Authors: CatCrypt Contributors
 module
 
 -- Lemmas for Mathlib (the upstream queue)
+public import CatCryptCore.ForMathlib.GeometricMean
 public import CatCryptCore.ForMathlib.LawvereMetric
 public import CatCryptCore.ForMathlib
 public import CatCryptCore.ForMathlib.Order.ScottInduction
@@ -613,6 +614,7 @@ public import CatCryptCore.Crypto.Party.SyntacticCategory
 public import CatCryptCore.Crypto.Party.StoreHybrid
 public import CatCryptCore.Crypto.Party.SecretStateHybrid
 public import CatCryptCore.Crypto.Party.LoopTimed
+public import CatCryptCore.Container.ExpectedDN
 public import CatCryptCore.Container.WTypes
 public import CatCryptCore.Container.Code
 public import CatCryptCore.Container.QuotientFree
