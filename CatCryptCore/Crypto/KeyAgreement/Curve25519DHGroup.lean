@@ -28,10 +28,11 @@ sign (`decodeU_encU`), and the encoding identifies the two signs of an exponenti
 (`natCard_curve25519Point_le`), fewer than `ℓ ^ 2`, so the points `P` with `ℓ • P = 0` are the
 multiples of every point of order `ℓ` (`mem_zmultiples_iff_nsmul_eq_zero`), and the check of `B`
 accepts exactly the encodings of such points (`subgroupCheckU_iff_nsmul_eq_zero`). Under
-`X25519Hom B`, X25519 with the secret `sk` on an accepted string is the
-encoding of the exponentiation of the decoded point by the clamped scalar `clampE sk`
-(`X25519Hom.scalarmult_of_decodeU`), and the public key of `sk` is the encoding of the public
-value of `clampE sk` (`X25519Hom.base_eq_pub`). Every Diffie–Hellman value computed on an accepted
+`X25519HomOf sm bp B` (for the libcrux functions `X25519Hom B`, for the specification functions a
+theorem at `B9`), `sm` with the secret `sk` on an accepted string is the encoding of the
+exponentiation of the decoded point by the clamped scalar `clampE sk`
+(`X25519HomOf.scalarmult_of_decodeU`), and the public key `bp sk` is the encoding of the public
+value of `clampE sk` (`X25519HomOf.base_eq_pub`). Every Diffie–Hellman value computed on an accepted
 string is thus the encoding of a value of the group model.
 
 ## Main definitions
@@ -54,8 +55,9 @@ string is thus the encoding of a value of the group model.
 * `subgroupCheckU_iff_nsmul_eq_zero`, `subgroupCheckU_eq_of_addOrderOf`,
   `subgroupCheckU_encU_of_addOrderOf`: the check as the order condition, the same for every point
   of order `ℓ`.
-* `X25519Hom.base_eq_pub`, `X25519Hom.scalarmult_encU_exp`, `X25519Hom.scalarmult_of_decodeU`:
-  X25519 as the operations of `g25519DHGroup B` on accepted strings.
+* `X25519HomOf.base_eq_pub`, `X25519HomOf.scalarmult_encU_exp`,
+  `X25519HomOf.scalarmult_of_decodeU`: X25519 functions as the operations of `g25519DHGroup B` on
+  accepted strings.
 -/
 
 @[expose] public section
@@ -286,31 +288,34 @@ end CatCrypt.Crypto.ECC
 
 /-! ## X25519 as the operations of the group -/
 
-namespace CatCrypt.Crypto.Libcrux.Bridge_X25519Group.X25519Hom
+namespace CatCrypt.Crypto.Libcrux.Bridge_X25519Group.X25519HomOf
 
-open CatCrypt.Crypto.ECC CatCrypt.Crypto.Libcrux.Extraction.Libcrux_specs
+open CatCrypt.Crypto.ECC
 
-variable {B : Curve25519Point} [Fact (addOrderOf B = curve25519SubgroupOrder)] (h : X25519Hom B)
+variable {B : Curve25519Point} [Fact (addOrderOf B = curve25519SubgroupOrder)]
+  {sm : Vector UInt8 32 → Vector UInt8 32 → Vector UInt8 32}
+  {bp : Vector UInt8 32 → Vector UInt8 32} (h : X25519HomOf sm bp B)
 include h
 
 /-- The public key of `sk` is the encoding of the public value of its clamped scalar in
 `g25519DHGroup B`. -/
 theorem base_eq_pub (sk : Vector UInt8 32) :
-    x25519_base sk = encU ((g25519DHGroup B).pub (clampE sk)) := by
+    bp sk = encU ((g25519DHGroup B).pub (clampE sk)) := by
   rw [g25519DHGroup_pub, h.base_eq]
 
-/-- X25519 with the secret `sk` on the encoding of a point `T` of the subgroup is the encoding of
-the exponentiation of `T` by the clamped scalar of `sk` in `g25519DHGroup B`. -/
+/-- The scalar multiplication `sm` with the secret `sk` on the encoding of a point `T` of the
+subgroup is the encoding of the exponentiation of `T` by the clamped scalar of `sk` in
+`g25519DHGroup B`. -/
 theorem scalarmult_encU_exp (sk : Vector UInt8 32) (T : G25519 B) :
-    x25519_scalarmult sk (encU T) = encU ((g25519DHGroup B).exp T (clampE sk)) := by
+    sm sk (encU T) = encU ((g25519DHGroup B).exp T (clampE sk)) := by
   rw [h.scalarmult, clampE_eq, g25519DHGroup_exp_natCast]
 
-/-- **X25519 on an accepted peer key.** On a string `u` that decodes to the point `T`, X25519 with
-the secret `sk` is the encoding of the exponentiation of `T` by the clamped scalar of `sk` in
-`g25519DHGroup B`. -/
+/-- **X25519 on an accepted peer key.** On a string `u` that decodes to the point `T`, the scalar
+multiplication `sm` with the secret `sk` is the encoding of the exponentiation of `T` by the
+clamped scalar of `sk` in `g25519DHGroup B`. -/
 theorem scalarmult_of_decodeU {u : Vector UInt8 32} {T : G25519 B} (hd : decodeU B u = some T)
     (sk : Vector UInt8 32) :
-    x25519_scalarmult sk u = encU ((g25519DHGroup B).exp T (clampE sk)) := by
+    sm sk u = encU ((g25519DHGroup B).exp T (clampE sk)) := by
   rw [← encU_of_decodeU hd, h.scalarmult_encU_exp]
 
-end CatCrypt.Crypto.Libcrux.Bridge_X25519Group.X25519Hom
+end CatCrypt.Crypto.Libcrux.Bridge_X25519Group.X25519HomOf

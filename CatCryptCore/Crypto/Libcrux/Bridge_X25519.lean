@@ -12,14 +12,15 @@ public import CatCryptCore.Crypto.Assumptions.DDH
 /-!
 # X25519 Bridge: X25519 → DDH Definition
 
-Bridges the opaque X25519 Diffie-Hellman constants of `Libcrux_specs` to the abstract
-`DDHDef` type class.
+Bridges an X25519 scalar multiplication and base-point function on 32-byte strings to the
+abstract `DDHDef` record (`x25519DDHOf`), and the opaque X25519 Diffie-Hellman constants of
+`Libcrux_specs` to it (`concreteDDH_X25519`).
 
 ## Architecture
 
 ```
 Extraction/Libcrux_specs.lean          (x25519_scalarmult, x25519_base)
-        ↓  field assignment
+        ↓  x25519DDHOf at the two constants
 Bridge_X25519.lean (this file)         (concreteDDH_X25519 : DDHDef)
         ↓  explicit DDH reductions
 protocol security proofs
@@ -37,8 +38,11 @@ every adversary. The theorems over
 
 | Definition / Theorem | Role |
 |-----|------|
-| `concreteDDH_X25519` | `DDHDef (Vector UInt8 32)` for X25519, key pairs `(sk, X25519(sk, 9))` |
-| `X25519Commutes` | the functional fact `X25519(a, X25519(b, 9)) = X25519(b, X25519(a, 9))` |
+| `x25519DDHOf sm bp` | `DDHDef (Vector UInt8 32)` of `sm`, `bp`, key pairs `(sk, bp sk)` |
+| `concreteDDH_X25519` | `x25519DDHOf` at libcrux-specs, key pairs `(sk, X25519(sk, 9))` |
+| `X25519CommutesOf sm bp` | the functional fact `sm a (bp b) = sm b (bp a)` |
+| `X25519Commutes` | `X25519(a, X25519(b, 9)) = X25519(b, X25519(a, 9))` at libcrux-specs |
+| `x25519DDHOf_symmetric` | `ECDHSymmetric (x25519DDHOf sm bp)` from `X25519CommutesOf sm bp` |
 | `concreteDDH_X25519_symmetric` | `ECDHSymmetric concreteDDH_X25519` from `X25519Commutes` |
 
 ## Commutativity
@@ -71,19 +75,32 @@ open scoped ENNReal
 
 /-! ## Concrete DDH Definition -/
 
-/-- Concrete X25519 DDH definition from libcrux-specs.
+/-- The X25519 DDH record of a scalar multiplication `sm` and a base-point function `bp` on
+32-byte strings.
 
-- `ecdh`: `x25519_scalarmult(private_key, public_key)` computes the shared secret
-- `keygen`: a uniform private key `sk` and its public key `x25519_base sk`,
-  the u-coordinate of `[clamp sk]·9` (RFC 7748 §6.1). -/
-noncomputable def concreteDDH_X25519 : DDHDef (Vector UInt8 32) where
-  ecdh := x25519_scalarmult
-  keygen := (SPComp.sample (Vector UInt8 32)).bind
-    (fun sk => SPComp.pure (sk, x25519_base sk))
+- `ecdh`: `sm (private_key, public_key)` computes the shared secret
+- `keygen`: a uniform private key `sk` and its public key `bp sk`. -/
+@[reducible] noncomputable def x25519DDHOf
+    (sm : Vector UInt8 32 → Vector UInt8 32 → Vector UInt8 32)
+    (bp : Vector UInt8 32 → Vector UInt8 32) : DDHDef (Vector UInt8 32) where
+  ecdh := sm
+  keygen := (SPComp.sample (Vector UInt8 32)).bind (fun sk => SPComp.pure (sk, bp sk))
   keygen_isPure :=
     SPComp.bind_isPure (SPComp.sample_isPure _) (fun _ => SPComp.pure_isPure _)
 
+/-- Concrete X25519 DDH definition from libcrux-specs: `x25519DDHOf` at `x25519_scalarmult`
+and `x25519_base`, whose public key of `sk` is the u-coordinate of `[clamp sk]·9`
+(RFC 7748 §6.1). -/
+noncomputable def concreteDDH_X25519 : DDHDef (Vector UInt8 32) :=
+  x25519DDHOf x25519_scalarmult x25519_base
+
 /-! ## Commutativity -/
+
+/-- Diffie-Hellman commutativity of a scalar multiplication `sm` on the public keys of a
+base-point function `bp`: `sm a (bp b) = sm b (bp a)`. -/
+def X25519CommutesOf (sm : Vector UInt8 32 → Vector UInt8 32 → Vector UInt8 32)
+    (bp : Vector UInt8 32 → Vector UInt8 32) : Prop :=
+  ∀ a b : Vector UInt8 32, sm a (bp b) = sm b (bp a)
 
 /-- X25519 Diffie-Hellman correctness: scalar multiplications of the base
 point commute, `X25519(a, X25519(b, 9)) = X25519(b, X25519(a, 9))`.
@@ -93,14 +110,20 @@ Both sides are the u-coordinate of `[clamp a]·[clamp b]·9` on Curve25519
 libcrux-specs constants, stated once here and passed explicitly to every
 statement that uses it. -/
 def X25519Commutes : Prop :=
-  ∀ a b : Vector UInt8 32,
-    x25519_scalarmult a (x25519_base b) = x25519_scalarmult b (x25519_base a)
+  X25519CommutesOf x25519_scalarmult x25519_base
+
+/-- Under `X25519CommutesOf sm bp`, `x25519DDHOf sm bp` satisfies the keypair form of
+Diffie-Hellman commutativity, with public-key map `bp`. -/
+theorem x25519DDHOf_symmetric {sm : Vector UInt8 32 → Vector UInt8 32 → Vector UInt8 32}
+    {bp : Vector UInt8 32 → Vector UInt8 32} (hX : X25519CommutesOf sm bp) :
+    Assumptions.ECDHSym.ECDHSymmetric (x25519DDHOf sm bp) :=
+  ⟨bp, rfl, hX⟩
 
 /-- Under `X25519Commutes`, `concreteDDH_X25519` satisfies the keypair form of
 Diffie-Hellman commutativity, with public-key map `x25519_base`. -/
 theorem concreteDDH_X25519_symmetric (hX : X25519Commutes) :
     Assumptions.ECDHSym.ECDHSymmetric concreteDDH_X25519 :=
-  ⟨x25519_base, rfl, hX⟩
+  x25519DDHOf_symmetric hX
 
 /-! ## Connecting Lemmas -/
 
