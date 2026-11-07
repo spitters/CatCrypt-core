@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.PAKE.CPaceBadReductions
 public import CatCryptCore.Crypto.PAKE.CPaceSquareTimed
+public import CatCryptCore.Crypto.PAKE.CPaceH1Timed
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveTimeBound
 public import CatCryptCore.Tactics.AutoTime
@@ -69,6 +70,17 @@ and of `psProgC` for a costed adversary of time `T` with at most `q` queries, a 
 `q`, `|Pw|` and `T` at the costs of the group operations (`dmAdvC.timeBound`,
 `psProgC.timeBound`).
 
+**The reductions of the concrete bound.** The strong SDH term of `cpaceConcreteBound` is at the
+reduction `ssdhReduction G (matchWrap (dmAdv G B))`. Its costed form `ssdhDmC` is
+`ssdhReduction.timed` at `matchWrap.timed` of `dmAdvC` and erases to it (`ssdhDmC_erase`). The
+time `D` of `dmAdvC` bounds its number of queries, so `matchWrap.timeBound_timed` and
+`ssdhReduction.timeBound_timed` give the time `(h + 18) (te + 6) (D + 1)² + 2 te + 10` at
+lookups of the generator table of cost at most `h` (`ssdhDmC.timeBound`). The gap
+Diffie–Hellman term is at `psAdv G B`, which on the decision oracle `O` and the challenge
+`(A, B')` is the lift of the output of `psProg`. Its costed form `psAdvC` is `psProgC` at `O`;
+the lift of the output of the run of its erasure is `psAdv G B` (`psAdvC_erase`), and its time
+is that of `psProgC` (`psAdvC.timeBound`).
+
 ## Main results
 
 * `OracleAdv.stepRedO.timed`, `OracleAdv.stepRedO.erase_timed` (derived),
@@ -82,6 +94,11 @@ and of `psProgC` for a costed adversary of time `T` with at most `q` queries, a 
   `dmTrans.timeBound_timed`: the time of the pieces.
 * `hImplC.timeBound`: the step time of the world with handles on the invariant `HInv`.
 * `dmAdvC.timeBound`, `psProgC.timeBound`: the time of the two reductions.
+* `ssdhDmC_erase`, `ssdhDmC.timeBound`: the costed strong SDH reduction of the double-match
+  adversary erases to `ssdhReduction G (matchWrap (dmAdv G B))`, with its time, a polynomial in
+  `q`, `|Pw|` and `T`.
+* `psAdvC_erase`, `psAdvC.timeBound`: the costed gap Diffie–Hellman adversary erases to
+  `psAdv G B`, with its time, a polynomial in `q`, `|Pw|` and `T`.
 -/
 
 @[expose] public section
@@ -940,5 +957,128 @@ theorem psProgC.timeBound (B : OracleAdv.Timed (OEv Pw W) (OOut W K) Bool)
   exact ⟨Nat.zero_le _, by omega, fun td => (hrun td).mono (by omega)⟩
 
 end Instances
+
+section Composed
+
+variable {S W Pw K : Type} [Field S] [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw]
+  [DecidableEq Pw] [Fintype K] [Nonempty K] [Inhabited K] (G : DHGroup S W)
+  (expCost : W → S → ℕ) (toFunCost : S → ℕ)
+
+section SSDH
+
+variable [Inhabited Pw]
+
+/-- **The costed strong SDH reduction of the double-match adversary**: `ssdhReduction.timed` at
+the costed match-recording reduction `matchWrap.timed` of the costed double-match adversary
+`dmAdvC`, a lookup of the generator table costing `HCost`. -/
+noncomputable def ssdhDmC (HCost : Pw → ℕ) (B : OracleAdv.Timed (OEv Pw W) (OOut W K) Bool)
+    (X gen₁ gen₂ : W) : ℕ × OracleAdv.Timed (Bool × W × W) Bool (W × W × W) :=
+  ssdhReduction.timed G
+    (fun X H => (CPaceH1.matchWrap.timed (fun X => (dmAdvC G expCost toFunCost B X).2)
+      (fun X => (dmAdvC G expCost toFunCost B X).1) X H HCost).2)
+    (fun X H => (CPaceH1.matchWrap.timed (fun X => (dmAdvC G expCost toFunCost B X).2)
+      (fun X => (dmAdvC G expCost toFunCost B X).1) X H HCost).1) X gen₁ gen₂ expCost
+
+/-- The costed strong SDH reduction of the double-match adversary erases to the reduction
+`ssdhReduction G (matchWrap (dmAdv G B))` of the concrete bound `cpaceConcreteBound`. -/
+theorem ssdhDmC_erase (HCost : Pw → ℕ) (B : OracleAdv.Timed (OEv Pw W) (OOut W K) Bool)
+    (X gen₁ gen₂ : W) :
+    (ssdhDmC G expCost toFunCost HCost B X gen₁ gen₂).2.erase =
+      ssdhReduction G (CPaceH1.matchWrap (dmAdv G B.erase)) X gen₁ gen₂ := by
+  simp only [ssdhDmC, ssdhReduction.erase_timed, CPaceH1.matchWrap.erase_timed, dmAdvC_erase]
+
+/-- **The time of the strong SDH reduction of the double-match adversary.** For a costed oracle
+adversary `B` of time `T` with at most `q` queries, exponentiations of cost at most `te`, public
+values of cost at most `tf` and lookups of the generator table of cost at most `h`, the costed
+reduction `ssdhDmC` erases to `ssdhReduction G (matchWrap (dmAdv G B))` and has time at most
+`(h + 18) (te + 6) (D + 1)² + 2 te + 10`, where
+`D = (T + q · ((6 |Pw| + 168) q + 12 |Pw| + 853 + 3 te + tf) + (48 |Pw| + 80) q + 21)
+(22 + te + 2 tf)` is the time of `dmAdvC` (`dmAdvC.timeBound`): a polynomial in `q`, `|Pw|`
+and `T`. The time `D` bounds the number of queries of the double-match adversary, so the search
+of the match log by `matchWrap` (`matchWrap.timeBound_timed`) is quadratic in `D`, and each
+match query costs one exponentiation in `ssdhReduction` (`ssdhReduction.timeBound_timed`). -/
+theorem ssdhDmC.timeBound (HCost : Pw → ℕ) (B : OracleAdv.Timed (OEv Pw W) (OOut W K) Bool)
+    (X gen₁ gen₂ : W) {T q te tf h : ℕ} (hB : B.TimeBound T) (hq : B.erase.IsQueryBound q)
+    (he : ∀ x y, expCost x y ≤ te) (hf : ∀ x, toFunCost x ≤ tf) (hH : ∀ pw, HCost pw ≤ h) :
+    (ssdhDmC G expCost toFunCost HCost B X gen₁ gen₂).2.erase =
+        ssdhReduction G (CPaceH1.matchWrap (dmAdv G B.erase)) X gen₁ gen₂ ∧
+      StepTimeBound (ssdhDmC G expCost toFunCost HCost B X gen₁ gen₂)
+        ((h + 18) * (te + 6) * ((T + q * ((6 * Fintype.card Pw + 168) * q +
+          12 * Fintype.card Pw + 853 + 3 * te + tf) + ((48 * Fintype.card Pw + 80) * q + 21)) *
+            (22 + te + 2 * tf) + 1) ^ 2 + 2 * te + 10) := by
+  refine ⟨ssdhDmC_erase G expCost toFunCost HCost B X gen₁ gen₂, ?_⟩
+  refine (?_ : ∀ D, (∀ X, StepTimeBound (dmAdvC G expCost toFunCost B X) D) →
+      StepTimeBound (ssdhDmC G expCost toFunCost HCost B X gen₁ gen₂)
+        ((h + 18) * (te + 6) * (D + 1) ^ 2 + 2 * te + 10)) _
+    fun X => dmAdvC.timeBound G expCost toFunCost B X hB hq he hf
+  intro D hdm
+  have hA : ∀ X, (dmAdvC G expCost toFunCost B X).2.TimeBound D :=
+    fun X => (hdm X).2.mono (Nat.sub_le _ _)
+  have hmw := fun X H => CPaceH1.matchWrap.timeBound_timed
+    (fun X => (dmAdvC G expCost toFunCost B X).2) (fun X => (dmAdvC G expCost toFunCost B X).1)
+    X H HCost hA (fun X => isQueryBound_of_timeBound (hA X)) (fun X => (hdm X).1) hH
+  have hM := fun X H => (hmw X H).2.mono (Nat.sub_le _ _)
+  have hs := ssdhReduction.timeBound_timed G
+    (fun X H => (CPaceH1.matchWrap.timed (fun X => (dmAdvC G expCost toFunCost B X).2)
+      (fun X => (dmAdvC G expCost toFunCost B X).1) X H HCost).2)
+    (fun X H => (CPaceH1.matchWrap.timed (fun X => (dmAdvC G expCost toFunCost B X).2)
+      (fun X => (dmAdvC G expCost toFunCost B X).1) X H HCost).1) X gen₁ gen₂ expCost
+    hM (fun X H => isQueryBound_of_timeBound (hM X H)) (fun X H => (hmw X H).1) he
+  refine hs.mono ?_
+  have hD : 1 + D + (D + D * (h + 4)) + 12 * (D + 1) * (D + 1) ≤ (h + 18) * (D + 1) ^ 2 :=
+    calc _ ≤ 1 + D + (D + D * (h + 4)) + 12 * (D + 1) * (D + 1) +
+          (h * D * D + h * D + h + 6 * D * D + 6 * D + 5) := Nat.le_add_right _ _
+      _ = _ := by ring
+  calc _ = (1 + D + (D + D * (h + 4)) + 12 * (D + 1) * (D + 1)) * (te + 6) + 2 * te + 10 := by
+        ring
+    _ ≤ (h + 18) * (D + 1) ^ 2 * (te + 6) + 2 * te + 10 := by gcongr
+    _ = _ := by ring
+
+end SSDH
+
+variable (mulCost : W → W → ℕ) (OCost : W → W → W → ℕ)
+
+/-- **The costed gap Diffie–Hellman adversary for passive sessions**: on the decision oracle `O`
+and the challenge `(A, B')`, the costed program `psProgC` at `O`, a call of the decision oracle
+costing `OCost`. The gap Diffie–Hellman game runs it at its decision oracle `ddhOracle`. -/
+noncomputable def psAdvC (B : OracleAdv.Timed (OEv Pw W) (OOut W K) Bool)
+    (O : W → W → W → Bool) (A B' : W) : ℕ × OracleAdv.Timed Empty Empty W :=
+  psProgC G expCost mulCost toFunCost O OCost A B' B
+
+variable [SampleableType W]
+
+/-- The costed gap Diffie–Hellman adversary for passive sessions erases to `psAdv G B`, the
+reduction of the concrete bound `cpaceConcreteBound`: on every decision oracle and challenge,
+`psAdv G B` is the lift of the output of the run of the erased program. -/
+theorem psAdvC_erase (B : OracleAdv.Timed (OEv Pw W) (OOut W K) Bool) (O : W → W → W → Bool)
+    (A B' : W) :
+    liftPMF ((OracleAdv.run (fun (_ : Unit) (q : Empty) => q.elim)
+        (psAdvC G expCost toFunCost mulCost OCost B O A B').2.erase ()).map Prod.fst) =
+      psAdv G B.erase O A B' := by
+  rw [psAdv, psAdvC, psProgC_erase, psOut_eq]
+
+/-- **The time of the gap Diffie–Hellman adversary for passive sessions.** For a costed oracle
+adversary `B` of time `T` with at most `q` queries, decisions of cost at most `tO`, products at
+most `tμ`, exponentiations at most `te` and public values at most `tf`, on every decision oracle
+`O` and challenge `(A, B')` the costed adversary `psAdvC` erases to `psAdv G B` and has time at
+most `1 + (T + q · F q + E) · (22 + tO + tμ + te + 3 tf)`, with
+`F i = (6 |Pw| + 168) i + 12 |Pw| + 862 + 3 tμ + 4 tf` and
+`E = (500 + 4 tO + 24 tμ + 24 te + 12 tf) q + 21 + tf` (`psProgC.timeBound`): a polynomial in
+`q`, `|Pw|` and `T`. -/
+theorem psAdvC.timeBound (B : OracleAdv.Timed (OEv Pw W) (OOut W K) Bool)
+    (O : W → W → W → Bool) (A B' : W) {T q tO tμ te tf : ℕ} (hB : B.TimeBound T)
+    (hq : B.erase.IsQueryBound q) (hO : ∀ a b c, OCost a b c ≤ tO)
+    (hμ : ∀ a b, mulCost a b ≤ tμ) (he : ∀ x y, expCost x y ≤ te) (hf : ∀ x, toFunCost x ≤ tf) :
+    liftPMF ((OracleAdv.run (fun (_ : Unit) (q : Empty) => q.elim)
+        (psAdvC G expCost toFunCost mulCost OCost B O A B').2.erase ()).map Prod.fst) =
+        psAdv G B.erase O A B' ∧
+      StepTimeBound (psAdvC G expCost toFunCost mulCost OCost B O A B')
+        (1 + (T + q * ((6 * Fintype.card Pw + 168) * q + 12 * Fintype.card Pw + 862 + 3 * tμ +
+            4 * tf) + ((500 + 4 * tO + 24 * tμ + 24 * te + 12 * tf) * q + 21 + tf)) *
+          (22 + tO + tμ + te + 3 * tf)) :=
+  ⟨psAdvC_erase G expCost toFunCost mulCost OCost B O A B',
+    psProgC.timeBound G expCost mulCost toFunCost O OCost A B' B hB hq hO hμ he hf⟩
+
+end Composed
 
 end CatCrypt.Crypto.PAKE.CPaceBadReductions
