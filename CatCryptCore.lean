@@ -273,6 +273,7 @@ public import CatCryptCore.Crypto.TVHops
 public import CatCryptCore.Crypto.SampledGame
 public import CatCryptCore.Crypto.SampledGameTimed
 public import CatCryptCore.Crypto.SamplerCert
+public import CatCryptCore.Crypto.SamplerCertOracle
 public import CatCryptCore.Crypto.RejectionLoop
 public import CatCryptCore.Crypto.Assumptions.DDHSampled
 public import CatCryptCore.Crypto.KeyAgreement.Curve25519Subgroup
