@@ -183,5 +183,11 @@ finite ground type are instances.
 The charges of `Tm.dt` (`TranslateDt`) price `con` by the tabulation of its children
 (`tabCost`, `conHat`) and `fold` by one plus the step at the root and one plus the step at a
 child per application of its result (`foldHat`); the soundness theorem `Tm.dtC_timedSim`
-covers both, by induction on the signature and on the value (`conAt_sim`, `foldW_sim`). Tests:
-`CatCryptCoreTest/Complexity/D/MuTest.lean`.
+covers both, by induction on the signature and on the value (`conAt_sim`, `foldW_sim`). The
+judgements of `Reflect` have the rules `Den.con`, `Den.fold` (the eliminator denotes a recursion
+`F` when its steps denote `F` at every node whose recursive results are the values of `F` at its
+children) and `CEq.fold`; `TimedLink` has the construct rules `DSim.con` and `DSim.fold` (the
+eliminator against the cost of a structural recursion, one per call plus the body). `reflect_d`
+reads the case analyses written with `casesOn` and with the recursors of `Bool`, `Option`, `Sum`
+and pairs; it does not yet map a Lean inductive type to `mu` nor a structural recursion to
+`fold`. Tests: `CatCryptCoreTest/Complexity/D/MuTest.lean`, `ReflectRecTest.lean`.
