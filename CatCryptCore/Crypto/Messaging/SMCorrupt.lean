@@ -83,7 +83,9 @@ game here is the confidentiality part, restricted as follows:
   `SMCorruptAdv` is chosen after `tStar`, as in the CKA game of `CKACorrupt`); the game with an
   adaptive challenge epoch reduces to it by guessing the epoch: its advantage is at most the sum
   over the epochs `e` of the advantages of the guessing reductions `smGuessAdv ΔFS ΔPCS A e`
-  (`sm_adaptive_advantage_le`), the sum over the epochs of ACD's bound;
+  (`sm_adaptive_advantage_le`), the sum over the epochs of ACD's bound; for an adversary asking
+  at most `q` queries the sum runs over the epochs `e ≤ q`
+  (`sm_adaptive_advantage_le_of_isQueryBound`);
 * one real-or-random challenge instead of left-or-right challenges on several messages;
 * in-order delivery of the CKA messages; the receiver keeps the receiving chain of the epoch it
   received, and ciphertexts are not delivered (no decryption, no injection, no authenticity);
@@ -151,6 +153,15 @@ and the hops 2 and 1 back with the uniform challenge ciphertext.
 * `sm_adaptive_corrupt_advantage_le`, `sm_dh_adaptive_advantage_le`,
   `sm_dh_hkdf_adaptive_advantage_le` — the adaptive game: the sum over the epochs of the CKA
   (DDH), PRF-PRNG (dual-PRF) and FS-AEAD terms
+* `sm_guess_game_eq_zero_of_lt`, `sm_guess_advantage_eq_zero_of_lt` — the horizon: for an
+  adversary asking at most `q` queries, the guessing reduction at an epoch `e > q` never wins,
+  since the challenge is answered at the counter of a party and every query raises each counter
+  by at most one (`smAdOracle_t_le_succ`, `smAd_run_cE_le`, from the graded run invariant
+  `OracleAdv.run_support_level`)
+* `sm_adaptive_advantage_le_of_isQueryBound`, `sm_adaptive_corrupt_advantage_le_of_isQueryBound`,
+  `sm_dh_adaptive_advantage_le_of_isQueryBound`,
+  `sm_dh_hkdf_adaptive_advantage_le_of_isQueryBound` — the adaptive bounds for an adversary
+  asking at most `q` queries, with the finite sum over the epochs `e ≤ q`
 * `smCKATreeOf.erase_timed`, `smRootTreeOf.erase_timed`, `smFSTreeOf.erase_timed`,
   `ppRedR.erase_timed`, `ppRedL.erase_timed`, `smPassiveTreeOf.erase_timed`,
   `guessTreeOf.erase_timed` — the costed reductions (`derive_timed`)
@@ -308,6 +319,39 @@ theorem run_map_apply_eq_of_agree {S₁ S₂ : Type} (O₁ : S₁ → D → PMF 
       by_cases hz : bad₁ z.2 = true
       · rw [run_apply_eq_zero_of_bad O₁ bad₁ h₁ _ z.2 hz y hy, mul_zero, mul_zero]
       · rw [hagree s d hs hbs' z (by simpa using hz)]
+
+/-- **A graded invariant along a run with a query bound.** Let `L c` be state predicates,
+increasing in `c`, such that every oracle call from a state of `L c` leads to states of
+`L (c + 1)`. A run of an adversary asking at most `n` queries from a state of `L c` ends in a
+state of `L (c + n)`. -/
+theorem run_support_level (O : S → D → PMF (R × S)) (L : ℕ → S → Prop)
+    (hL : ∀ c s, L c s → L (c + 1) s)
+    (hO : ∀ c s d, L c s → ∀ x ∈ (O s d).support, L (c + 1) x.2) {A : OracleAdv D R α}
+    {n : ℕ} (hA : A.IsQueryBound n) (c : ℕ) (s : S) (hs : L c s) :
+    ∀ x ∈ (run O A s).support, L (c + n) x.2 := by
+  induction A generalizing n c s with
+  | ret a =>
+    intro x hx
+    rw [run_ret, PMF.mem_support_pure_iff] at hx
+    subst hx
+    clear hA
+    induction n with
+    | zero => exact hs
+    | succ n ih => exact hL _ _ ih
+  | rand p k ih =>
+    intro x hx
+    rw [run_rand, PMF.mem_support_bind_iff] at hx
+    obtain ⟨b, -, hx⟩ := hx
+    exact ih b (hA b) c s hs x hx
+  | query d k ih =>
+    cases n with
+    | zero => exact hA.elim
+    | succ n =>
+      intro x hx
+      rw [run_query, PMF.mem_support_bind_iff] at hx
+      obtain ⟨y, hy, hx⟩ := hx
+      rw [show c + (n + 1) = c + 1 + n by omega]
+      exact ih y.1 (hA y.1) (c + 1) y.2 (hO c s d hs y hy) x hx
 
 end CatCrypt.Crypto.OracleAdv
 
@@ -3657,6 +3701,157 @@ theorem accept_eq_tsum_chall (P : PMF (Bool × SMSt Sc Msg RK Sa × SMAdRec)) :
 
 end GuessSim
 
+/-! ## The horizon of the challenge epoch -/
+
+section Horizon
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct]
+
+/-- **One epoch per query.** Every oracle call raises every epoch counter by at most one. -/
+theorem smOracleOf_t_le_succ (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa)
+    (q : SMQuery W) (x) (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support)
+    (P : CKAParty) : x.2.ck.t P ≤ s.ck.t P + 1 := by
+  cases q with
+  | ratchet p =>
+    simp only [smOracleOf] at hx
+    split at hx
+    · simp only [PMF.support_bind, Set.mem_iUnion, PMF.support_pure, Set.mem_singleton_iff]
+        at hx
+      obtain ⟨r, -, y, -, rfl⟩ := hx
+      by_cases h : P = p <;> simp [h]
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
+      rw [hx]; exact Nat.le_succ _
+  | recv p =>
+    simp only [smOracleOf] at hx
+    split at hx <;> simp only [PMF.support_pure, Set.mem_singleton_iff] at hx <;> rw [hx]
+    · by_cases h : P = p <;> simp [h]
+    · exact Nat.le_succ _
+  | send p m =>
+    simp only [smOracleOf] at hx
+    split at hx
+    · split at hx <;> simp only [PMF.support_pure, Set.mem_singleton_iff] at hx <;> rw [hx] <;>
+        exact Nat.le_succ _
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
+      rw [hx]; exact Nat.le_succ _
+  | chall p m =>
+    simp only [smOracleOf] at hx
+    split at hx
+    · split at hx
+      · simp only [PMF.support_bind, Set.mem_iUnion, PMF.support_pure, Set.mem_singleton_iff]
+          at hx
+        obtain ⟨c, -, rfl⟩ := hx
+        exact Nat.le_succ _
+      · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
+        rw [hx]; exact Nat.le_succ _
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
+      rw [hx]; exact Nat.le_succ _
+  | corrupt p =>
+    simp only [smOracleOf, PMF.support_pure, Set.mem_singleton_iff] at hx
+    rw [hx]; exact Nat.le_succ _
+
+/-- Every call of the adaptive oracle raises every epoch counter by at most one. -/
+theorem smAdOracle_t_le_succ (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec) (q : SMQuery W) (z)
+    (hz : z ∈ (smAdOracle C R G D ΔFS ΔPCS ideal x q).support) (P : CKAParty) :
+    z.2.1.ck.t P ≤ x.1.ck.t P + 1 := by
+  cases q with
+  | ratchet p =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, hy, rfl⟩ := hz
+    exact smOracleOf_t_le_succ C R G D ΔFS ΔPCS 0 ideal (realRoot R) x.1 _ y hy P
+  | recv p =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, hy, rfl⟩ := hz
+    exact smOracleOf_t_le_succ C R G D ΔFS ΔPCS 0 ideal (realRoot R) x.1 _ y hy P
+  | send p m =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, hy, rfl⟩ := hz
+    exact smOracleOf_t_le_succ C R G D ΔFS ΔPCS 0 ideal (realRoot R) x.1 _ y hy P
+  | chall p m =>
+    simp only [smAdOracle] at hz
+    split at hz
+    · split at hz
+      · simp only [PMF.support_bind, PMF.support_pure, Set.mem_iUnion, Set.mem_singleton_iff]
+          at hz
+        obtain ⟨c, -, rfl⟩ := hz
+        exact Nat.le_succ _
+      · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+        rw [hz]; exact Nat.le_succ _
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+      rw [hz]; exact Nat.le_succ _
+  | corrupt p =>
+    simp only [smAdOracle] at hz
+    split at hz <;> simp only [PMF.support_pure, Set.mem_singleton_iff] at hz <;> rw [hz] <;>
+      exact Nat.le_succ _
+
+/-- A call of the adaptive oracle keeps the epoch of the answered challenge, or answers the
+challenge at the counter of a party. -/
+theorem smAdOracle_cE (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec) (q : SMQuery W) (z)
+    (hz : z ∈ (smAdOracle C R G D ΔFS ΔPCS ideal x q).support) (e : ℕ)
+    (he : z.2.2.cE = some e) : x.2.cE = some e ∨ ∃ P, e = x.1.ck.t P := by
+  cases q with
+  | ratchet p =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, -, rfl⟩ := hz; exact Or.inl he
+  | recv p =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, -, rfl⟩ := hz; exact Or.inl he
+  | send p m =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, -, rfl⟩ := hz; exact Or.inl he
+  | chall p m =>
+    simp only [smAdOracle] at hz
+    split at hz
+    · split at hz
+      · simp only [PMF.support_bind, PMF.support_pure, Set.mem_iUnion, Set.mem_singleton_iff]
+          at hz
+        obtain ⟨c, -, rfl⟩ := hz
+        simp only [Option.some.injEq] at he
+        exact Or.inr ⟨p, he.symm⟩
+      · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+        rw [hz] at he; exact Or.inl he
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+      rw [hz] at he; exact Or.inl he
+  | corrupt p =>
+    simp only [smAdOracle] at hz
+    split at hz
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+      rw [hz] at he; exact absurd he (by simp)
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+      rw [hz] at he; exact Or.inl he
+
+/-- **The horizon of the challenge.** In a run of an adversary asking at most `n` queries
+against the adaptive oracle, from a state whose epoch counters and answered challenge epoch are
+at most `c`, the challenge is answered at an epoch at most `c + n`. -/
+theorem smAd_run_cE_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) {n : ℕ}
+    {A : OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool} (hA : A.IsQueryBound n)
+    (x : SMSt Sc Msg RK Sa × SMAdRec) (c : ℕ) (hxt : ∀ P, x.1.ck.t P ≤ c)
+    (hxe : ∀ e, x.2.cE = some e → e ≤ c) (z)
+    (hz : z ∈ (OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS ideal) A x).support) (e : ℕ)
+    (he : z.2.2.cE = some e) : e ≤ c + n := by
+  refine (OracleAdv.run_support_level (smAdOracle C R G D ΔFS ΔPCS ideal)
+    (fun c x => (∀ P, x.1.ck.t P ≤ c) ∧ ∀ e, x.2.cE = some e → e ≤ c)
+    (fun c x hx => ⟨fun P => (hx.1 P).trans (Nat.le_succ c),
+      fun e he => (hx.2 e he).trans (Nat.le_succ c)⟩) ?_ hA c x ⟨hxt, hxe⟩ z hz).2 e he
+  intro c y q hy w hw
+  refine ⟨fun P => ?_, fun e he => ?_⟩
+  · have := smAdOracle_t_le_succ C R G D ΔFS ΔPCS ideal y q w hw P
+    have := hy.1 P
+    omega
+  · rcases smAdOracle_cE C R G D ΔFS ΔPCS ideal y q w hw e he with h | ⟨P, rfl⟩
+    · exact (hy.2 e h).trans (Nat.le_succ c)
+    · exact (hy.1 P).trans (Nat.le_succ c)
+
+end Horizon
+
 /-! ## The adaptive game from the game with an announced challenge epoch -/
 
 section AdaptiveMain
@@ -3744,6 +3939,66 @@ theorem sm_adaptive_advantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
   · refine (key _ _ _).trans (le_of_eq (tsum_congr fun e => ?_))
     exact sup_comm _ _
 
+/-- **The horizon of the guess.** For an adversary asking at most `q` queries, the guessing
+reduction at an epoch `e > q` never wins the game with the announced epoch `e`: the adaptive
+game answers the challenge at the counter of a party, and every query raises each counter by
+at most one. -/
+theorem sm_guess_game_eq_zero_of_lt (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) {q e : ℕ}
+    (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (hA : ∀ T, (A T).IsQueryBound q) (he : q < e) :
+    prTrue (sm_corrupt_game C R G D ΔFS ΔPCS ideal (smGuessAdv ΔFS ΔPCS A e)) Heap.empty = 0 := by
+  rw [sm_guess_game_eq C initP hinit]
+  refine ENNReal.tsum_eq_zero.mpr fun i => mul_eq_zero_of_right _ ?_
+  refine ENNReal.tsum_eq_zero.mpr fun rk => mul_eq_zero_of_right _ ?_
+  rw [PMF.map_apply]
+  refine ENNReal.tsum_eq_zero.mpr fun z => ?_
+  split
+  · rename_i hz
+    refine (PMF.apply_eq_zero_iff _ _).mpr fun hzs => ?_
+    have hcE : z.2.2.cE = some e := by
+      have h := hz.symm
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      exact h.2
+    have h0t : ∀ P, (smInit (Sa := Sa) i rk, (⟨none, 0⟩ : SMAdRec)).1.ck.t P ≤ 0 := fun P =>
+      le_of_eq rfl
+    have h0e : ∀ e', (smInit (Sa := Sa) i rk, (⟨none, 0⟩ : SMAdRec)).2.cE = some e' → e' ≤ 0 :=
+      fun e' h => absurd h (by simp)
+    have := smAd_run_cE_le C R G D ΔFS ΔPCS ideal (hA i.1) _ 0 h0t h0e z hzs e hcE
+    omega
+  · rfl
+
+/-- The guessing reduction at an epoch `e > q` of an adversary asking at most `q` queries has
+advantage zero. -/
+theorem sm_guess_advantage_eq_zero_of_lt (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) {q e : ℕ} (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (hA : ∀ T, (A T).IsQueryBound q) (he : q < e) :
+    SM_Corrupt_Advantage C R G D ΔFS ΔPCS (smGuessAdv ΔFS ΔPCS A e) = 0 := by
+  simp only [SM_Corrupt_Advantage, Advantage,
+    sm_guess_game_eq_zero_of_lt C initP hinit R G D ΔFS ΔPCS _ A hA he, tsub_self, max_self]
+
+/-- **The adaptive challenge epoch from the announced one, for an adversary with a query
+bound.** For every adversary `A` asking at most `q` queries, the advantage in the game with an
+adaptive challenge epoch is at most the sum over the epochs `e ≤ q` of the advantages of the
+guessing reductions `smGuessAdv ΔFS ΔPCS A e` (`sm_adaptive_advantage_le`, whose terms vanish
+for `e > q` by `sm_guess_advantage_eq_zero_of_lt`). -/
+theorem sm_adaptive_advantage_le_of_isQueryBound (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) {q : ℕ} (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (hA : ∀ T, (A T).IsQueryBound q) :
+    SM_Adaptive_Advantage C R G D ΔFS ΔPCS A ≤
+      ∑ e ∈ Finset.range (q + 1),
+        SM_Corrupt_Advantage C R G D ΔFS ΔPCS (smGuessAdv ΔFS ΔPCS A e) := by
+  refine (sm_adaptive_advantage_le C initP hinit R G D ΔFS ΔPCS A).trans (le_of_eq ?_)
+  refine tsum_eq_sum fun e he => ?_
+  simp only [Finset.mem_range, not_lt] at he
+  exact sm_guess_advantage_eq_zero_of_lt C initP hinit R G D ΔFS ΔPCS A hA (by omega)
+
 /-- **Secure messaging with an adaptive challenge epoch from CKA, PRF-PRNG and FS-AEAD
 security.** With `2 ≤ ΔFS` and `1 ≤ ΔPCS`, the advantage of every adversary `A` in the game with
 an adaptive challenge epoch is at most the sum over the epochs `e` of the bound of
@@ -3762,6 +4017,26 @@ theorem sm_adaptive_corrupt_advantage_le [Fintype Key] [Nonempty Key] [Fintype S
         FSAEAD_Corrupt_Advantage G D (smcFSRed C R G D ΔFS ΔPCS initP (smGuessAdv ΔFS ΔPCS A e))) :=
   (sm_adaptive_advantage_le C initP hinit R G D ΔFS ΔPCS A).trans
     (ENNReal.tsum_le_tsum fun _ => sm_corrupt_advantage_le C hS initP hinit R G D hFS hPCS _)
+
+/-- **Secure messaging with an adaptive challenge epoch, for an adversary with a query bound.**
+With `2 ≤ ΔFS` and `1 ≤ ΔPCS`, the advantage of every adversary `A` asking at most `q` queries
+in the game with an adaptive challenge epoch is at most the sum over the epochs `e ≤ q` of the
+bound of `sm_corrupt_advantage_le` at the guessing reduction `smGuessAdv ΔFS ΔPCS A e`. -/
+theorem sm_adaptive_corrupt_advantage_le_of_isQueryBound [Fintype Key] [Nonempty Key]
+    [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq Key] (C : CKADef Sc Msg Key)
+    [CKACoins C Rand] (hS : CKACoins.Sound C) (initP : PMF (Msg × Sc × Sc))
+    (hinit : C.init = liftPMF initP) (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) {q : ℕ}
+    (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (hA : ∀ T, (A T).IsQueryBound q) :
+    SM_Adaptive_Advantage C R G D ΔFS ΔPCS A ≤
+      ∑ e ∈ Finset.range (q + 1), (∑ b : Bool,
+          CKA_Corrupt_Advantage C ΔFS ΔPCS (smcCKARed R G D b (smGuessAdv ΔFS ΔPCS A e)) +
+        ∑ b : Bool,
+          PRFPRNG_Advantage R (smcRootRed C R G D ΔFS ΔPCS b initP (smGuessAdv ΔFS ΔPCS A e)) +
+        FSAEAD_Corrupt_Advantage G D (smcFSRed C R G D ΔFS ΔPCS initP (smGuessAdv ΔFS ΔPCS A e))) :=
+  (sm_adaptive_advantage_le_of_isQueryBound C initP hinit R G D ΔFS ΔPCS A hA).trans
+    (Finset.sum_le_sum fun _ _ => sm_corrupt_advantage_le C hS initP hinit R G D hFS hPCS _)
 
 end AdaptiveMain
 
@@ -3801,6 +4076,42 @@ theorem sm_dh_hkdf_adaptive_advantage_le (H : RK → G → RK × Sa) (F : PRGDef
           (smcFSRed (dhCKA G) (hkdfRoot H) F D 2 2 (dhInitP G) (smGuessAdv 2 2 A e))) :=
   (sm_adaptive_advantage_le (dhCKA G) (dhInitP G) (dhCKA_init_eq G) (hkdfRoot H) F D 2 2 A).trans
     (ENNReal.tsum_le_tsum fun _ => sm_dh_hkdf_corrupt_advantage_le G H F D _)
+
+/-- **The Diffie–Hellman double ratchet with an adaptive challenge epoch, for an adversary
+with a query bound**: the bound of `sm_dh_adaptive_advantage_le` with the sum over the epochs
+`e ≤ q`, for an adversary asking at most `q` queries. -/
+theorem sm_dh_adaptive_advantage_le_of_isQueryBound (R : PRGDef (RK × G) (RK × Sa))
+    (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {q : ℕ}
+    (A : G → OracleAdv (SMQuery W) (SMAns (G × CG.Exp) G RK Sa Ct) Bool)
+    (hA : ∀ T, (A T).IsQueryBound q) :
+    SM_Adaptive_Advantage (dhCKA G) R F D 2 2 A ≤
+      ∑ e ∈ Finset.range (q + 1), (∑ b : Bool, DDH_Advantage G
+          (ckaCorruptDDHRed (smcCKARed (Rand := CG.Exp) R F D b (smGuessAdv 2 2 A e))) +
+        ∑ b : Bool,
+          PRFPRNG_Advantage R (smcRootRed (dhCKA G) R F D 2 2 b (dhInitP G) (smGuessAdv 2 2 A e)) +
+        FSAEAD_Corrupt_Advantage F D
+          (smcFSRed (dhCKA G) R F D 2 2 (dhInitP G) (smGuessAdv 2 2 A e))) :=
+  (sm_adaptive_advantage_le_of_isQueryBound (dhCKA G) (dhInitP G) (dhCKA_init_eq G) R F D 2 2 A
+    hA).trans (Finset.sum_le_sum fun _ _ => sm_dh_corrupt_advantage_le G R F D _)
+
+/-- **The Diffie–Hellman double ratchet with the HKDF-shaped root step and an adaptive challenge
+epoch, for an adversary with a query bound**: the bound of `sm_dh_hkdf_adaptive_advantage_le`
+with the sum over the epochs `e ≤ q`, for an adversary asking at most `q` queries. -/
+theorem sm_dh_hkdf_adaptive_advantage_le_of_isQueryBound (H : RK → G → RK × Sa)
+    (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {q : ℕ}
+    (A : G → OracleAdv (SMQuery W) (SMAns (G × CG.Exp) G RK Sa Ct) Bool)
+    (hA : ∀ T, (A T).IsQueryBound q) :
+    SM_Adaptive_Advantage (dhCKA G) (hkdfRoot H) F D 2 2 A ≤
+      ∑ e ∈ Finset.range (q + 1), (∑ b : Bool, DDH_Advantage G (ckaCorruptDDHRed
+            (smcCKARed (Rand := CG.Exp) (hkdfRoot H) F D b (smGuessAdv 2 2 A e))) +
+        ∑ b : Bool, (DualPRF_Right_Advantage H (ppRedR H
+              (smcRootRed (dhCKA G) (hkdfRoot H) F D 2 2 b (dhInitP G) (smGuessAdv 2 2 A e))) +
+            DualPRF_Left_Advantage H (ppRedL (Key := G)
+              (smcRootRed (dhCKA G) (hkdfRoot H) F D 2 2 b (dhInitP G) (smGuessAdv 2 2 A e)))) +
+        FSAEAD_Corrupt_Advantage F D
+          (smcFSRed (dhCKA G) (hkdfRoot H) F D 2 2 (dhInitP G) (smGuessAdv 2 2 A e))) :=
+  (sm_adaptive_advantage_le_of_isQueryBound (dhCKA G) (dhInitP G) (dhCKA_init_eq G) (hkdfRoot H)
+    F D 2 2 A hA).trans (Finset.sum_le_sum fun _ _ => sm_dh_hkdf_corrupt_advantage_le G H F D _)
 
 end AdaptiveDH
 
