@@ -43,11 +43,20 @@ recursion costs one plus its body, and a child whose result the step does not ap
 nothing. A case analysis is the `fold` that applies no recursive result: one step plus the
 branch.
 
+## Dependent products and sums
+
+`ptab ts` evaluates its components in the order of `tabT` (`tabDep`: each leaf tagged with its
+element, then read back as a dependent function), at no cost of its own, as `pair` is free: the
+table costs the sum of its components. `papp` and `spair` are free, as projections and
+constructors are; `scase` and `fcase` place one step node and continue with the branch, as
+`case` does.
+
 ## Adequacy
 
 Function values of the two instances differ (the evaluator's closures carry ticks), so they
 are related by a logical relation `ValRel`: equality at ground types and at inductive types,
-whose fields are first-order, the lifting `CTree.Rel` at function types. `Tm.interp_rel` is the fundamental lemma: in related environments the
+whose fields are first-order, the lifting `CTree.Rel` at function types, componentwise at
+dependent products and at the common index of dependent pairs. `Tm.interp_rel` is the fundamental lemma: in related environments the
 evaluator and the denotation give related trees. At first-order types `ValRel` is equality,
 so the evaluator with its ticks erased is the denotation (`Tm.eval_erase`), and both have the
 same meaning in `SPComp` (`Tm.run_eval`).
@@ -138,6 +147,21 @@ def tabT : (f : FTy) → {X : Type} → (f.den → CTree X) → CTree (f.den →
   | .fin n, _, g => tabFin (n + 1) g
   | .tab q r, _, g => tabTab r (fun g' => tabT r g') q g
 
+/-- The value of a dependent pair at the element `j`: its value when its index is `j`, the
+default `d j` otherwise. -/
+def sigmaAt {I : Type} [DecidableEq I] {X : I → Type} (d : (j : I) → X j) (s : (j : I) × X j)
+    (j : I) : X j :=
+  if e : s.1 = j then e ▸ s.2 else d j
+
+/-- Dependent tabulation over a finite ground type: the trees at every element in the order of
+`tabT`, their leaves collected into a dependent function. Each leaf is tagged with its element,
+and the default `d` is the value at an element whose tag differs, which does not occur
+(`tabDep_rel`). -/
+def tabDep (f : FTy) {X : f.den → Type} (d : (j : f.den) → X j)
+    (g : (j : f.den) → CTree (X j)) : CTree ((j : f.den) → X j) :=
+  (tabT f fun j => (g j).bind fun x => .ret (⟨j, x⟩ : (j : f.den) × X j)).bind fun h =>
+    .ret fun j => sigmaAt d (h j) j
+
 /-- A constructor of a signature `S` at its argument `v`, the node built by `mk`; the function of
 the children is applied at every position (`tabT`), one step node per application. -/
 def conAt {X : Ty} : (S : Sig) → ((a : (Sig.den S).1) → ((Sig.den S).2 a → Val X) → Val X) →
@@ -151,49 +175,59 @@ def conAt {X : Ty} : (S : Sig) → ((a : (Sig.den S).1) → ((Sig.den S).2 a →
     (tabT f fun j => tk (v'.2 j)).bind fun h => .ret (mk (.inr v'.1) h)
 
 /-- The interpreter of D into costed trees, with `tk` at every evaluation step. -/
-def Tm.interp {Γ : List Ty} {τ : Ty} : Tm Γ τ → Env Γ → CTree (Val τ)
-  | .var x, ρ => .ret (ρ _ x)
-  | .lam b, ρ => .ret fun v => Tm.interp b (ρ.cons v)
-  | .app f x, ρ => (Tm.interp f ρ).bind fun g => (Tm.interp x ρ).bind fun v => tk (g v)
-  | .letE e b, ρ => (Tm.interp e ρ).bind fun v => tk (Tm.interp b (ρ.cons v))
-  | .seq e b, ρ => (Tm.interp e ρ).bind fun _ => tk (Tm.interp b ρ)
-  | .natLit n, _ => .ret n
-  | .lit _ v, _ => .ret v
-  | .prim p x, ρ => (Tm.interp x ρ).bind fun v => stepN tk (p.cost v) (.ret (p.apply v))
-  | .pair x y, ρ => (Tm.interp x ρ).bind fun u => (Tm.interp y ρ).bind fun v => .ret (u, v)
-  | .fst (a := a) (b := b) p, ρ => (Tm.interp p ρ).bind fun (v : Val a × Val b) => .ret v.1
-  | .snd (a := a) (b := b) p, ρ => (Tm.interp p ρ).bind fun (v : Val a × Val b) => .ret v.2
-  | .inl (a := a) (b := b) x, ρ =>
+def Tm.interp {Γ : List Ty} : {τ : Ty} → Tm Γ τ → Env Γ → CTree (Val τ)
+  | _, .var x, ρ => .ret (ρ _ x)
+  | _, .lam b, ρ => .ret fun v => Tm.interp b (ρ.cons v)
+  | _, .app f x, ρ => (Tm.interp f ρ).bind fun g => (Tm.interp x ρ).bind fun v => tk (g v)
+  | _, .letE e b, ρ => (Tm.interp e ρ).bind fun v => tk (Tm.interp b (ρ.cons v))
+  | _, .seq e b, ρ => (Tm.interp e ρ).bind fun _ => tk (Tm.interp b ρ)
+  | _, .natLit n, _ => .ret n
+  | _, .lit _ v, _ => .ret v
+  | _, .prim p x, ρ => (Tm.interp x ρ).bind fun v => stepN tk (p.cost v) (.ret (p.apply v))
+  | _, .pair x y, ρ => (Tm.interp x ρ).bind fun u => (Tm.interp y ρ).bind fun v => .ret (u, v)
+  | _, .fst (a := a) (b := b) p, ρ => (Tm.interp p ρ).bind fun (v : Val a × Val b) => .ret v.1
+  | _, .snd (a := a) (b := b) p, ρ => (Tm.interp p ρ).bind fun (v : Val a × Val b) => .ret v.2
+  | _, .inl (a := a) (b := b) x, ρ =>
     (Tm.interp x ρ).bind fun v => .ret (Sum.inl v : Val a ⊕ Val b)
-  | .inr (a := a) (b := b) x, ρ =>
+  | _, .inr (a := a) (b := b) x, ρ =>
     (Tm.interp x ρ).bind fun v => .ret (Sum.inr v : Val a ⊕ Val b)
-  | .case (a := a) (b := b) s l r, ρ =>
+  | _, .case (a := a) (b := b) s l r, ρ =>
     (Tm.interp s ρ).bind fun (v : Val a ⊕ Val b) =>
       tk (Sum.elim (fun x => Tm.interp l (ρ.cons x)) (fun y => Tm.interp r (ρ.cons y)) v)
-  | .ite c t e, ρ =>
+  | _, .ite c t e, ρ =>
     (Tm.interp c ρ).bind fun (b : Bool) => tk (bif b then Tm.interp t ρ else Tm.interp e ρ)
-  | .nil (a := a), _ => .ret ([] : List (Val a))
-  | .cons (a := a) x xs, ρ =>
+  | _, .nil (a := a), _ => .ret ([] : List (Val a))
+  | _, .cons (a := a) x xs, ρ =>
     (Tm.interp x ρ).bind fun v => (Tm.interp xs ρ).bind fun (l : List (Val a)) => .ret (v :: l)
-  | .lcase (a := a) xs n c, ρ =>
+  | _, .lcase (a := a) xs n c, ρ =>
     (Tm.interp xs ρ).bind fun (l : List (Val a)) =>
       tk (listCase l (Tm.interp n ρ) fun x l' =>
         Tm.interp c (((ρ.cons (τ := .list a) l').cons x)))
-  | .foldl f i xs, ρ =>
+  | _, .foldl f i xs, ρ =>
     (Tm.interp f ρ).bind fun g => (Tm.interp i ρ).bind fun acc =>
       (Tm.interp xs ρ).bind fun l => foldT tk g acc l
-  | .iter n f i, ρ =>
+  | _, .iter n f i, ρ =>
     (Tm.interp n ρ).bind fun (k : ℕ) => (Tm.interp f ρ).bind fun g =>
       (Tm.interp i ρ).bind fun acc => iterT tk g acc k
-  | .sample f, _ => .sample f .ret
-  | .get n f, _ => .get n f .ret
-  | .set n f x, ρ => (Tm.interp x ρ).bind fun v => .set n f v (.ret (() : Unit))
-  | .query d r x, ρ => (Tm.interp x ρ).bind fun v => .query d r v .ret
-  | .fail, _ => .fail
-  | .con (S := S) _ x, ρ =>
+  | _, .sample f, _ => .sample f .ret
+  | _, .get n f, _ => .get n f .ret
+  | _, .set n f x, ρ => (Tm.interp x ρ).bind fun v => .set n f v (.ret (() : Unit))
+  | _, .query d r x, ρ => (Tm.interp x ρ).bind fun v => .query d r v .ret
+  | _, .fail, _ => .fail
+  | _, .con (S := S) _ x, ρ =>
     (Tm.interp x ρ).bind fun v => conAt tk S (fun a k => (WType.mk a k : Val (.mu S))) v
-  | .fold _ g x, ρ =>
+  | _, .fold _ g x, ρ =>
     (Tm.interp g ρ).bind fun gv => (Tm.interp x ρ).bind fun w => tk (foldW gv w)
+  | _, .ptab (f := f) (B := B) ts, ρ =>
+    tabDep f (fun j => Val.default (B j)) fun j => Tm.interp (ts j) ρ
+  | _, .papp (B := B) t j, ρ =>
+    (Tm.interp t ρ).bind fun (v : (j : _) → Val (B j)) => .ret (v j)
+  | _, .spair (f := f) (B := B) j x, ρ =>
+    (Tm.interp x ρ).bind fun v => .ret (⟨j, v⟩ : (j : f.den) × Val (B j))
+  | _, .scase (f := f) (B := B) s ks, ρ =>
+    (Tm.interp s ρ).bind fun (v : (j : f.den) × Val (B j)) =>
+      tk (Tm.interp (ks v.1) (ρ.cons v.2))
+  | _, .fcase (f := f) i ks, ρ => (Tm.interp i ρ).bind fun (j : f.den) => tk (Tm.interp (ks j) ρ)
 
 end Interp
 
@@ -225,6 +259,8 @@ def ValRel : (τ : Ty) → Val τ → Val τ → Prop
   | .arr a b, f, g => ∀ x y, ValRel a x y → CTree.Rel (ValRel b) (f x) (g y)
   | .list a, u, v => List.Forall₂ (ValRel a) u v
   | .mu _, u, v => u = v
+  | .pi _ B, u, v => ∀ j, ValRel (B j) (u j) (v j)
+  | .sig _ B, u, v => ∃ e : u.1 = v.1, ValRel (B v.1) (e ▸ u.2) v.2
 
 /-- Pointwise related environments. -/
 def EnvRel {Γ : List Ty} (ρ δ : Env Γ) : Prop := ∀ τ (x : Var Γ τ), ValRel τ (ρ τ x) (δ τ x)
@@ -267,6 +303,23 @@ theorem ValRel.iff_eq_of_FO : (τ : Ty) → τ.FO → ∀ u v : Val τ, ValRel �
     rw [hab, List.forall₂_eq_eq_eq]
     exact Iff.rfl
   | .mu _, _, _, _ => Iff.rfl
+  | .pi f B, h, u, v => by
+    change (j : f.den) → Val (B j) at u v
+    show (∀ j, ValRel (B j) (u j) (v j)) ↔ u = v
+    rw [funext_iff]
+    exact forall_congr' fun j => ValRel.iff_eq_of_FO (B j) (h j) (u j) (v j)
+  | .sig f B, h, u, v => by
+    change (j : f.den) × Val (B j) at u v
+    obtain ⟨i, x⟩ := u
+    obtain ⟨j, y⟩ := v
+    show (∃ e : i = j, ValRel (B j) (e ▸ x) y) ↔ _
+    constructor
+    · rintro ⟨rfl, hxy⟩
+      rw [(ValRel.iff_eq_of_FO (B i) (h i) x y).1 hxy]
+    · intro he
+      obtain ⟨rfl, hx⟩ := Sigma.mk.inj_iff.1 he
+      cases hx
+      exact ⟨rfl, (ValRel.iff_eq_of_FO (B i) (h i) x x).2 rfl⟩
 
 theorem Prim.rel {a b : Ty} (p : Prim a b) {u v : Val a} (h : ValRel a u v) :
     ValRel b (p.apply u) (p.apply v) := by
@@ -338,41 +391,65 @@ theorem listCase_rel {α α' γ γ' : Type} {R : α → α' → Prop} {T : γ �
   | nil => exact hn
   | cons hx hxs => exact hc _ _ _ _ hx hxs
 
-theorem tabFin_rel {X Y : Type} {R : X → Y → Prop} : ∀ (n : ℕ) {g : Fin n → CTree X}
-    {g' : Fin n → CTree Y}, (∀ i, CTree.Rel R (g i) (g' i)) →
-      CTree.Rel (fun h h' => ∀ i, R (h i) (h' i)) (tabFin n g) (tabFin n g')
-  | 0, _, _, _ => .ret fun i => i.elim0
-  | n + 1, _, _, hg => (hg 0).bind fun _ _ hx => (tabFin_rel n fun i => hg i.succ).bind
+theorem tabFin_rel {X Y : Type} : ∀ (n : ℕ) {R : Fin n → X → Y → Prop} {g : Fin n → CTree X}
+    {g' : Fin n → CTree Y}, (∀ i, CTree.Rel (R i) (g i) (g' i)) →
+      CTree.Rel (fun h h' => ∀ i, R i (h i) (h' i)) (tabFin n g) (tabFin n g')
+  | 0, _, _, _, _ => .ret fun i => i.elim0
+  | n + 1, R, _, _, hg => (hg 0).bind fun _ _ hx =>
+      (tabFin_rel n (R := fun i => R i.succ) fun i => hg i.succ).bind
       fun _ _ hh => .ret fun i => by
         refine Fin.cases ?_ (fun j => ?_) i
         · simpa using hx
         · simpa using hh j
 
 theorem tabTab_rel (r : FTy) (tr : ∀ {Y : Type}, (r.den → CTree Y) → CTree (r.den → Y))
-    (htr : ∀ {X Y : Type} {R : X → Y → Prop} {g : r.den → CTree X} {g' : r.den → CTree Y},
-      (∀ a, CTree.Rel R (g a) (g' a)) →
-        CTree.Rel (fun h h' => ∀ a, R (h a) (h' a)) (tr g) (tr g'))
-    {X Y : Type} {R : X → Y → Prop} : ∀ (q : ℕ) {g : (Fin q → r.den) → CTree X}
-      {g' : (Fin q → r.den) → CTree Y}, (∀ v, CTree.Rel R (g v) (g' v)) →
-      CTree.Rel (fun h h' => ∀ v, R (h v) (h' v)) (tabTab r tr q g) (tabTab r tr q g')
-  | 0, _, _, hg => (hg Fin.elim0).bind fun _ _ hx => .ret fun v => by
+    (htr : ∀ {X Y : Type} {R : r.den → X → Y → Prop} {g : r.den → CTree X}
+      {g' : r.den → CTree Y}, (∀ a, CTree.Rel (R a) (g a) (g' a)) →
+        CTree.Rel (fun h h' => ∀ a, R a (h a) (h' a)) (tr g) (tr g'))
+    {X Y : Type} : ∀ (q : ℕ) {R : (Fin q → r.den) → X → Y → Prop}
+      {g : (Fin q → r.den) → CTree X} {g' : (Fin q → r.den) → CTree Y},
+      (∀ v, CTree.Rel (R v) (g v) (g' v)) →
+      CTree.Rel (fun h h' => ∀ v, R v (h v) (h' v)) (tabTab r tr q g) (tabTab r tr q g')
+  | 0, _, _, _, hg => (hg Fin.elim0).bind fun _ _ hx => .ret fun v => by
       have hv : v = Fin.elim0 := funext fun i => i.elim0
       subst hv
       exact hx
-  | q + 1, _, _, hg => (htr fun _ => tabTab_rel r tr htr q fun _ => hg _).bind fun _ _ hT =>
-      .ret fun v => hT (v 0) (Fin.tail v)
+  | q + 1, R, _, _, hg =>
+    (htr (R := fun a T T' => ∀ h, R (Fin.cons a h) (T h) (T' h)) fun a =>
+      tabTab_rel r tr htr q (R := fun h => R (Fin.cons a h)) fun _ => hg _).bind fun _ _ hT =>
+      .ret fun v => by
+        have hv : R (Fin.cons (v 0) (Fin.tail v)) _ _ := hT (v 0) (Fin.tail v)
+        rwa [Fin.cons_self_tail] at hv
 
-/-- Tabulations of related trees are related pointwise. -/
-theorem tabT_rel : ∀ (f : FTy) {X Y : Type} {R : X → Y → Prop} {g : f.den → CTree X}
-    {g' : f.den → CTree Y}, (∀ j, CTree.Rel R (g j) (g' j)) →
-      CTree.Rel (fun h h' => ∀ j, R (h j) (h' j)) (tabT f g) (tabT f g')
+/-- Tabulations of related trees are related pointwise, at a relation that may depend on the
+element. -/
+theorem tabT_rel : ∀ (f : FTy) {X Y : Type} {R : f.den → X → Y → Prop} {g : f.den → CTree X}
+    {g' : f.den → CTree Y}, (∀ j, CTree.Rel (R j) (g j) (g' j)) →
+      CTree.Rel (fun h h' => ∀ j, R j (h j) (h' j)) (tabT f g) (tabT f g')
   | .unit, _, _, _, _, _, hg => (hg ()).bind fun _ _ hx => .ret fun _ => hx
   | .bool, _, _, _, _, _, hg => (hg false).bind fun _ _ hx => (hg true).bind fun _ _ hy =>
       .ret fun b => by cases b; exact hx; exact hy
-  | .word w, _, _, _, _, _, hg => (tabFin_rel (2 ^ w) fun _ => hg _).bind fun _ _ hh =>
+  | .word w, _, _, R, _, _, hg =>
+    (tabFin_rel (2 ^ w) (R := fun i => R (BitVec.ofFin i)) fun _ => hg _).bind fun _ _ hh =>
       .ret fun v => hh v.toFin
   | .fin n, _, _, _, _, _, hg => tabFin_rel (n + 1) hg
   | .tab q r, _, _, _, _, _, hg => tabTab_rel r (fun g' => tabT r g') (fun h => tabT_rel r h) q hg
+
+theorem sigmaAt_mk {I : Type} [DecidableEq I] {X : I → Type} (d : (j : I) → X j) (j : I)
+    (x : X j) : sigmaAt d ⟨j, x⟩ j = x := by
+  simp [sigmaAt]
+
+/-- Dependent tabulations of related trees are related pointwise. -/
+theorem tabDep_rel (f : FTy) {X Y : f.den → Type} {R : (j : f.den) → X j → Y j → Prop}
+    {d : (j : f.den) → X j} {d' : (j : f.den) → Y j} {g : (j : f.den) → CTree (X j)}
+    {g' : (j : f.den) → CTree (Y j)} (hg : ∀ j, CTree.Rel (R j) (g j) (g' j)) :
+    CTree.Rel (fun h h' => ∀ j, R j (h j) (h' j)) (tabDep f d g) (tabDep f d' g') := by
+  refine (tabT_rel f (R := fun j s s' => ∃ x y, s = ⟨j, x⟩ ∧ s' = ⟨j, y⟩ ∧ R j x y)
+    fun j => (hg j).bind fun x y hxy => .ret ⟨x, y, rfl, rfl, hxy⟩).bind fun h h' hh => ?_
+  refine .ret fun j => ?_
+  obtain ⟨x, y, hx, hy, hxy⟩ := hh j
+  simp only [hx, hy, sigmaAt_mk]
+  exact hxy
 
 /-- A constructor at related arguments: the evaluator and the denotation build equal nodes, the
 children of a first-order signature being equal. -/
@@ -398,7 +475,8 @@ theorem conAt_rel {X : Ty} (hX : ∀ x y, ValRel X x y → x = y) : ∀ (S : Sig
     | inl h => exact conAt_rel hX S hS.1 _ h
     | @inr x y h =>
       have he : x.1 = y.1 := (ValRel.iff_eq_of_FO a hS.2 _ _).1 h.1
-      refine (tabT_rel f (R := ValRel X) fun j => .tick (h.2 j j rfl)).bind fun H H' hH => ?_
+      refine (tabT_rel f (R := fun _ => ValRel X) fun j => .tick (h.2 j j rfl)).bind
+        fun H H' hH => ?_
       refine .ret ?_
       show mk (.inr x.1) H = mk (.inr y.1) H'
       rw [he, show H = H' from funext fun j => hX _ _ (hH j)]
@@ -507,6 +585,26 @@ theorem interp_rel {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) :
       change w = w' at hw
       subst hw
       exact .tick (foldW_rel hS hg w)
+  | @ptab _ f B ts ih =>
+    intro ρ δ h
+    exact tabDep_rel f fun j => ih j h
+  | papp t j ih => intro ρ δ h; exact (ih h).bind fun u v huv => .ret (huv j)
+  | spair j x ih => intro ρ δ h; exact (ih h).bind fun u v huv => .ret ⟨rfl, huv⟩
+  | @scase _ f B c s ks ihs ihks =>
+    intro ρ δ h
+    refine (ihs h).bind fun u v huv => ?_
+    change (j : f.den) × Val (B j) at u v
+    obtain ⟨i, x⟩ := u
+    obtain ⟨j, y⟩ := v
+    change ∃ e : i = j, ValRel (B j) (e ▸ x) y at huv
+    obtain ⟨rfl, hxy⟩ := huv
+    exact .tick (ihks i (h.cons hxy))
+  | fcase i ks ihi ihks =>
+    intro ρ δ h
+    exact (ihi h).bind fun u v huv => by
+      change u = v at huv
+      subst huv
+      exact .tick (ihks u h)
 
 /-- Adequacy at first-order types: the evaluator with its ticks erased is the denotation. -/
 theorem eval_erase {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) (hτ : τ.FO) (hΓ : ∀ σ ∈ Γ, σ.FO)

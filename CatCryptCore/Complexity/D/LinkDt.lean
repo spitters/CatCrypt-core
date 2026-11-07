@@ -544,6 +544,10 @@ theorem Ty.hat_eq_val : ∀ τ : Ty, τ.FO → τ.hat = Val τ
   | .arr _ _, h => h.elim
   | .list a, h => congrArg List (Ty.hat_eq_val a h)
   | .mu _, _ => rfl
+  | .pi f B, h => congrArg (fun F : f.den → Type => (j : f.den) → F j)
+      (funext fun j => Ty.hat_eq_val (B j) (h j))
+  | .sig f B, h => congrArg (fun F : f.den → Type => (j : f.den) × F j)
+      (funext fun j => Ty.hat_eq_val (B j) (h j))
 
 theorem cast_prod {A A' B B' : Type} (pa : A = A') (pb : B = B') (p : (A × B) = (A' × B'))
     (x : A × B) : cast p x = (cast pa x.1, cast pb x.2) := by
@@ -564,6 +568,18 @@ theorem cast_list {A A' : Type} (pa : A = A') (p : List A = List A') (x : List A
   induction x with
   | nil => rfl
   | cons a l ih => exact congrArg (List.cons a) ih
+
+theorem cast_pi {I : Type} {A A' : I → Type} (pa : ∀ j, A j = A' j)
+    (p : ((j : I) → A j) = ((j : I) → A' j)) (x : (j : I) → A j) :
+    cast p x = fun j => cast (pa j) (x j) := by
+  obtain rfl : A = A' := funext pa
+  rfl
+
+theorem cast_sigma {I : Type} {A A' : I → Type} (pa : ∀ j, A j = A' j)
+    (p : ((j : I) × A j) = ((j : I) × A' j)) (x : (j : I) × A j) :
+    cast p x = ⟨x.1, cast (pa x.1) x.2⟩ := by
+  obtain rfl : A = A' := funext pa
+  rfl
 
 /-- At a first-order type, the value of D of a translated value is its cast. -/
 theorem Ty.toVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (u : τ.hat),
@@ -589,6 +605,14 @@ theorem Ty.toVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (u : τ.hat),
     rw [ha]
     exact (cast_list (Ty.hat_eq_val a h) _ u).symm
   | .mu _, _, _ => rfl
+  | .pi f B, h, u =>
+    (funext fun j => Ty.toVal_eq_cast (B j) (h j) (u j)).trans
+      (cast_pi (fun j => Ty.hat_eq_val (B j) (h j)) (Ty.hat_eq_val (.pi f B) h) u).symm
+  | .sig f B, h, u => by
+    change (j : f.den) × Ty.hat (B j) at u
+    show (⟨u.1, (B u.1).toVal (h u.1) u.2⟩ : (j : f.den) × Val (B j)) = _
+    rw [Ty.toVal_eq_cast (B u.1) (h u.1) u.2]
+    exact (cast_sigma (fun j => Ty.hat_eq_val (B j) (h j)) (Ty.hat_eq_val (.sig f B) h) u).symm
 
 /-- At a first-order type, the translated value of a value of D is its cast. -/
 theorem Ty.ofVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (v : Val τ),
@@ -615,6 +639,16 @@ theorem Ty.ofVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (v : Val τ),
     rw [ha]
     exact (cast_list (Ty.hat_eq_val a h).symm _ v).symm
   | .mu _, _, _ => rfl
+  | .pi f B, h, v =>
+    (funext fun j => Ty.ofVal_eq_cast (B j) (h j) (v j)).trans
+      (cast_pi (fun j => (Ty.hat_eq_val (B j) (h j)).symm) (Ty.hat_eq_val (.pi f B) h).symm
+        v).symm
+  | .sig f B, h, v => by
+    change (j : f.den) × Val (B j) at v
+    show (⟨v.1, (B v.1).ofVal (h v.1) v.2⟩ : (j : f.den) × Ty.hat (B j)) = _
+    rw [Ty.ofVal_eq_cast (B v.1) (h v.1) v.2]
+    exact (cast_sigma (fun j => (Ty.hat_eq_val (B j) (h j)).symm)
+      (Ty.hat_eq_val (.sig f B) h).symm v).symm
 
 /-- At a first-order type, a value of D related to a translated value is its cast. -/
 theorem Sim.cast_eq (τ : Ty) (h : τ.FO) {u : τ.hat} {v : Val τ} (hs : Sim τ u v) :

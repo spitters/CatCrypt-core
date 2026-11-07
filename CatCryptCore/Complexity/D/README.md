@@ -162,6 +162,32 @@ Unlike L, which encodes data by Scott encodings and counts their β-steps, D has
 products, sums, lists and primitive operations; a constructor or a projection costs nothing
 and a branch costs one step, the convention of `derive_timed`.
 
+## Dependent products and sums
+
+`Ty.pi f B` and `Ty.sig f B` are the dependent product and sum of a family `B : f.den → Ty` over
+a finite ground index `f` (`FTy`), so that a type computed from a finite datum, such as a record
+whose field types depend on a tag or a table of types `beta : Fin n → Type`, is a code of D.
+The index ranges over `f.den`, defined before `Ty`: an index over the values of a type of D
+would make `Ty` and `Val` an inductive-recursive pair, which Lean's kernel does not provide.
+`Val`, `ValRel`, `Ty.hat` and `Sim` are defined by recursion on the code: a dependent function
+of the values of the family, a dependent pair of an index and a value, and the translated
+values are the table of the translated components and the dependent pair of translated
+values.
+
+* `ptab ts`: a table, its components evaluated in the order of `tabT` (`tabDep`); it costs the
+  sum of its components and nothing of its own. `papp t j`: the component at a static index,
+  free.
+* `spair j x`: a pair at a static index, free; `scase s ks`: the branch of the index of a pair,
+  one step plus the branch.
+* `fcase i ks`: the branch at the value of a finite ground value, one step plus the branch. A
+  read of a table at a computed index is `fcase i fun j => papp t j`: one step, the read of a
+  tabulated function of `derive_timed` (rule (m)).
+
+The charges of `Tm.dt` are the same, a table charged the sum of the charges of its pure
+components (`tabCost`, `tabCost_add`); the soundness theorem `Tm.dtC_timedSim` covers the five
+constructs (`tabDep_stepN` for the table), and with it `Tm.cost_le_dt`, `Tm.dt_run` and
+`Tm.dt_erase`. Test: `CatCryptCoreTest/Complexity/D/PiSigTest.lean`.
+
 ## Inductive types
 
 `Ty.mu S` is the polynomial inductive type of a signature `S : Sig`: a list of constructors,

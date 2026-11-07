@@ -285,6 +285,8 @@ theorem valRel_eraseArr : (τ : Ty) → τ.FOArr → (v : Val τ) → ValRel τ 
   | .sum a b, h, v => (ValRel.iff_eq_of_FO (.sum a b) h v v).2 rfl
   | .list a, h, v => (ValRel.iff_eq_of_FO (.list a) h v v).2 rfl
   | .mu _, _, _ => rfl
+  | .pi f B, h, v => (ValRel.iff_eq_of_FO (.pi f B) h v v).2 rfl
+  | .sig f B, h, v => (ValRel.iff_eq_of_FO (.sig f B) h v v).2 rfl
 
 /-- The meaning of the evaluation of a term at a first-order type, in an environment of
 first-order values and function values between first-order types, is its denotation with the
