@@ -14,9 +14,11 @@ public import CatCryptCore.Crypto.OracleCollision
 
 `cpace_realizesSim` (`CatCryptCore.Crypto.PAKE.CPaceBound`) bounds the CPace square at the
 environment `Z` by `cpaceBadBound G B`, a sum of the probabilities of five bad-event experiments of
-the joint world at the oracle adversary `B = OProt.oracle.reduction Z`. This file bounds the
-experiments for an oracle adversary with at most `q` queries
-(`UCTransparent.OProt.isQueryBound_oracle_reduction` gives `q = Z.input.rounds`).
+the joint world at the oracle adversary `B = OProt.oracle.reduction Z`. This file bounds each
+experiment for an oracle adversary with at most `q` queries
+(`UCTransparent.OProt.isQueryBound_oracle_reduction` gives `q = Z.input.rounds`), by explicit
+reductions to the strong simultaneous and the gap Diffie–Hellman problems and by statistical
+terms, and obtains the realization of `F_lePAKE` by CPace with a concrete bound.
 
 ## A bad flag along a potential
 
@@ -32,9 +34,31 @@ only at a new session (`simWorldD_zs`), keeps the queried passwords, and adds at
 to the table of `H2` and to the programmed inputs (`simWorldD_cands_h2`); a step of the real
 world adds at most one entry to its table of `H2` (`realDet_h2`).
 
+## The simulated world with handles
+
+`hImpl` runs a step of the simulated world in which a party stores a handle `u` in place of its
+secret, and the match tests and the points of `H1` are answered by oracle queries (`HQ`, `HA`).
+For bijections `zOf pid` from handles to secrets, `simOracle_hImpl` identifies the step under the
+oracle `hOracle` with the step `idealStep` of the ideal game at the reconstructed state `reconW`.
+The reduction `dmAdv` runs the adversary against `hImpl` with `zOf pid u = x · u`, and the
+reduction `psRed` with `zOf pid u = c_pid + u`.
+
 ## Main results
 
 * `collStepExp_le`: the new-message collision experiment has probability at most `12 q / |S|`.
+* `uqExp_le`: the unqueried-match experiment has probability at most
+  `|Pw| · 4 q / |Sˣ| + 2 / |S|`; at each password, the trapdoor is not read before the query of
+  its point of `H1`, which gives a coupling at that password.
+* `dmExp_le`: the double-match experiment has probability at most twice the strong simultaneous
+  Diffie–Hellman advantage of `ssdhReduction G (CPaceH1.matchWrap (dmAdv G B))`, plus the
+  unqueried-match experiment and `3 / |S|`.
+* `psExp_le`: the passive-session experiment has probability at most the gap Diffie–Hellman
+  advantage of `psRed G B`.
+* `cpaceBadBound_le`: `cpaceBadBound G B ≤ cpaceConcreteBound G q B`, with the trapdoor
+  collision bounded by `tdCollProb_le`.
+* `cpace_realizesSim_concrete`: CPace realizes `F_lePAKE` behind `cpaceSim` with the bound
+  `cpaceConcreteBound G Z.input.rounds (OProt.oracle.reduction Z)`, and
+  `cpace_ucEmulatesCSim_concrete` is its form as `UCConcrete.UCEmulatesCSim`.
 -/
 
 @[expose] public section
@@ -2667,5 +2691,82 @@ theorem uqExp_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ) (hB : B.Is
     _ = _ := by rw [Finset.sum_const, Finset.card_univ, nsmul_eq_mul]
 
 end UQ
+
+/-! ## The concrete bound of the CPace square -/
+
+section Concrete
+
+variable {S W Pw K : Type} [Field S] [Fintype S] [DecidableEq S] [SampleableType W]
+  [Fintype Pw] [DecidableEq Pw] [Inhabited Pw] [Fintype K] [Nonempty K] [Inhabited K]
+  (G : DHGroup S W)
+
+/-- **The concrete bound of the CPace square** at an oracle adversary `B` with at most `q`
+queries: twice the strong SDH advantage of the double-match reduction, the gap Diffie–Hellman
+advantage of the passive-session reduction, and the statistical terms of two unqueried matches,
+the collision of `H1`, the zero secrets and the new-message collision. -/
+noncomputable def cpaceConcreteBound (q : ℕ) (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
+    ℝ≥0∞ :=
+  2 * ssdhGame G (ssdhReduction G (CPaceH1.matchWrap (dmAdv G B))) true +
+    GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) +
+    (2 * ((Fintype.card Pw : ℝ≥0∞) * (((4 * q : ℕ) : ℝ≥0∞) * (Fintype.card Sˣ : ℝ≥0∞)⁻¹)) +
+      ((Fintype.card Pw ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card Sˣ +
+      (7 + 12 * q) * (Fintype.card S : ℝ≥0∞)⁻¹)
+
+/-- **The bad events of the CPace square are bounded concretely.** -/
+theorem cpaceBadBound_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ)
+    (hB : B.IsQueryBound q) : cpaceBadBound G B ≤ cpaceConcreteBound G q B := by
+  have hdm := dmExp_le G B q hB
+  have huq := uqExp_le G B q hB
+  have hps := psExp_le G B
+  have htd := tdCollProb_le (S := S) (Pw := Pw)
+  have hcoll := collStepExp_le G B q hB
+  unfold cpaceBadBound cpaceConcreteBound
+  calc _ ≤ (2 * ssdhGame G (ssdhReduction G (CPaceH1.matchWrap (dmAdv G B))) true +
+        uqExp G B true + 3 * (Fintype.card S : ℝ≥0∞)⁻¹) + uqExp G B true +
+        GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) +
+        (((Fintype.card Pw ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card Sˣ +
+          12 * q * (Fintype.card S : ℝ≥0∞)⁻¹) := by
+        gcongr
+    _ ≤ (2 * ssdhGame G (ssdhReduction G (CPaceH1.matchWrap (dmAdv G B))) true +
+        ((Fintype.card Pw : ℝ≥0∞) * (((4 * q : ℕ) : ℝ≥0∞) * (Fintype.card Sˣ : ℝ≥0∞)⁻¹) +
+          2 * (Fintype.card S : ℝ≥0∞)⁻¹) + 3 * (Fintype.card S : ℝ≥0∞)⁻¹) +
+        ((Fintype.card Pw : ℝ≥0∞) * (((4 * q : ℕ) : ℝ≥0∞) * (Fintype.card Sˣ : ℝ≥0∞)⁻¹) +
+          2 * (Fintype.card S : ℝ≥0∞)⁻¹) +
+        GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) +
+        (((Fintype.card Pw ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card Sˣ +
+          12 * q * (Fintype.card S : ℝ≥0∞)⁻¹) := by
+        gcongr
+    _ = _ := by ring
+
+/-- **CPace realizes `F_lePAKE` behind `cpaceSim` with a concrete bound.** For every environment
+`Z`, the distance between the real CPace protocol and the simulator running with `F_lePAKE` is at
+most `cpaceConcreteBound G q B` at the oracle adversary `B = OProt.oracle.reduction Z`, which asks
+at most `q = Z.input.rounds` queries: twice the strong SDH advantage of
+`ssdhReduction G (matchWrap (dmAdv G B))`, the gap Diffie–Hellman advantage of `psRed G B`, and
+statistical terms in `q`, `|Pw|`, `|S|` and `|Sˣ|`. -/
+theorem cpace_realizesSim_concrete :
+    RealizesSim (cpaceReal G (K := K)) (F_lePAKE (Pw := Pw) (SPComp.sample K)) (cpaceSim G)
+      (fun _ Z => cpaceConcreteBound G Z.input.rounds
+        ((OProt.oracle (Q := OEv Pw W) (A := OOut W K)).reduction Z)) :=
+  fun ζ Z => (cpace_realizesSim G ζ Z).trans
+    (cpaceBadBound_le G _ Z.input.rounds (OProt.isQueryBound_oracle_reduction Z))
+
+/-- **CPace UC-emulates `F_lePAKE` behind `cpaceSim` with a concrete bound**, in the sense of
+`UCConcrete.UCEmulatesCSim`: the form of `cpace_realizesSim_concrete` given by
+`RealizesSim.toUCEmulatesCSim`, at the environment `Z` lifted to the plumbing interface. -/
+theorem cpace_ucEmulatesCSim_concrete (ζ Λ : Type) :
+    UCEmulatesCSim ⟨Strat ζ (OEv Pw W) (OOut W K), ζ, Empty, Empty, Λ⟩
+      (fun s => SPComp.bind (view (cpaceReal G (K := K)) s) fun z => SPComp.pure (Sum.inl z))
+      (fun s => SPComp.bind
+        (view ((cpaceSim G).withSub (F_lePAKE (Pw := Pw) (SPComp.sample K))) s)
+        fun z => SPComp.pure (Sum.inl z)) _root_.id
+      (fun A Z =>
+        let Z' := Env.postcomp (fun z => SPComp.pure (Sum.inl z))
+          (Env.postcomp (mapSum SPComp.pure A) Z)
+        cpaceConcreteBound G Z'.input.rounds
+          ((OProt.oracle (Q := OEv Pw W) (A := OOut W K)).reduction Z')) :=
+  (cpace_realizesSim_concrete G).toUCEmulatesCSim ζ Λ
+
+end Concrete
 
 end CatCrypt.Crypto.PAKE.CPaceBadReductions
