@@ -302,19 +302,19 @@ theorem completeStep_eq_map (s : RSt S W K) (x : Inst) :
     (PMF.map_const _ _).symm
   change _ = (PMF.uniformFintype (Draw S K)).map fun r => completeD G s x r
   cases hr : s.st.recs x with
-  | none => simp only [completeStep, completeD, hr, hP]
+  | none => simp only [completeStep, completeStepK, completeD, hr, hP]
   | some rc =>
     cases he : s.eph x with
-    | none => simp only [completeStep, completeD, hr, he, hP]
+    | none => simp only [completeStep, completeStepK, completeD, hr, he, hP]
     | some ek =>
       cases ho : opkOf s x.1 rc.peer with
-      | none => simp only [completeStep, completeD, hr, he, ho, hP]
+      | none => simp only [completeStep, completeStepK, completeD, hr, he, ho, hP]
       | some opk =>
         by_cases hc : rc.role = .initiator ∧ rc.key.isNone
-        · simp only [completeStep, completeD, hr, he, ho, hc, and_self, ↓reduceIte, roAt_eq_map,
-            PMF.map_comp]
+        · simp only [completeStep, completeStepK, lazyKDF, completeD, hr, he, ho, hc, and_self,
+            ↓reduceIte, roAt_eq_map, PMF.map_comp]
           exact ltAt_bind_ltAt_eq s x.2 rc.peer _
-        · simp only [completeStep, completeD, hr, he, ho, hc, ↓reduceIte, hP]
+        · simp only [completeStep, completeStepK, completeD, hr, he, ho, hc, ↓reduceIte, hP]
 
 /-- `sendStep` is the image of a uniform draw under `sendD`. -/
 theorem sendStep_eq_map (s : RSt S W K) (x : Inst) (e : W) :
@@ -324,15 +324,16 @@ theorem sendStep_eq_map (s : RSt S W K) (x : Inst) (e : W) :
     (PMF.map_const _ _).symm
   change _ = (PMF.uniformFintype (Draw S K)).map fun r => sendD G s x e r
   cases hr : s.st.recs x with
-  | none => simp only [sendStep, sendD, hr, hP]
+  | none => simp only [sendStep, sendStepK, sendD, hr, hP]
   | some rc =>
     cases he : s.eph x with
-    | none => simp only [sendStep, sendD, hr, he, hP]
+    | none => simp only [sendStep, sendStepK, sendD, hr, he, hP]
     | some opk =>
       by_cases hc : rc.role = .responder ∧ rc.key.isNone
-      · simp only [sendStep, sendD, hr, he, hc, and_self, ↓reduceIte, roAt_eq_map, PMF.map_comp]
+      · simp only [sendStep, sendStepK, lazyKDF, sendD, hr, he, hc, and_self, ↓reduceIte,
+          roAt_eq_map, PMF.map_comp]
         exact ltAt_bind_ltAt_eq s x.2 rc.peer _
-      · simp only [sendStep, sendD, hr, he, hc, ↓reduceIte, hP]
+      · simp only [sendStep, sendStepK, sendD, hr, he, hc, ↓reduceIte, hP]
 
 /-- **The oracle of the real game** is the image of a uniform draw under `realD`. -/
 theorem realGame_oracle_eq (s : RSt S W K) (e : OEv W) :
@@ -343,9 +344,10 @@ theorem realGame_oracle_eq (s : RSt S W K) (e : OEv W) :
   change _ = (PMF.uniformFintype (Draw S K)).map fun r => realD G s e r
   rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ | pid |
     ⟨sid, pid⟩ | ⟨sid, pid, e⟩ | x)
-  · simp only [realGame, realHon]
+  · simp only [realGame, realGameK, realHonK, lazyKDF, PMF.pure_map]
     split_ifs with h
-    · rw [PMF.map_comp, map_uniform_eq_map_prod_fst (B := (S × S) × (S × S) × K)]
+    · erw [PMF.bind_pure_comp]
+      rw [PMF.map_comp, map_uniform_eq_map_prod_fst (B := (S × S) × (S × S) × K)]
       congr 1
       funext r
       simp only [realD, h, ite_true, Function.comp_apply]
@@ -353,17 +355,17 @@ theorem realGame_oracle_eq (s : RSt S W K) (e : OEv W) :
       congr 1
       funext r
       simp only [realD, h, Bool.false_eq_true, ite_false]
-  · simp only [realGame, realHon, PMF.pure_map, hP]
+  · simp only [realGame, realGameK, realHonK, PMF.pure_map, hP]
     rfl
-  · simp only [realGame, realAdv, PMF.pure_map, hP]
+  · simp only [realGame, realGameK, realAdvK, PMF.pure_map, hP]
     rfl
-  · simp only [realGame, realAdv, PMF.pure_map, hP]
+  · simp only [realGame, realGameK, realAdvK, PMF.pure_map, hP]
     rfl
-  · simp only [realGame, realAdv, PMF.map_comp]
+  · simp only [realGame, realGameK, realAdvK, PMF.map_comp]
     exact ltAt_map_eq s pid _
-  · simp only [realGame, realAdv, PMF.pure_map, hP]
+  · simp only [realGame, realGameK, realAdvK, PMF.pure_map, hP]
     rfl
-  · simp only [realGame, realAdv, corruptRStep]
+  · simp only [realGame, realGameK, realAdvK, corruptRStep]
     by_cases h : Named s.st pid = true
     · simp only [h, ite_true, PMF.pure_map, hP]
       congr 1
@@ -374,11 +376,12 @@ theorem realGame_oracle_eq (s : RSt S W K) (e : OEv W) :
       congr 1
       funext r
       simp only [realD, h, Bool.false_eq_true, ite_false, Function.comp_apply]
-  · simp only [realGame, realAdv, completeStep_eq_map, PMF.map_comp]
+  · simp only [realGame, realGameK, realAdvK, ← completeStep.eq_1, completeStep_eq_map,
+      PMF.map_comp]
     rfl
-  · simp only [realGame, realAdv, sendStep_eq_map, PMF.map_comp]
+  · simp only [realGame, realGameK, realAdvK, ← sendStep.eq_1, sendStep_eq_map, PMF.map_comp]
     rfl
-  · simp only [realGame, realAdv, roAt_eq_map, PMF.map_comp]
+  · simp only [realGame, realGameK, realAdvK, lazyKDF, roAt_eq_map, PMF.map_comp]
     rw [map_uniform_eq_map_prod_snd (A := S × S), map_uniform_eq_map_prod_snd (A := S × S),
       map_uniform_eq_map_prod_snd (A := S)]
     rfl
