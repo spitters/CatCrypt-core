@@ -126,26 +126,6 @@ theorem run_flagWhen_le_potential (O : σ → D → PMF (R × σ))
             · simp [(PMF.apply_eq_zero_iff _ _).2 hx]
         _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
-/-- **A monotone bad state at the end.** If a state predicate `P` is kept by every call, the flag
-of `P` is set with at most the probability that the final state satisfies `P`. -/
-theorem run_flagWhen_le_final (O : σ → D → PMF (R × σ)) (P : σ → Prop) [DecidablePred P]
-    (hmono : ∀ s d, P s → ∀ x ∈ (O s d).support, P x.2) (A : OracleAdv D R α) (s : σ) :
-    (run (flagWhen (fun _ _ x => P x.2) O) A (s, false)).toOuterMeasure {y | y.2.2 = true} ≤
-      (run O A s).toOuterMeasure {y | P y.2} := by
-  rw [← run_flagWhen_map (fun _ _ x => P x.2) O A s false, PMF.toOuterMeasure_map_apply]
-  refine PMF.toOuterMeasure_mono _ fun y hy => ?_
-  have h := run_support_inv (flagWhen (fun _ _ x => P x.2) O) (fun st => st.2 = true → P st.1)
-    (fun st d x hst hx => by
-      simp only [flagWhen, PMF.support_map, Set.mem_image] at hx
-      obtain ⟨x₀, hx₀, rfl⟩ := hx
-      intro hf
-      by_cases hp : P x₀.2
-      · exact hp
-      · cases hb : st.2
-        · simp [hb, hp] at hf
-        · exact hmono st.1 d (hst hb) x₀ hx₀) A (s, false) (fun h => by cases h) y hy.2
-  exact h hy.1
-
 /-- The probability of an event under the image of a distribution. -/
 theorem toOuterMeasure_eq_of_map_eq {β γ : Type} {p : PMF β} {q : PMF γ} {f : β → γ}
     (h : p.map f = q) (A : Set γ) : p.toOuterMeasure (f ⁻¹' A) = q.toOuterMeasure A := by
@@ -1674,7 +1654,7 @@ theorem dmc_flag_le (td : Pw → Sˣ) (B : OracleAdv (OEv Pw W) (OOut W K) Bool)
       by_cases hd : DMc G td x.2.1
       · exact Or.inl ⟨hd, hI⟩
       · exact Or.inr ⟨hd, hI⟩) B (hInit G) (fun _ _ => rfl)
-  have h₂ := OracleAdv.run_flagWhen_le_final (idealStep G td)
+  have h₂ := AKE.X3DHSquareGDH.run_flag_le_final (idealStep G td)
     (fun y => DMc G td y.1 ∧ ZsInv y.1.1) (fun t e ht x hx => by
       obtain ⟨hI, hz, hi, hc, hd⟩ := ideal_step_frame G td t ht.2 e x hx
       exact ⟨DMc_stable G td hz hi hc hd ht.1, hI⟩) B (hInit G)
@@ -2150,7 +2130,7 @@ theorem psExp_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
         by_cases hd : PSst G td x.2
         · exact Or.inl ⟨hd, hI⟩
         · exact Or.inr ⟨hd, hI⟩) B (hInit G) (fun _ _ => rfl)
-    have h₂ := OracleAdv.run_flagWhen_le_final (idealStep G td)
+    have h₂ := AKE.X3DHSquareGDH.run_flag_le_final (idealStep G td)
       (fun y => PSst G td y ∧ ZsInv y.1.1) (fun t e ht x hx => by
         obtain ⟨r, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
         exact ⟨PSst_stable G td t ht.2 e r ht.1, (simWorldD_step_frame G td t ht.2 e r).1⟩)
@@ -2196,5 +2176,170 @@ theorem psExp_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
         ring
 
 end GapDH
+
+/-! ## The unqueried-match experiment -/
+
+section UQ
+
+variable {S W Pw K : Type} [Field S] [Fintype S] [DecidableEq S] [DecidableEq W]
+  [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K] [Inhabited K] (G : DHGroup S W)
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K] in
+theorem sendCore_td (T : Pw → Sˣ) (c : SimCore S W Pw K) (a : Option (Pw → Sˣ)) (pid : PartyId)
+    (m : W) : sendCore G T { c with td := a } pid m =
+      ({ (sendCore G T c pid m).1 with td := a }, (sendCore G T c pid m).2) := by
+  obtain ⟨td', cands, info, zs, keyed, pend, h2, phase⟩ := c
+  unfold sendCore
+  dsimp only
+  cases hz : zs pid with
+  | none => rfl
+  | some z =>
+    cases hi : info pid with
+    | none => rfl
+    | some pr =>
+      obtain ⟨peer, role⟩ := pr
+      dsimp only
+      split_ifs
+      · rfl
+      · simp only [findMatch]
+        split <;> rfl
+      · rfl
+
+omit [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [DecidableEq Pw] [Fintype K]
+  [Nonempty K] [Inhabited K] in
+theorem honStepD_td (c : SimCore S W Pw K) (a : Option (Pw → Sˣ))
+    (o : Option (PartyId × PartyId × PartyId × Role)) (z : S) :
+    honStepD { c with td := a } o z = { honStepD c o z with td := a } := by
+  rcases o with _ | ⟨sid, pid, peer, role⟩
+  · rfl
+  · simp only [honStepD, honCoreD]
+    split_ifs <;> rfl
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K]
+  [Inhabited K] in
+theorem h2CoreD_td (T : Pw → Sˣ) (c : SimCore S W Pw K) (a : Option (Pw → Sˣ)) (x : Inp W)
+    (k : K) : h2CoreD G T { c with td := a } x k =
+      ({ (h2CoreD G T c x k).1 with td := a }, (h2CoreD G T c x k).2) := by
+  unfold h2CoreD
+  have hl : lateTarget G T { c with td := a } x = lateTarget G T c x := rfl
+  rw [hl]
+  split <;> rfl
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [Fintype K] [Nonempty K] in
+theorem advCoreD_td (T : Pw → Sˣ) (c : SimCore S W Pw K) (a : Option (Pw → Sˣ))
+    (e : RAEv Pw W) (k : K) : advCoreD G T { c with td := a } e k =
+      ({ (advCoreD G T c e k).1 with td := a }, (advCoreD G T c e k).2) := by
+  cases e with
+  | h2 x =>
+    simp only [advCoreD]
+    have hl : ({ c with td := a } : SimCore S W Pw K).h2 = c.h2 := rfl
+    rw [hl]
+    split
+    · rfl
+    · exact h2CoreD_td G T c a x k
+  | send pid m => exact sendCore_td G T c a pid m
+  | _ => rfl
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [Fintype K] [Nonempty K] in
+theorem simStartD_td (T : Pw → Sˣ) (s : SimSt S W Pw K) (a : Option (Pw → Sˣ)) (e : OEv Pw W)
+    (r : S × K) : simStartD G T ({ s.1 with td := a }, s.2) e r =
+      (({ (simStartD G T s e r).1.1 with td := a }, (simStartD G T s e r).1.2),
+        (simStartD G T s e r).2) := by
+  rcases e with h | e
+  · simp only [simStartD, simCoreD, honStepD_td]
+  · cases e with
+    | h2 x =>
+      simp only [simStartD, simCoreD]
+      split
+      · rfl
+      · rw [advCoreD_td]
+    | _ => simp only [simStartD, simCoreD, advCoreD_td]
+
+omit [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [Fintype K] [Nonempty K] in
+theorem drive1D_td (st : SimSt S W Pw K) (a : Option (Pw → Sˣ)) (d : Dec Pw W K) (t : St Pw K)
+    (k : K × K) :
+    drive1D fStepD simResumeV simAnswer ({ st.1 with td := a }, st.2) d t k =
+      (({ (drive1D fStepD simResumeV simAnswer st d t k).1.1 with td := a },
+        (drive1D fStepD simResumeV simAnswer st d t k).1.2),
+        (drive1D fStepD simResumeV simAnswer st d t k).2.1,
+        (drive1D fStepD simResumeV simAnswer st d t k).2.2) := by
+  obtain ⟨⟨td', cands, info, zs, keyed, pend, h2, phase⟩, pr⟩ := st
+  rcases d with g | o
+  · cases phase <;> simp [drive1D, simResumeV, simAnswer]
+  · simp [drive1D]
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [Fintype K] [Nonempty K] in
+/-- **A step of the simulated world does not read the table of `H1` of its core.** -/
+theorem simWorldD_setTd (T : Pw → Sˣ) (t : SimSt S W Pw K × St Pw K) (a : Pw → Sˣ)
+    (e : OEv Pw W) (r : (S × K) × K × K) :
+    CPaceHops.simWorldD G T (setTd a t) e r =
+      (setTd a (CPaceHops.simWorldD G T t e r).1, (CPaceHops.simWorldD G T t e r).2) := by
+  simp only [CPaceHops.simWorldD, setTd]
+  rw [simStartD_td G T t.1 (some a) e r.1, drive1D_td]
+
+omit [Field S] [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [DecidableEq Pw]
+  [Fintype K] [Nonempty K] [Inhabited K] in
+theorem find?_congr' {α : Type} {l : List α} {p q : α → Bool} (h : ∀ x ∈ l, p x = q x) :
+    l.find? p = l.find? q := by
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    simp only [List.find?_cons, h a List.mem_cons_self,
+      ih fun x hx => h x (List.mem_cons_of_mem a hx)]
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K]
+  [Inhabited K] in
+/-- **Extraction reads the table of `H1` at the queried passwords only.** -/
+theorem extractAt_congr (T₁ T₂ : Pw → Sˣ) (cands : List Pw) (h : ∀ pw ∈ cands, T₁ pw = T₂ pw)
+    (z : S) (pid : PartyId) (x : Inp W) :
+    extractAt G T₁ cands z pid x = extractAt G T₂ cands z pid x := by
+  unfold extractAt DHExtractKit.extract
+  refine find?_congr' fun pw hpw => ?_
+  simp only [kit, DHExtractKit.matchTest, cpaceKit, h pw hpw]
+  rfl
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K]
+  [Inhabited K] in
+theorem findMatch_congr (T₁ T₂ : Pw → Sˣ) (c : SimCore S W Pw K)
+    (h : ∀ pw ∈ c.cands, T₁ pw = T₂ pw) (z : S) (pid : PartyId) (T : Role × W × W) :
+    findMatch G T₁ c z pid T = findMatch G T₂ c z pid T := by
+  simp only [findMatch, extractAt_congr G T₁ T₂ c.cands h]
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K]
+  [Inhabited K] in
+theorem lateTarget_congr (T₁ T₂ : Pw → Sˣ) (c : SimCore S W Pw K)
+    (h : ∀ pw ∈ c.cands, T₁ pw = T₂ pw) (x : Inp W) :
+    lateTarget G T₁ c x = lateTarget G T₂ c x := by
+  simp only [lateTarget, lateAt, extractAt_congr G T₁ T₂ c.cands h]
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K] in
+theorem sendCore_congr (T₁ T₂ : Pw → Sˣ) (c : SimCore S W Pw K)
+    (h : ∀ pw ∈ c.cands, T₁ pw = T₂ pw) (pid : PartyId) (m : W) :
+    sendCore G T₁ c pid m = sendCore G T₂ c pid m := by
+  simp only [sendCore, findMatch_congr G T₁ T₂ c h]
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [Fintype K] [Nonempty K] in
+/-- **The start of an activation reads the table of `H1` at the queried passwords and the
+password of an `H1` query only.** -/
+theorem simStartD_congr (T₁ T₂ : Pw → Sˣ) (s : SimSt S W Pw K) (e : OEv Pw W)
+    (h : ∀ pw ∈ s.1.cands, T₁ pw = T₂ pw) (he : ∀ pw, e = .inr (.h1 pw) → T₁ pw = T₂ pw)
+    (r : S × K) : simStartD G T₁ s e r = simStartD G T₂ s e r := by
+  rcases e with hh | e
+  · rfl
+  · cases e with
+    | h1 pw => simp only [simStartD, simCoreD, advCoreD, he pw rfl]
+    | h2 x =>
+      simp only [simStartD, simCoreD, advCoreD, h2CoreD, lateTarget_congr G T₁ T₂ s.1 h]
+    | send pid m => simp only [simStartD, simCoreD, advCoreD, sendCore_congr G T₁ T₂ s.1 h]
+    | _ => rfl
+
+omit [Fintype S] [DecidableEq S] [Fintype Pw] [Fintype K] [Nonempty K] in
+theorem simWorldD_congr (T₁ T₂ : Pw → Sˣ) (t : SimSt S W Pw K × St Pw K) (e : OEv Pw W)
+    (h : ∀ pw ∈ t.1.1.cands, T₁ pw = T₂ pw) (he : ∀ pw, e = .inr (.h1 pw) → T₁ pw = T₂ pw)
+    (r : (S × K) × K × K) :
+    CPaceHops.simWorldD G T₁ t e r = CPaceHops.simWorldD G T₂ t e r := by
+  simp only [CPaceHops.simWorldD, simStartD_congr G T₁ T₂ t.1 e h he]
+
+end UQ
 
 end CatCrypt.Crypto.PAKE.CPaceBadReductions
