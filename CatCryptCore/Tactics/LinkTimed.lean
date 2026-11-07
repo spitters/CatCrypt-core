@@ -109,8 +109,9 @@ The comparison is one rule over both costed trees after reduction to head normal
 as below, and `TimedSim.run_eq` gives `T.d_run`: at a query-free evaluation, `T.d` means the
 compiled erasure of `T.timed`. The statements are those of the walk, and the docstring of
 `T.d_timedSim` names the charge and the deficit. When the route does not apply (constructs
-outside the fragment, costed trees of another shape), the walk below proves the theorems and the docstring of `T.d_timedSim` records why the route did not
-apply; when the walk also fails, the error reports both reasons.
+outside the fragment, costed trees of another shape), the walk below proves the theorems and
+the docstring of `T.d_timedSim` records why the route did not apply; when the walk also fails,
+the error reports both reasons.
 
 ## The walk
 
@@ -131,13 +132,18 @@ the closure (`Reflect.CEq.lam`) and, at the value of the arguments, the certific
 of the substitution theorem `Tm.dtC_subst` is by its entry, and its body is not walked again. At
 a function parameter of the callee the argument is a data function value of the caller passed
 through, whose step equation and cost bound are the premises of the certificate there
-(`certArgs`). The
-call is charged the unit of a call of `derive_timed` and the step cost of the costed form of the
-callee; the allowance adds the allowance of the certificate. Its costed tree is read in head
-normal form, and a bind whose first tree is such a call is unified with the projections of its
-split pair reduced (`applyRuleProj`), so that its step cost is not taken from the costed form of
-the callee. The route through the soundness theorem does not apply to such a term (the closure
-of an effectful callee is outside `Tm.InDtFrag`).
+(`certArgs`), or a closure of allowance zero that the caller binds by `let` (`TSim.letE` at
+`Reflect.CEq.lam`): variables, literals, pairs, projections and primitive operations other than
+those on `ℕ`. Its step equation is the exact cost judgement of its body at a generic argument
+(`ceqOf`, `Reflect.CEq.closure_stepN`), its companion is read off the costed tree of the call,
+and the bound of its D cost by the companion is decided at every argument
+(`closeClosureBound`); a closure with a `let` is refused, since its β-step is not charged by the
+companion of `derive_timed`. The call is charged the unit of a call of `derive_timed` and the
+step cost of the costed form of the callee; the allowance adds the allowance of the certificate.
+Its costed tree is read in head normal form, and a bind whose first tree is such a call is
+unified with the projections of its split pair reduced (`applyRuleProj`), so that its step cost
+is not taken from the costed form of the callee. The route through the soundness theorem does
+not apply to such a term (the closure of an effectful callee is outside `Tm.InDtFrag`).
 
 The eliminator of a structural recursion. The class: a `fold` that `reflect_d` marks with its
 source (a structural recursion `f` over a Lean inductive type `T` whose other arguments are
@@ -168,7 +174,8 @@ whose type differs from their D representation (`Option`).
 ## Main definitions
 
 * `link_timed x`: the command.
-* `certClosure?`, `envPeel`, `certArgs`, `applyRuleProj`: the call of a certified callee.
+* `certClosure?`, `envPeel`, `certArgs`, `applyRuleProj`: the call of a certified callee;
+  `ceqOf`, `closureStep?`, `closeClosureBound`: a closure at its function parameter.
 * `DtState`, `DtM`, `provePair`, `proveTree`, `closeSideD`, `sideD`, `splitIdx`, `leafMap?`,
   `leafMapGoal`, `countFree`, `dtRoute`: the comparison of the
   route through the soundness theorem.
@@ -407,17 +414,74 @@ partial def envPeel (ρ : Expr) : Nat → MetaM (Array Expr × Expr)
     let (vs, ρ0) ← envPeel (ρ.getArg! 3) k
     return (#[ρ.getArg! 2] ++ vs, ρ0)
 
+/-- The exact cost judgement `CEq t ρ c v` of a data term `t` of the fragment of closures of
+allowance zero: variables, literals, pairs, projections and primitive operations other than those
+on `ℕ`. Any other construct (a `let`, whose β-step the companion of `derive_timed` does not
+charge, or an application) is refused with a message naming it. -/
+partial def ceqOf (ρ t : Expr) : LinkM Expr := do
+  let t ← instantiateMVars t
+  if let .mdata _ t' := t then return ← ceqOf ρ t'
+  match t.getAppFn.constName?, t.getAppNumArgs with
+  | some ``Tm.var, 3 => mkAppM ``Reflect.CEq.var #[t.getArg! 2, ρ]
+  | some ``Tm.lit, 3 => mkAppM ``Reflect.CEq.lit #[t.getArg! 1, t.getArg! 2, ρ]
+  | some ``Tm.natLit, 2 => mkAppM ``Reflect.CEq.natLit #[t.getArg! 1, ρ]
+  | some ``Tm.pair, 5 =>
+    mkAppM ``Reflect.CEq.pair #[← ceqOf ρ (t.getArg! 3), ← ceqOf ρ (t.getArg! 4)]
+  | some ``Tm.fst, 4 => mkAppM ``Reflect.CEq.fst #[← ceqOf ρ (t.getArg! 3)]
+  | some ``Tm.snd, 4 => mkAppM ``Reflect.CEq.snd #[← ceqOf ρ (t.getArg! 3)]
+  | some ``Tm.prim, 5 =>
+    if (t.getArg! 1).containsConst (· == ``Ty.nat) || (t.getArg! 2).containsConst (· == ``Ty.nat)
+    then failL m!"the operation on `ℕ`{indentExpr t}\nin a closure at a function parameter"
+    mkAppM ``Reflect.CEq.prim #[t.getArg! 3, ← ceqOf ρ (t.getArg! 4)]
+  | some ``Tm.letE, 5 =>
+    failL m!"the closure body{indentExpr t}\nat a function parameter has a `let`: its β-step is \
+      not charged by the companion of `derive_timed`"
+  | _, _ => failL m!"the construct `{t.getAppFn}` of a closure body at a function parameter is \
+      outside the fragment of closures of allowance zero"
+
+/-- The step equation of a closure value `fun v => body.eval (ρ.cons v)` at a function parameter
+of a certified callee: the exact cost judgement of `body` at a generic argument
+(`ceqOf`), turned into the step equation by `Reflect.CEq.closure_stepN`. `none` when `v` is not
+such a closure. -/
+def closureStep? (v : Expr) : LinkM (Option Expr) := do
+  let .lam n T b bi := v | return none
+  withLocalDecl n bi T fun y => do
+    let b := b.instantiate1 y
+    unless b.isAppOfArity ``Tm.eval 4 do return none
+    let h ← ceqOf (b.getArg! 3) (b.getArg! 2)
+    let hc ← mkLambdaFVars #[y] h
+    return some (← mkAppM ``Reflect.CEq.closure_stepN #[hc])
+
+/-- Close the bound `∀ v, c v ≤ C v` of the D cost of a closure by the companion of
+`derive_timed`, both sides numerals at every argument. -/
+def closeClosureBound (mv : MVarId) : LinkM Unit := do
+  let ty ← instantiateMVars (← mv.getType)
+  let pf ← forallTelescopeReducing ty fun ys body => do
+    let some (_, _, lhs, rhs) := body.app4? ``LE.le |
+      failL m!"the cost bound{indentExpr ty}\nof a closure is not an inequality"
+    let pf ← mkAppOptM ``Nat.le_of_ble_eq_true #[lhs, rhs, ← mkEqRefl (mkConst ``Bool.true)]
+    unless ← isDefEq (← inferType pf) body do
+      failL m!"the D cost of the closure does not decide below the companion of \
+        `derive_timed`{indentExpr body}"
+    mkLambdaFVars ys pf
+  closeWith (.mvar mv) pf
+
 /-- The certificate `c.d_timedSim` at the D values `vs` of the parameters of `c`, outermost
-first. A data parameter takes its value. A function parameter, whose binders in the certificate
-are the function, its companion, its D value, the D cost, the step equation and the bound of the
-D cost by the companion, is filled from a data function value of the caller passed through (a
-variable of kind `dataFn` or `freeFn`): its D value, and its step equation and bound, from which
-the function, the companion and the D cost are read by unification. -/
-def certArgs (c : Name) (vs : Array Expr) : LinkM Expr := do
+first, and the bounds of the D costs of closures left to close once the conclusion of the
+certificate is unified with the goal. A data parameter takes its value. A function parameter,
+whose binders in the certificate are the function, its companion, its D value, the D cost, the
+step equation and the bound of the D cost by the companion, is filled from a data function value
+of the caller passed through (a variable of kind `dataFn` or `freeFn`): its D value, and its step
+equation and bound, from which the function, the companion and the D cost are read by
+unification; or from a closure of allowance zero bound by `let` in the caller: its step equation
+is `closureStep?`, and its bound by the companion, which the conclusion of the certificate
+determines, is returned. -/
+def certArgs (c : Name) (vs : Array Expr) : LinkM (Expr × Array MVarId) := do
   let cert := Lean.mkConst (c ++ `d_timedSim)
   let (ms, _, _) ← forallMetaTelescopeReducing (← inferType cert)
   let mut k := 0
   let mut i := 0
+  let mut pend : Array MVarId := #[]
   while k < ms.size && i < vs.size do
     let grp ← if k + 5 < ms.size then do
         let T ← whnfR (← inferType ms[k + 2]!)
@@ -425,6 +489,15 @@ def certArgs (c : Name) (vs : Array Expr) : LinkM Expr := do
       else pure false
     if grp then
       let v ← whnf (← instantiateMVars vs[i]!)
+      if let some hg ← closureStep? v then
+        unless ← isDefEq ms[k + 2]! v do failL m!"the D value `{v}` at the call of `{c}`"
+        unless ← isDefEq (← inferType ms[k + 4]!) (← inferType hg) do
+          failL m!"the step equation of the closure `{v}` at the call of `{c}`"
+        ms[k + 4]!.mvarId!.assign hg
+        pend := pend.push ms[k + 5]!.mvarId!
+        k := k + 6
+        i := i + 1
+        continue
       let some (hg, hFC) ← (do
           let .fvar fv := v | pure none
           match (← read)[fv]? with
@@ -445,8 +518,9 @@ def certArgs (c : Name) (vs : Array Expr) : LinkM Expr := do
       k := k + 1
     i := i + 1
   let pf ← instantiateMVars (mkAppN cert (ms.extract 0 k))
-  if pf.hasExprMVar then failL m!"the certificate of `{c}` at the call is not determined"
-  return pf
+  if pend.isEmpty && pf.hasExprMVar then
+    failL m!"the certificate of `{c}` at the call is not determined"
+  return (pf, pend)
 
 /-- Record a step-cost side goal. -/
 def side (mv : Expr) : LinkM Unit := modify (·.push mv.mvarId!)
@@ -966,7 +1040,25 @@ partial def solveT (g : MVarId) : LinkM Unit := g.withContext do
       solveT (← arg m `hk).mvarId!
       side (← arg m `hc)
     | _, _ =>
-      if ← isData ρ 0 e then
+      if e.isAppOfArity ``Tm.lam 4 then
+        -- A closure bound by `let`, at no cost: its value is the closure (`Reflect.CEq.lam`).
+        let m ← applyRule (← conv g) ``TSim.letE (splitPair · `x)
+        let he ← arg m `he
+        let hl ← mkAppM ``Reflect.CEq.lam #[e.getArg! 3, ρ]
+        let clo := (← inferType hl).appArg!
+        let z := mkNatLit 0
+        let dty ← mkAppM ``DSim #[K, z, z, e, ρ, clo]
+        unless ← isDefEq (← inferType he) dty do
+          failL m!"the closure `{e}` bound by `let`"
+        let some ex ← unfoldDefinition? dty | failL m!"the closure `{e}` bound by `let`"
+        let ex ← whnfR ex
+        let hle ← mkAppM ``Nat.zero_le #[← mkAppM ``HAdd.hAdd #[z, ← mkAppM ``HMul.hMul #[K, z]]]
+        let pf := mkApp4 (mkConst ``Exists.intro [Level.one]) (mkConst ``Nat) ex.appArg! z
+          (← mkAppM ``And.intro #[hl, hle])
+        closeWith he pf
+        solveT (← arg m `hb).mvarId!
+        side (← arg m `hc)
+      else if ← isData ρ 0 e then
         let m ← applyRule (← conv g) ``TSim.letE (splitPair · `x)
         solveD (← arg m `he).mvarId!
         solveT (← arg m `hb).mvarId!
@@ -1003,8 +1095,17 @@ partial def solveT (g : MVarId) : LinkM Unit := g.withContext do
       let u ← instantiateMVars (← arg m `u)
       let (inner, ρ0) ← envPeel ρ (tys.length - 1)
       let vs := inner.reverse.push u
-      let h ← mkAppM ``TSim.certCall #[← certArgs c vs, ρ0]
+      let (pc, pend) ← certArgs c vs
+      -- The companion of a closure is read off the costed tree of the call.
+      unless pend.isEmpty do
+        let xc := (← instantiateMVars (← inferType pc)).getArg! 5
+        unless ← isDefEq (← mkAppM ``Prod.snd #[xc]) A do
+          failL m!"the costed form{indentExpr xc}\nof `{c}` does not match the call{indentExpr A}"
+      let h ← mkAppM ``TSim.certCall #[pc, ρ0]
       closeWith (← arg m `hg) h
+      for mv in pend do closeClosureBound mv
+      if (← instantiateMVars h).hasExprMVar then
+        failL m!"the certificate of `{c}` at the call is not determined"
       side (← arg m `hc)
       return
     match ← kindOfVar ρ (t.getArg! 3) with
