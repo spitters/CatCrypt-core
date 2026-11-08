@@ -28,8 +28,10 @@ No module imports this file.
 ## Main results
 
 * `smRootImplFirst.timed_bound` — the time of a simulated query
-* `smcRootRedFirst.compile_tree` — the reduction is the erasure of the derived costed tree
-* `smcRootRedFirst.timeBound_timed` — the time of the reduction tree
+* `smcRootRedFirst.timeBound_timed` — the time of the derived costed tree of `smRootTreeFirst`
+* `smcRootRedFirst.tree`, `smcRootRedFirst.compile_tree`,
+  `smcRootRedFirst.tree.timeBound_timed` — the reduction is the erasure of the derived costed
+  tree, of time at most the bound above plus one
 -/
 
 set_option autoImplicit false
@@ -78,6 +80,17 @@ theorem smRootImplFirst.timed_bound (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 variable [Fintype RK] [Nonempty RK]
 
+/-- The oracle tree of the reduction `smcRootRedFirst`: the tree `smRootTreeFirst` with the
+challenge-epoch distribution and the interaction of the adversary as parameters. -/
+noncomputable def smcRootRedFirst.tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (i : Msg × Sc × Sc) (tStar : PMF ℕ)
+    (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
+  smRootTreeFirst C R G D ΔFS ΔPCS ideal i tStar play
+
+derive_timed smcRootRedFirst.tree
+
 /-- The derived costed tree of `smcRootRedFirst`, at the challenge-epoch distribution of `A` and
 a costed interaction `play` that erases to the interaction of `A`, erases to the reduction. -/
 theorem smcRootRedFirst.compile_tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
@@ -87,9 +100,9 @@ theorem smcRootRedFirst.compile_tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (playCost : ℕ → Msg → ℕ) (hplay : ∀ t g, (play t g).erase = A.play t g)
     (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
     (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) :
-    (smRootTreeFirst.timed C R G D ΔFS ΔPCS ideal i A.tStar play playCost sCost rCost vCost
+    (smcRootRedFirst.tree.timed C R G D ΔFS ΔPCS ideal i A.tStar play playCost sCost rCost vCost
       eCost gCost).2.erase = smcRootRedFirst C R G D ΔFS ΔPCS ideal i A := by
-  rw [smRootTreeFirst.erase_timed]
+  rw [smcRootRedFirst.tree.erase_timed]
   have h : (fun t g => (play t g).erase) = A.play := funext fun t => funext (hplay t)
   rw [h]
   rfl
@@ -124,5 +137,26 @@ theorem smcRootRedFirst.timeBound_timed (C : CKADef Sc Msg Key) [CKACoins C Rand
   · refine ⟨fun _ => ?_, fun _ => ?_, fun _ => ?_, fun _ => ?_, fun _ => ?_⟩ <;>
       dsimp only <;> omega
   · simp only [Nat.zero_add, le_refl]
+
+/-- **Time of `smcRootRedFirst`.** The derived costed tree `smcRootRedFirst.tree.timed` has the
+time bound of `smcRootRedFirst.timeBound_timed` plus one step:
+`T + ∑_{j < q} smQueryTime s v r g e (1 + 3 j) + a + 9`. -/
+theorem smcRootRedFirst.tree.timeBound_timed (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (i : Msg × Sc × Sc) (tStar : PMF ℕ)
+    (play : ℕ → Msg → OracleAdv.Timed (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (playCost : ℕ → Msg → ℕ) (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ)
+    (vCost : Sc → Msg → ℕ) (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {T q a s v r g e : ℕ}
+    (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
+    (ha : ∀ t g, playCost t g ≤ a) (hs : ∀ x c, sCost x c ≤ s) (hv : ∀ x m, vCost x m ≤ v)
+    (hr : ∀ x, rCost x ≤ r) (he : ∀ k m a, eCost k m a ≤ e) (hg : ∀ x, gCost x ≤ g) :
+    OracleAdv.Timed.StepTimeBound
+      (smcRootRedFirst.tree.timed C R G D ΔFS ΔPCS ideal i tStar play playCost sCost rCost vCost
+        eCost gCost)
+      (T + ∑ j ∈ Finset.range q, smQueryTime s v r g e (1 + 3 * j) + a + 9) := by
+  unfold smcRootRedFirst.tree.timed
+  exact (OracleAdv.Timed.stepTimeBound_delay (smcRootRedFirst.timeBound_timed C R G D ΔFS ΔPCS
+    ideal i tStar play playCost sCost rCost vCost eCost gCost hA hq ha hs hv hr he hg)).mono
+    (by omega)
 
 end CatCrypt.Crypto.Messaging

@@ -27,7 +27,9 @@ No module imports this file.
 ## Main results
 
 * `ckaCorruptDDHTreeAt.timeBound_timed` — the time of the reduction tree
-* `ckaCorruptDDHRedAt.compile_tree` — the reduction is the run of the erased costed tree
+* `ckaCorruptDDHRedAt.tree`, `ckaCorruptDDHRedAt.compile_tree`,
+  `ckaCorruptDDHRedAt.tree.timeBound_timed` — the reduction is the run of the erased costed
+  tree, of time at most the bound above plus one
 -/
 
 set_option autoImplicit false
@@ -85,9 +87,38 @@ theorem ckaCorruptDDHTreeAt.timeBound_timed {E Gr α : Type} [Fintype E] [Nonemp
     · exact ⟨fun p => le_refl _, fun p => Nat.zero_le _⟩
     · simp only [Nat.zero_add, le_refl]
 
+/-- The oracle tree of the reduction `ckaCorruptDDHRedAt`: the tree `ckaCorruptDDHTreeAt` with
+the exponentiations `pow` and `epow` as parameters, so that their costs are parameters of the
+derived costed tree. -/
+noncomputable def ckaCorruptDDHRedAt.tree {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr]
+    [Nonempty Gr] (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) Bool)
+    (i : Gr × (Gr × E) × (Gr × E)) (ga gb z : Gr) : OracleAdv Empty Unit Bool :=
+  ckaCorruptDDHTreeAt pow epow ΔFS ΔPCS tStar play i ga gb z
+
+derive_timed ckaCorruptDDHRedAt.tree
+
+/-- **Time of `ckaCorruptDDHRedAt`.** The derived costed tree of `ckaCorruptDDHRedAt` has the
+time bound of `ckaCorruptDDHTreeAt.timeBound_timed` plus one step:
+`T + ∑_{j < q} ckaSimQueryTime P X j + a + 5`. -/
+theorem ckaCorruptDDHRedAt.tree.timeBound_timed {E Gr : Type} [Fintype E] [Nonempty E]
+    [Fintype Gr] [Nonempty Gr] (pow : E → Gr) (powCost : E → ℕ) (epow : Gr → E → Gr)
+    (epowCost : Gr → E → ℕ) (ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv.Timed CKAQuery (CKAAns (Gr × E) Gr Gr E) Bool)
+    (playCost : ℕ → Gr → ℕ) (i : Gr × (Gr × E) × (Gr × E)) (ga gb z : Gr) {T q a P X : ℕ}
+    (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
+    (ha : ∀ t g, playCost t g ≤ a) (hP : ∀ x, powCost x ≤ P) (hX : ∀ g x, epowCost g x ≤ X) :
+    OracleAdv.Timed.StepTimeBound
+      (ckaCorruptDDHRedAt.tree.timed pow powCost epow epowCost ΔFS ΔPCS tStar play playCost i ga
+        gb z)
+      (T + ∑ j ∈ Finset.range q, ckaSimQueryTime P X j + a + 5) := by
+  unfold ckaCorruptDDHRedAt.tree.timed
+  exact (OracleAdv.Timed.stepTimeBound_delay (ckaCorruptDDHTreeAt.timeBound_timed pow powCost
+    epow epowCost ΔFS ΔPCS tStar play playCost i ga gb z hA hq ha hP hX)).mono (by omega)
+
 /-- **The reduction is the run of the erased costed tree.** At a costed interaction `play` that
 erases to the interaction of `A`, the reduction `ckaCorruptDDHRedAt decE x₀ ΔFS ΔPCS A` is the
-run of the erasure of the derived costed tree `ckaCorruptDDHTreeAt.timed` at the pair
+run of the erasure of the derived costed tree `ckaCorruptDDHRedAt.tree.timed` at the pair
 `dhPairInit decE x₀`. -/
 theorem ckaCorruptDDHRedAt.compile_tree {G : Type} [CG : CyclicGroup G] {Sk : Type}
     [Fintype Sk] [Nonempty Sk] [Inhabited Sk] (decE : Sk → CG.Exp) (x₀ : Sk) (ΔFS ΔPCS : ℕ)
@@ -95,11 +126,11 @@ theorem ckaCorruptDDHRedAt.compile_tree {G : Type} [CG : CyclicGroup G] {Sk : Ty
     (play : ℕ → G → OracleAdv.Timed CKAQuery (CKAAns (G × Sk) G G Sk) Bool)
     (playCost : ℕ → G → ℕ) (hplay : ∀ t g, (play t g).erase = A.play t g) (tr : G × G × G) :
     ckaCorruptDDHRedAt decE x₀ ΔFS ΔPCS A tr =
-      liftPMF ((OracleAdv.run emptyOracle (ckaCorruptDDHTreeAt.timed
+      liftPMF ((OracleAdv.run emptyOracle (ckaCorruptDDHRedAt.tree.timed
         (fun x => CG.pow (decE x)) powCost (fun h x => CyclicGroup.elemPow h (decE x)) epowCost
         ΔFS ΔPCS A.tStar play playCost (dhPairInit decE x₀) tr.1 tr.2.1 tr.2.2).2.erase
         ()).map Prod.fst) := by
-  rw [ckaCorruptDDHTreeAt.erase_timed]
+  rw [ckaCorruptDDHRedAt.tree.erase_timed]
   have h : (fun t g => (play t g).erase) = A.play := funext fun t => funext (hplay t)
   rw [h]
   rfl
