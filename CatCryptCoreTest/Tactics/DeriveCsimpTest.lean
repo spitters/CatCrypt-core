@@ -229,6 +229,15 @@ error: derive_csimp DeriveCsimpTest.specTriple: the proof of `DeriveCsimpTest.sp
 #guard_msgs in
 derive_csimp specTriple via eq tripleAxiom
 
+/-- A doubling whose definition carries a proof by the axiom `tripleAxiom`. -/
+def specAxDouble (n : ℕ) : ℕ := (⟨n + n, tripleAxiom n⟩ : {_m : ℕ // 3 * n = n + n + n}).val
+
+/--
+error: derive_csimp DeriveCsimpTest.specAxDouble: the definition of `DeriveCsimpTest.specAxDouble` depends on the axiom `DeriveCsimpTest.tripleAxiom`, and so does the statement `@DeriveCsimpTest.specAxDouble = @DeriveCsimpTest.specAxDouble.csimpImpl` of `DeriveCsimpTest.specAxDouble_csimp`; a csimp theorem may use only `propext`, `Classical.choice` and `Quot.sound`.
+-/
+#guard_msgs in
+derive_csimp specAxDouble via eq Nat.two_mul
+
 /--
 error: derive_csimp DeriveCsimpTest.modSpec2: guard: no fallback given; supply `guard Nat.mod_eq_of_lt fallback R` with a computable `r` and `R : ∀ x, r x = DeriveCsimpTest.modSpec2 x`.
 -/

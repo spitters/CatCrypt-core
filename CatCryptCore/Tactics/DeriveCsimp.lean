@@ -55,10 +55,14 @@ an encoding or a guard, a decoder missing in `wrapR`, an instance the implementa
 `f` does not take (a csimp replacement keeps the type of `f`), an implementation that uses a
 constant without an algorithm (`ClassicalCostAudit.isClassicalConst`; types, type formers and
 proofs are erased by the code generator and not inspected), a definition by a choice whose
-witness is not unique, `bounded` without a bound, and a proof whose axioms are not among
-`propext`, `Classical.choice` and `Quot.sound`. Lean does not check the axioms of a csimp
-theorem, and the axioms of a compiled caller of `f` do not include them, so `sorryAx` or another
-axiom is refused here. The check is the one `#csimp_audit` (`CatCryptCore.Tactics.CsimpAudit`)
+witness is not unique, `bounded` without a bound, and an axiom outside `propext`,
+`Classical.choice` and `Quot.sound` in the generated proof, in a source term or in the
+definition of `f`. Lean does not check the axioms of a csimp theorem, and the axioms of a
+compiled caller of `f` do not include them, so `sorryAx` or another axiom is refused here. The
+statement `@f = @f.csimpImpl` mentions
+`f`, so the axioms of the csimp theorem include those of `f` even when the generated proof
+reaches `f` only by unfolding: a specification whose instance carries a `native_decide` proof is
+refused at this point. The check is the one `#csimp_audit` (`CatCryptCore.Tactics.CsimpAudit`)
 runs over an environment.
 
 Callers of `f` compiled before the csimp theorem keep the code of `f`. The command warns, naming
@@ -594,6 +598,15 @@ meta def deriveCsimpCore (f : Name) (stages : Array StageData) : TermElabM Unit 
     throwError "derive_csimp {f}: the proof of `{thmName}` depends on the axiom `{a}`; a csimp \
       theorem is not recorded in the axioms of its callers, so it may use only `propext`, \
       `Classical.choice` and `Quot.sound`."
+  for (_, rs, _, stxs) in stages do
+    for i in [0:rs.size] do
+      if let some a := (← axiomsOf rs[i]!.expr).find? (!standardAxioms.contains ·) then
+        throwError "derive_csimp {f}: the source `{stxs[i]!}` depends on the axiom `{a}`; a csimp \
+          theorem may use only `propext`, `Classical.choice` and `Quot.sound`."
+  if let some a := (← collectAxioms f).find? (!standardAxioms.contains ·) then
+    throwError "derive_csimp {f}: the definition of `{f}` depends on the axiom `{a}`, and so \
+      does the statement `@{f} = @{implName}` of `{thmName}`; a csimp theorem may use only \
+      `propext`, `Classical.choice` and `Quot.sound`."
   let implDecl := Declaration.defnDecl {
     name := implName, levelParams := info.levelParams, type := info.type, value := implVal,
     hints := .regular (getMaxHeight (← getEnv) implVal + 1), safety := .safe,
