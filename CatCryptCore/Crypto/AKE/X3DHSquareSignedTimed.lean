@@ -6,6 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.AKE.X3DHSquareSigned
+public import CatCryptCore.Crypto.AKE.X3DHSquareTimed
+public import CatCryptCore.Tactics.DeriveSimulator
 public import CatCryptCore.Crypto.UCOracleGameTimed
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveTimeBound
@@ -39,12 +41,26 @@ linear in the time of the adversary plus a polynomial of degree two in its numbe
 Each node of the adversary costs at most four units of the costed reduction, which gives the
 factor `4`.
 
+**The simulator.** `derive_simulator x3dhSigSim` defines the costed form `x3dhSigSim.timed` of
+the layer `sigLayer Sg` over the X3DH simulator, with the costed steps of the one-call layer
+`sigLayerH Sg` as binders, and proves its erasure and its graded time theorem from those of
+`x3dhSim`. At the steps `sigPreT` and `sigPostT`, each the distribution of `layPre` or `layPost`
+as one sampling node (`pmfT`), of step cost `tl`, the costed simulator erases to
+`x3dhSigSim G Sg` (`x3dhSigSim_erases_layer`), and after `i` activations an activation costs
+at most `tl + 2 + 200 + 20 tc + 20 te + 20 tf + 40 i` (`x3dhSigSim_timeBoundGraded_layer`): the
+layer adds a constant, and the X3DH simulator grows with its key-derivation table and its
+notices.
+
 ## Main results
 
 * `stopRed.timed`, `stopRed.erase_timed` (derived), `stopRed.timeBound_timed`: the costed form of
   the generic reduction, its erasure and its time under a state invariant.
 * `forgeRed_erase_timed`, `forgeRed_timeBound`: the costed forger erases to `forgeRed` and its
   time bound.
+* `x3dhSigSim.timed`, `x3dhSigSim.erase_timed`, `x3dhSigSim.timeBoundGraded_timed` (derived):
+  the costed simulator, its erasure and its graded time.
+* `x3dhSigSim_erases_layer`, `x3dhSigSim_timeBoundGraded_layer`: the costed simulator at the
+  costed steps of the layer erases to `x3dhSigSim` and its graded time bound.
 -/
 
 @[expose] public section
@@ -385,5 +401,81 @@ theorem forgeRed_timeBound (A : SigAKEAlg S W VK SK Sig) (p : PartyId) (pk : VK)
   simpa using h
 
 end Forger
+
+/-! ## The simulator -/
+
+derive_simulator x3dhSigSim
+
+section Simulator
+
+open CatCrypt.Crypto.Signatures (PSigScheme)
+open CatCrypt.Crypto.PAKE.DHExtract (DHGroup)
+
+variable {S W K VK SK Sig : Type} [DecidableEq W]
+
+/-- A distribution as a costed computation: one sampling node of unit time that returns its
+sample. -/
+noncomputable def pmfT {α : Type} (p : PMF α) : SPTree.Timed α :=
+  .sampleDist α (p.map some) (fun _ => 0) .ret
+
+omit [DecidableEq W] in
+/-- The costed computation `pmfT p` erases to the lift of `p`. -/
+theorem pmfT_erase {α : Type} (p : PMF α) : (pmfT p).erase.compile = liftPMF p := by
+  simp only [pmfT, SPTree.Timed.erase_sampleDist, SPTree.Timed.erase_ret,
+    CatCrypt.Tactics.DeriveTimed.compile_sampleDist_ret]
+  funext h
+  simp only [liftSDistr, liftPMF]
+  exact sdistr_bind_map_some p id _
+
+omit [DecidableEq W] in
+/-- The costed computation `pmfT p` takes unit time. -/
+@[simp] theorem pmfT_time {α : Type} (p : PMF α) : (pmfT p).time = 1 := by
+  simp only [pmfT, SPTree.Timed.time_sampleDist, SPTree.Timed.time_ret, Nat.add_zero]
+  rw [show (⨆ _ : α, (0 : ℕ)) = 0 from le_antisymm (ciSup_le' fun _ => le_rfl) (Nat.zero_le _)]
+
+/-- The costed `pre` step of the signature layer: the distribution of `layPre` as one sampling
+node. -/
+noncomputable def sigPreT (Sg : PSigScheme W VK SK Sig) (l : LSt W VK SK) (e : SEv W Sig) :
+    SPTree.Timed (LSt W VK SK × OEv W) :=
+  pmfT (layPre (fun _ => Sg.keyDist) Sg id accSigned injComplete l e)
+
+/-- The costed `post` step of the signature layer: the distribution of `layPost` as one
+sampling node. -/
+noncomputable def sigPostT (Sg : PSigScheme W VK SK Sig) (l : LSt W VK SK) (o : OOut S W K) :
+    SPTree.Timed (LSt W VK SK × SOut S W K VK Sig) :=
+  pmfT (layPost (fun _ => Sg.keyDist) Sg l o)
+
+variable [Field S] [Fintype S] [Fintype K] [Nonempty K] [Inhabited K]
+
+/-- **Erasure of the costed simulator of X3DH with signed prekeys**: the derived costed form
+`x3dhSigSim.timed` at the costed steps `sigPreT`, `sigPostT` of the signature layer, each of
+step cost `tl` (the decisions of the layer and a verification), erases to `x3dhSigSim G Sg`. -/
+theorem x3dhSigSim_erases_layer (G : DHGroup S W) (Sg : PSigScheme W VK SK Sig) (tl : ℕ)
+    (coeCost : S ≃ W → S → ℕ) (expCost : W → S → ℕ) (toFunCost : S → ℕ) :
+    (x3dhSigSim.timed (K := K) G Sg (sigPreT Sg) (fun _ _ => tl) (sigPostT Sg) (fun _ _ => tl)
+      coeCost expCost toFunCost).Erases (x3dhSigSim G Sg) :=
+  x3dhSigSim.erase_timed G Sg _ _ _ _ coeCost expCost toFunCost
+    (fun _ _ => pmfT_erase _) (fun _ _ => pmfT_erase _)
+
+/-- **Graded running time of the costed simulator of X3DH with signed prekeys.** At the costed
+steps `sigPreT`, `sigPostT` of the layer, of step cost `tl`, and group operations of costs at
+most `tc`, `te`, `tf`, after `i` activations every activation costs at most
+`tl + 2 + 200 + 20 tc + 20 te + 20 tf + 40 i`: the layer adds a constant to each step, and the
+X3DH simulator below grows by `40` per activation with its key-derivation table and its
+notices. -/
+theorem x3dhSigSim_timeBoundGraded_layer (G : DHGroup S W) (Sg : PSigScheme W VK SK Sig)
+    (tl : ℕ) (coeCost : S ≃ W → S → ℕ) (expCost : W → S → ℕ) (toFunCost : S → ℕ)
+    {tc te tf : ℕ} (hc : ∀ a b, coeCost a b ≤ tc) (he : ∀ a b, expCost a b ≤ te)
+    (hf : ∀ a, toFunCost a ≤ tf) :
+    (x3dhSigSim.timed (K := K) G Sg (sigPreT Sg) (fun _ _ => tl) (sigPostT Sg) (fun _ _ => tl)
+      coeCost expCost toFunCost).TimeBoundGraded
+      (tl + 2 + (200 + 20 * tc + 20 * te + 20 * tf)) 40 := by
+  have h := x3dhSigSim.timeBoundGraded_timed (K := K) G Sg (sigPreT Sg) (fun _ _ => tl)
+    (sigPostT Sg) (fun _ _ => tl) coeCost expCost toFunCost (T_pre := 1) (T_post := 1)
+    (fun _ _ => by simp [sigPreT]) (fun _ _ => le_rfl) (fun _ _ => by simp [sigPostT])
+    (fun _ _ => le_rfl) hc he hf
+  simpa [Nat.add_assoc] using h
+
+end Simulator
 
 end CatCrypt.Crypto.AKE.X3DHSquareSigned
