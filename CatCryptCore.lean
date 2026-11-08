@@ -444,6 +444,7 @@ public import CatCryptCore.Crypto.OTExtension.IKNPSquareTimed
 public import CatCryptCore.Crypto.PRPPRFPmfGame
 public import CatCryptCore.Crypto.FiatShamirROM.Verification
 public import CatCryptCore.Crypto.FiatShamirROM.SigmaVerifyCost
+public import CatCryptCore.Crypto.FiatShamirROM.LogSearch
 public import CatCryptCore.Crypto.ROProgramming
 public import CatCryptCore.Crypto.Messaging.KEMCKA
 public import CatCryptCore.Crypto.Messaging.TripleRatchet
