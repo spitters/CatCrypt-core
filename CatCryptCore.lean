@@ -358,6 +358,8 @@ public import CatCryptCore.Crypto.Messaging.SealedSender
 public import CatCryptCore.Crypto.Messaging.SignalStackSealed
 public import CatCryptCore.Crypto.Messaging.SignalStackUC
 public import CatCryptCore.Crypto.Messaging.SignalStackSM
+public import CatCryptCore.Crypto.Messaging.SignalStackPQXDH
+public import CatCryptCore.Crypto.Messaging.SignalStackPQXDHTimed
 public import CatCryptCore.Crypto.Messaging.FSAEAD
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.Signal.FSAEAD
