@@ -10,7 +10,7 @@ public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
 public import CatCryptCore.Tactics.DeriveTimed
-public import CatCryptCore.Tactics.DerivePMF
+import CatCryptCore.Tactics.DerivePMF
 
 /-!
 # Anonymous signalling from a membership proof, a PRF nullifier and a signed group root
