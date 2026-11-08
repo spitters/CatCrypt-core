@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.UCConcrete
 public import CatCryptCore.Crypto.NomPkgBridge
+public import CatCryptCore.Crypto.ForkingLemma
 
 @[expose] public section
 set_option autoImplicit false
@@ -66,6 +67,7 @@ is perfect up to the event that the guard fails on the real trace.
 * `adv_le_prBad` — the up-to-bad lemma on the joint run: under that
   hypothesis and losslessness of both systems, the advantage of every
   environment is at most the probability of the bad flag in the first run.
+* `prBad_mono`, `prBad_or_le`, `prBad_false` — monotonicity and the union bound for `prBad`.
 * `transparent_realizes` — if the simulator agrees with the protocol on
   every transition that keeps the guard true, then `π` realizes `ideal F S`
   with bound `guardFail π F.guard`.
@@ -488,6 +490,97 @@ theorem adv_le_prBad (R I : Sys τ E O) (bad : τ → Bool)
       by_cases hc : c.2.2
       · simp [hc, prTrue_pure, prTrue_le_one]
       · simp [hc, prTrue_fail]
+
+/-! ## Bad events: monotonicity and the union bound -/
+
+/-- The flag of a run with a smaller bad predicate and a smaller initial flag is set with
+smaller probability. -/
+theorem loop_flag_mono (S : Sys τ E O) (bad bad' : τ → Bool)
+    (hb : ∀ t, bad t = true → bad' t = true) (Z : Strat ζ E O) :
+    ∀ (n : ℕ) (z : ζ) (t : τ) (b b' : Bool) (h₀ : Heap), (b = true → b' = true) →
+      prTrue (SPComp.bind (loop S bad Z n (z, t, b)) fun c => SPComp.pure c.2.2) h₀ ≤
+        prTrue (SPComp.bind (loop S bad' Z n (z, t, b')) fun c => SPComp.pure c.2.2) h₀ := by
+  intro n
+  induction n with
+  | zero =>
+    intro z t b b' h₀ hbb
+    simp only [loop, SPComp.pure_bind, prTrue_pure]
+    cases b <;> cases b' <;> simp_all
+  | succ n ih =>
+    intro z t b b' h₀ hbb
+    simp only [loop, SPComp.bind_assoc]
+    refine prTrue_bind_le_of_le _ _ _ _ fun a _ => ?_
+    refine prTrue_bind_le_of_le _ _ _ _ fun p _ => ?_
+    refine prTrue_bind_le_of_le _ _ _ _ fun z' _ => ?_
+    refine ih _ _ _ _ _ fun hx => ?_
+    simp only [Bool.or_eq_true] at hx ⊢
+    rcases hx with hx | hx
+    · exact Or.inl (hbb hx)
+    · exact Or.inr (hb _ hx)
+
+/-- The flag of the disjunction of two bad predicates is set with probability at most the sum
+of the probabilities of the two flags. -/
+theorem loop_flag_or_le (S : Sys τ E O) (bad₁ bad₂ : τ → Bool) (Z : Strat ζ E O) :
+    ∀ (n : ℕ) (z : ζ) (t : τ) (b b₁ b₂ : Bool) (h₀ : Heap),
+      (b = true → b₁ = true ∨ b₂ = true) →
+      prTrue (SPComp.bind (loop S (fun t => bad₁ t || bad₂ t) Z n (z, t, b))
+          fun c => SPComp.pure c.2.2) h₀ ≤
+        prTrue (SPComp.bind (loop S bad₁ Z n (z, t, b₁)) fun c => SPComp.pure c.2.2) h₀ +
+          prTrue (SPComp.bind (loop S bad₂ Z n (z, t, b₂)) fun c => SPComp.pure c.2.2) h₀ := by
+  intro n
+  induction n with
+  | zero =>
+    intro z t b b₁ b₂ h₀ hbb
+    simp only [loop, SPComp.pure_bind, prTrue_pure]
+    cases b <;> cases b₁ <;> cases b₂ <;> simp_all
+  | succ n ih =>
+    intro z t b b₁ b₂ h₀ hbb
+    simp only [loop, SPComp.bind_assoc]
+    refine ForkingLemma.prTrue_bind_le_add _ _ _ _ _ fun a _ => ?_
+    refine ForkingLemma.prTrue_bind_le_add _ _ _ _ _ fun p _ => ?_
+    refine ForkingLemma.prTrue_bind_le_add _ _ _ _ _ fun z' _ => ?_
+    refine ih _ _ _ _ _ _ fun hx => ?_
+    simp only [Bool.or_eq_true] at hx ⊢
+    rcases hx with hx | hx | hx
+    · rcases hbb hx with h | h
+      · exact Or.inl (Or.inl h)
+      · exact Or.inr (Or.inl h)
+    · exact Or.inl (Or.inr hx)
+    · exact Or.inr (Or.inr hx)
+
+/-- The flag of a bad predicate that never holds is never set. -/
+theorem loop_flag_false (S : Sys τ E O) (Z : Strat ζ E O) :
+    ∀ (n : ℕ) (z : ζ) (t : τ) (h₀ : Heap),
+      prTrue (SPComp.bind (loop S (fun _ => false) Z n (z, t, false))
+        fun c => SPComp.pure c.2.2) h₀ ≤ 0 := by
+  intro n
+  induction n with
+  | zero => intro z t h₀; simp [loop, prTrue_pure]
+  | succ n ih =>
+    intro z t h₀
+    simp only [loop, SPComp.bind_assoc, Bool.or_false]
+    exact prTrue_bind_le_const _ _ _ _ fun a _ => prTrue_bind_le_const _ _ _ _ fun p _ =>
+      prTrue_bind_le_const _ _ _ _ fun z' h' => ih _ _ h'
+
+/-- `prBad` is monotone in the bad predicate. -/
+theorem prBad_mono (S : Sys τ E O) {bad bad' : τ → Bool}
+    (hb : ∀ t, bad t = true → bad' t = true) (Z : Env (Strat ζ E O) ζ) :
+    prBad S bad Z ≤ prBad S bad' Z := by
+  unfold prBad run
+  exact loop_flag_mono S bad bad' hb Z.input _ _ _ _ _ _ (hb _)
+
+/-- **Union bound** for `prBad`. -/
+theorem prBad_or_le (S : Sys τ E O) (bad₁ bad₂ : τ → Bool) (Z : Env (Strat ζ E O) ζ) :
+    prBad S (fun t => bad₁ t || bad₂ t) Z ≤ prBad S bad₁ Z + prBad S bad₂ Z := by
+  unfold prBad run
+  exact loop_flag_or_le S bad₁ bad₂ Z.input _ _ _ _ _ _ _ fun h => by
+    simpa only [Bool.or_eq_true] using h
+
+/-- A bad predicate that never holds has probability `0`. -/
+theorem prBad_false (S : Sys τ E O) (Z : Env (Strat ζ E O) ζ) :
+    prBad S (fun _ => false) Z = 0 := by
+  unfold prBad run
+  exact le_antisymm (loop_flag_false S Z.input _ _ _ _) zero_le
 
 /-! ## Transparent functionalities -/
 

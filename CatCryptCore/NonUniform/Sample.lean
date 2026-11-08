@@ -30,6 +30,8 @@ biased coins, discrete Gaussians — are expressible as `SPComp` programs.
   mass of the distribution
 * `bind_const_of_mass_one`, `dead_sampleFrom` — a lossless sample whose result is
   discarded is a no-op
+* `sampleFrom_ofPMF_bind`, `sampleFrom_ofPMF_pure`, `sampleFrom_ofPMF_map` —
+  `sampleFrom (ofPMF _)` commutes with the `PMF` monad structure
 -/
 
 @[expose] public section
@@ -157,5 +159,29 @@ theorem ofPMF_uniformFintype (α : Type*) [Fintype α] [Nonempty α] :
 /-- `sampleFrom (ofPMF p)` is lossless. -/
 theorem isLossless_sampleFrom_ofPMF (p : PMF α) : isLossless (sampleFrom (ofPMF p)) :=
   isLossless_sampleFrom _ (mass_ofPMF p)
+
+/-- Sampling from a bound probability mass function is sampling the first value and then from
+its continuation. -/
+theorem sampleFrom_ofPMF_bind {α β : Type} (p : PMF α) (f : α → PMF β) :
+    sampleFrom (ofPMF (p.bind f)) =
+      SPComp.bind (sampleFrom (ofPMF p)) fun a => sampleFrom (ofPMF (f a)) := by
+  rw [sampleFrom_bind_sampleFrom]
+  congr 1
+  simp only [ofPMF, CatCrypt.Prob.SDistr.bind, PMF.map_bind, PMF.bind_map, Function.comp_def]
+
+/-- Sampling from a point mass is returning its point. -/
+theorem sampleFrom_ofPMF_pure {α : Type} (a : α) :
+    sampleFrom (ofPMF (PMF.pure a)) = SPComp.pure a := by
+  rw [← sampleFrom_pure]
+  congr 1
+  simp [ofPMF, CatCrypt.Prob.SDistr.pure, PMF.pure_map]
+
+/-- Sampling from the image of a probability mass function is sampling from it and returning
+the image. -/
+theorem sampleFrom_ofPMF_map {α β : Type} (p : PMF α) (g : α → β) :
+    sampleFrom (ofPMF (p.map g)) =
+      SPComp.bind (sampleFrom (ofPMF p)) fun a => SPComp.pure (g a) := by
+  rw [PMF.map, sampleFrom_ofPMF_bind]
+  simp only [Function.comp_apply, sampleFrom_ofPMF_pure]
 
 end CatCrypt.NonUniform
