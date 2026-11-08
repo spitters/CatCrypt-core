@@ -105,6 +105,7 @@ public import CatCryptCore.Complexity.D.TranslateDt
 public import CatCryptCore.Complexity.D.LinkDt
 public import CatCryptCore.Complexity.D.DillerNahm
 public import CatCryptCore.Complexity.D.PolyModel
+public import CatCryptCore.Complexity.D.PriceSound
 public import CatCryptCore.XDijkstra.XErrMonad
 public import CatCryptCore.XDijkstra.XAdvantageHybrid
 public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl
@@ -693,6 +694,7 @@ public import CatCryptCore.Container.GodelFibration
 public import CatCryptCore.Container.DNBang
 public import CatCryptCore.Container.DialecticaCat
 public import CatCryptCore.Container.DNGraded
+public import CatCryptCore.Container.DNLogic
 public import CatCryptCore.Crypto.Party.ProgECost
 public import CatCryptCore.Crypto.Party.ViewRelCode
 public import CatCryptCore.Container.PolyPiSigma
