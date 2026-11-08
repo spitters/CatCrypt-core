@@ -152,6 +152,9 @@ public import CatCryptCore.Tactics.StdCosts
 public import CatCryptCore.Tactics.StdCostsPoly
 public import CatCryptCore.Tactics.ComputationType
 public import CatCryptCore.Tactics.DeriveTimed.Basic
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 public import CatCryptCore.Tactics.DeriveTimedStructure
 public import CatCryptCore.Tactics.DerivePMF
 public import CatCryptCore.Tactics.DeriveTimeRec
