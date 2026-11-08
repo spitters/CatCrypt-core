@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Messaging.CKACorrupt
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # The Diffie–Hellman CKA of Alwen, Coretti and Dodis

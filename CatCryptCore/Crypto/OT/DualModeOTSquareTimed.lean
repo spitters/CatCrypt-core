@@ -8,9 +8,9 @@ module
 public import CatCryptCore.Crypto.OT.DualModeOTSquare
 public import CatCryptCore.Category.ProtBicatReactiveTimed
 public import CatCryptCore.Crypto.OT.DualModeOTTimed
-public import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Tactics.DeriveSimulator
-public import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 
 /-!
 # Running time of the simulator of the dual-mode OT square

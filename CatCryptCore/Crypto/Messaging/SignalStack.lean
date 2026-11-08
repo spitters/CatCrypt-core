@@ -9,6 +9,7 @@ public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.UCCascade
 public import CatCryptCore.Crypto.UCConcreteTimed
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # The Signal stack: X3DH, then the double ratchet keyed by the X3DH session key

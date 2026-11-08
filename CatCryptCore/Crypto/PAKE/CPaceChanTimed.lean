@@ -9,9 +9,9 @@ public import CatCryptCore.Crypto.PAKE.CPaceChan
 public import CatCryptCore.Crypto.UCSimulatorTimed
 public import CatCryptCore.Crypto.UCWakeTimed
 public import CatCryptCore.Crypto.UCSimulatorCostPotComp
-public import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Tactics.DeriveSimulator
-public import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 
 /-!
 # Running time of the bridging simulator of CPace over a channel

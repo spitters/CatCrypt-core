@@ -7,8 +7,11 @@ module
 
 public import CatCryptCore.Crypto.HPKE.BaseCCA
 public import CatCryptCore.Crypto.OracleAdversaryTimed
-public import CatCryptCore.Tactics.DeriveTimed
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Encrypted Client Hello (ECH): scheme and client-hello privacy game

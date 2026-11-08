@@ -7,7 +7,9 @@ module
 
 public import CatCryptCore.Crypto.Signal.SenderKeys.Security
 public import CatCryptCore.Crypto.Signatures.OracleProgTimed
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Running time of the Sender Keys reductions

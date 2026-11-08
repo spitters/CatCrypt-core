@@ -11,6 +11,8 @@ public import CatCryptCore.Crypto.PRGFromPRF
 public import CatCryptCore.Crypto.Assumptions.ODH
 public import CatCryptCore.Crypto.Constructions.CBCINDCPA
 public import CatCryptCore.ForMathlib.PMFUniform
+import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # The primitives of the Signal double ratchet

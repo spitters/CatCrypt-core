@@ -8,9 +8,11 @@ module
 public import CatCryptCore.Crypto.OTExtension.IKNPWake
 public import CatCryptCore.Crypto.UCTransparentMultiTimed
 public import CatCryptCore.Crypto.UCSimulatorCost
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Tactics.DeriveSimulator
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 public import CatCryptCore.Tactics.StdCosts
 public import CatCryptCore.Crypto.UCConcreteTimed
 

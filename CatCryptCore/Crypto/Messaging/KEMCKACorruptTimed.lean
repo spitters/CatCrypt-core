@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Messaging.KEMCKACorrupt
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # Running time of the KEM-CPA reduction of the KEM CKA

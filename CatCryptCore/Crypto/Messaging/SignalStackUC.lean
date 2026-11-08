@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.Messaging.SignalStack
 public import CatCryptCore.Crypto.UCDeferred
 public import CatCryptCore.Crypto.UCRoundHybrid
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # The Signal stack realizes an ideal secure channel

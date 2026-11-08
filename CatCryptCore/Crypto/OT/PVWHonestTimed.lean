@@ -6,9 +6,9 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.OT.PVWHonest
-public import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Tactics.DeriveSimulator
-public import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 
 /-!
 # Running time of the simulator of the PVW OT with both parties honest

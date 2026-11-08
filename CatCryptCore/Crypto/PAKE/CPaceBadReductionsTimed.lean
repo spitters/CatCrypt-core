@@ -8,9 +8,11 @@ module
 public import CatCryptCore.Crypto.PAKE.CPaceBadReductions
 public import CatCryptCore.Crypto.PAKE.CPaceSquareTimed
 public import CatCryptCore.Crypto.PAKE.CPaceH1Timed
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.DeriveTimeBound
-public import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
+import CatCryptCore.Tactics.DeriveCost
 
 /-!
 # Running time of the reductions of the CPace bad events

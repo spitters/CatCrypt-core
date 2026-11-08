@@ -7,8 +7,10 @@ module
 
 public import CatCryptCore.Crypto.Messaging.SealedSender
 public import CatCryptCore.Crypto.PKE.GamesTimed
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Time of the Sealed Sender reductions

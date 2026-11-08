@@ -8,8 +8,11 @@ module
 public import CatCryptCore.Crypto.KEM.FOTransform
 public import CatCryptCore.Crypto.OracleAdversaryRelabelTimed
 public import CatCryptCore.Crypto.PKE.GamesTimed
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Costed form of the plaintext-checking lift of the FO reduction

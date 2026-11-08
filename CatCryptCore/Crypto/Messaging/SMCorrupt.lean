@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.Messaging.CKACorrupt
 public import CatCryptCore.Crypto.Assumptions.DualPRF
 import CatCryptCore.Tactics.AutoDispatchExt
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # Secure messaging with state corruption

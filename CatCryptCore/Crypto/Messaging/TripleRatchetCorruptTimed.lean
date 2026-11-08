@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Messaging.TripleRatchetCorrupt
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # Running time of the reductions of the product CKA

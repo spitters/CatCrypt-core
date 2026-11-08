@@ -7,9 +7,13 @@ module
 
 public import CatCryptCore.Crypto.KEM.FIPS203Security
 public import CatCryptCore.Crypto.PKE.GamesTimed
-public import CatCryptCore.Tactics.DeriveTimed
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Running time of the FIPS 203 reductions

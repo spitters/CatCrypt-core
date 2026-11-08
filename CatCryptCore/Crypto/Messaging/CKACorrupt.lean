@@ -13,6 +13,7 @@ public import CatCryptCore.Crypto.SamplerCert
 public import CatCryptCore.Crypto.SPCompPMF
 public import CatCryptCore.ForMathlib.PMFUniform
 public import CatCryptCore.ForMathlib.PMFSupport
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # Continuous key agreement with state corruption and randomness leakage

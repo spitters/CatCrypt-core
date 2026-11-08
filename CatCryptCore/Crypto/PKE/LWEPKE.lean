@@ -6,7 +6,9 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Assumptions.LWE
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # IND-CPA security of LWE-style public-key encryption

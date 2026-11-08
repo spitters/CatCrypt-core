@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Assumptions.AEAD
 public import CatCryptCore.Crypto.Messaging.FSPRG
+import CatCryptCore.Tactics.DeriveReduction
 
 /-!
 # Forward-secure authenticated encryption

@@ -7,8 +7,11 @@ module
 
 public import CatCryptCore.Crypto.Assumptions.OWF
 public import CatCryptCore.Crypto.HybridArgument
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Tactics.BindSwap
+public import CatCryptCore.Tactics.StdCosts
+import CatCryptCore.Tactics.DeriveCost
 
 /-!
 # Forward-secure pseudorandom generators

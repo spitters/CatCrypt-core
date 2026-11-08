@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Messaging.CKA
 public import CatCryptCore.Crypto.Messaging.FSAEAD
+import CatCryptCore.Tactics.DeriveReduction
 
 /-!
 # The double ratchet: confidentiality from CKA, the root KDF and FS-AEAD

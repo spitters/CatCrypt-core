@@ -7,7 +7,8 @@ module
 
 public import CatCryptCore.Crypto.Party.StoreHybrid
 public import CatCryptCore.Tactics.BindSwap
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 import CatCryptCore.Tactics.AutoDispatchExt
 
 /-!

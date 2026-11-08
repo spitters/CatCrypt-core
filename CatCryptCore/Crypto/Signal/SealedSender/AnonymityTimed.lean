@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.Signal.SealedSender.Anonymity
 public import CatCryptCore.Crypto.Messaging.SealedSenderTimed
 public import CatCryptCore.Crypto.ECH.Scheme
+import CatCryptCore.Tactics.DeriveReduction
 
 /-!
 # Time of the Sealed Sender reduction to HPKE IND-CCA

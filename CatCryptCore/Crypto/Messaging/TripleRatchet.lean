@@ -8,6 +8,9 @@ module
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.Messaging.KEMCKA
 public import CatCryptCore.Crypto.Assumptions.DualPRF
+import CatCryptCore.Tactics.DeriveCost
+import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # The triple ratchet: confidentiality if either DDH or the KEM is secure

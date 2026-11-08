@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.HKDF_UC
 public import CatCryptCore.Crypto.Constructions.KBKDFPRF
 public import CatCryptCore.Crypto.PRGFromPRF
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # HKDF over HMAC with the compression function as primitive

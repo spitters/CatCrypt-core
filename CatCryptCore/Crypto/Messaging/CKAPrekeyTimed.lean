@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Messaging.CKAPrekey
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # Running time of the DDH reduction of the CKA at a given pair

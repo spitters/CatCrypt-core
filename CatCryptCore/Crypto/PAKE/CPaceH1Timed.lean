@@ -6,8 +6,9 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.PAKE.CPaceH1
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.AutoTime.Basic
 
 /-!
 # Running time of the match-recording reduction

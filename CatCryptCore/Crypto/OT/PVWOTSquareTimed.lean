@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.OT.PVWOTSquare
 public import CatCryptCore.Crypto.UCConcreteTimed
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # Running time of the reduction of the PVW mode hop to DDH

@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.Messaging.SignalStackUC
 public import CatCryptCore.Crypto.Messaging.SMMultiChallenge
 public import CatCryptCore.Crypto.ForkingLemma
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # The Signal stack realizes secure messaging with corruption

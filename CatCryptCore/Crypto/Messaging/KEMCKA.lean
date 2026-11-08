@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Messaging.CKA
 public import CatCryptCore.Examples.KEMDEM
+import CatCryptCore.Tactics.DeriveReduction
 
 /-!
 # Continuous key agreement from a KEM, and the product of two CKA schemes

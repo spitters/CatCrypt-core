@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Examples.CyclicGroupDDH
 public import CatCryptCore.Crypto.Messaging.FSPRG
+import CatCryptCore.Tactics.DeriveReduction
 
 /-!
 # Continuous key agreement

@@ -9,6 +9,7 @@ public import CatCryptCore.Crypto.Messaging.SMAuth
 public import CatCryptCore.Crypto.Messaging.SMCorruptTimed
 public import CatCryptCore.Crypto.FiatShamirROM.Timed
 public import CatCryptCore.Crypto.OracleAdversaryPotential
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # Running time of the reduction of authenticity to the corruption game
