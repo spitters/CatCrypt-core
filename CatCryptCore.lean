@@ -314,6 +314,7 @@ public import CatCryptCore.Crypto.AKE.FAKESys
 public import CatCryptCore.Crypto.AKE.X3DHSquare
 public import CatCryptCore.Crypto.AKE.X3DHSquareHops
 public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
+public import CatCryptCore.Crypto.AKE.X3DHSquareSigned
 public import CatCryptCore.Crypto.AKE.X3DHPassive
 public import CatCryptCore.Crypto.AKE.X3DHPassiveHops
 public import CatCryptCore.Crypto.AKE.X3DHPassiveKeygen
