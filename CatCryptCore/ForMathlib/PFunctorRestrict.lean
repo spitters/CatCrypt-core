@@ -6,31 +6,20 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.ForMathlib.PFunctorChargeUnder
+public import PolyFun.PFunctor.Free.Restrict
 
 /-!
 # Restricting the directions of a polynomial functor
 
-`PFunctor.restrict P allows` is the sub-container of `P` with the same positions and, at a
-position `a`, the directions `b` with `allows a b`. The inclusion of its directions is a lens
-`PFunctor.Lens.restrict P allows : Lens P (P.restrict allows)` (positions fixed, directions
-included), and `FreeM.restrict allows x` transports a tree along it: each node keeps its position
-and its continuation is cut down to the admitted answers.
-
-Folding a specification along a lens is folding its pullback along the lens (`wpFold_mapLens`).
-For the restriction lens, the pullback of the charge reading is the charge reading over the
-allowed answers, and the pullback of the demonic reading is the demonic reading over the allowed
-answers.
-
-## Main definitions
-
-* `PFunctor.restrict` — the sub-container of the directions admitted by `allows`
-* `PFunctor.Lens.restrict` — its inclusion, as a lens from `P`
-* `PFunctor.FreeM.restrict` — a tree transported along the inclusion
+PolyFun defines the restriction `PFunctor.restrict P allows` (the positions of `P` and, at a
+position `a`, the directions `b` with `allows a b`), its inclusion `PFunctor.Lens.restrict`, the
+transport of a tree along it `FreeM.restrict`, and folding along a lens as folding the pulled-back
+specification (`FreeM.wpFold_mapLens`). For the restriction lens, the pullback of the charge
+reading is the charge reading over the allowed answers, and the pullback of the demonic reading is
+the demonic reading over the allowed answers.
 
 ## Main results
 
-* `PFunctor.FreeM.wpFold_mapLens` — folding along a lens is folding the pulled-back
-  specification
 * `PFunctor.OpSpec.chargeUnder_eq` — `chargeUnder` is `charge` on the restriction, read through
   the inclusion of directions
 * `PFunctor.FreeM.wpFold_chargeUnder_eq_restrict` — the charge fold over the allowed answers is
@@ -43,45 +32,9 @@ answers.
 
 set_option autoImplicit false
 
-universe uA uB uA₂ uB₂ v w
+universe uA uB v w
 
 namespace PFunctor
-
-/-- The sub-container of `P` with the directions admitted by `allows`: the positions of `P` and,
-at a position `a`, the directions `b` with `allows a b`. -/
-def restrict (P : PFunctor.{uA, uB}) (allows : (a : P.A) → P.B a → Prop) :
-    PFunctor.{uA, uB} :=
-  ⟨P.A, fun a => {b : P.B a // allows a b}⟩
-
-/-- The inclusion of the restriction, as a lens from `P` to `P.restrict allows`: positions are
-fixed and an admitted direction is sent to itself. -/
-def Lens.restrict (P : PFunctor.{uA, uB}) (allows : (a : P.A) → P.B a → Prop) :
-    Lens P (P.restrict allows) :=
-  ⟨id, fun _ b => b.1⟩
-
-namespace FreeM
-
-variable {P : PFunctor.{uA, uB}} {α : Type v}
-
-/-- A tree transported along the inclusion of the restriction: each node keeps its position and
-its continuation is cut down to the answers admitted by `allows`. -/
-protected def restrict (allows : (a : P.A) → P.B a → Prop) (x : FreeM P α) :
-    FreeM (P.restrict allows) α :=
-  x.mapLens (Lens.restrict P allows)
-
-/-- Folding a specification along a lens is folding its pullback: a call at `a` is specified by
-`Φ` at `l.toFunA a`, with the continuation read through `l.toFunB a`. -/
-theorem wpFold_mapLens {Q : PFunctor.{uA₂, uB₂}} {l' : Type w} (l : Lens P Q) (Φ : OpSpec Q l')
-    (x : FreeM P α) (post : α → l') :
-    wpFold Φ (x.mapLens l) post = wpFold (fun a k => Φ (l.toFunA a) (k ∘ l.toFunB a)) x post := by
-  induction x with
-  | pure a => rfl
-  | lift_bind a r ih =>
-    change Φ (l.toFunA a) (fun d => wpFold Φ ((r (l.toFunB a d)).mapLens l) post) = _
-    simp only [ih]
-    rfl
-
-end FreeM
 
 namespace OpSpec
 

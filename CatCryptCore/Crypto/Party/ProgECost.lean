@@ -65,23 +65,23 @@ def codeCharge (w : Q → ℕ) (a : (Code.interp (ProgECost.code Q E O)).A) : �
 invariant `P` on the returns. -/
 theorem bound_iff_cost (w : Q → ℕ) (p : ProgE Q E O α) (t : ℕ) (P : α → Prop) :
     ProgE.Bound w p t P ↔
-      cost (Op.weight w) (ProgECost.toFreeM p) ≤ t ∧
+      Container.cost (Op.weight w) (ProgECost.toFreeM p) ≤ t ∧
         wpFold (OpSpec.demonic _) (ProgECost.toFreeM p) P := by
   induction p generalizing t with
   | ret a => exact ⟨fun h => ⟨zero_le, h⟩, fun h => h.2⟩
   | recv k ih =>
-    change _ ↔ (1 : ℕ∞) + ⨆ e, cost (Op.weight w) (ProgECost.toFreeM (k e)) ≤ t ∧
+    change _ ↔ (1 : ℕ∞) + ⨆ e, Container.cost (Op.weight w) (ProgECost.toFreeM (k e)) ≤ t ∧
       ∀ e, wpFold (OpSpec.demonic _) (ProgECost.toFreeM (k e)) P
     erw [natCast_add_le_natCast_iff, iSup_le_iff]
     simp only [ProgE.Bound, ih]
     grind
   | send o p ih =>
-    change _ ↔ (1 : ℕ∞) + ⨆ _ : PUnit, cost (Op.weight w) (ProgECost.toFreeM p) ≤ t ∧
+    change _ ↔ (1 : ℕ∞) + ⨆ _ : PUnit, Container.cost (Op.weight w) (ProgECost.toFreeM p) ≤ t ∧
       ∀ _ : PUnit, wpFold (OpSpec.demonic _) (ProgECost.toFreeM p) P
     erw [natCast_add_le_natCast_iff, iSup_le_iff]
     simp only [ProgE.Bound, ih, forall_const, and_assoc]
   | opN q k ih =>
-    change _ ↔ ((w q : ℕ) : ℕ∞) + ⨆ n, cost (Op.weight w) (ProgECost.toFreeM (k n)) ≤ t ∧
+    change _ ↔ ((w q : ℕ) : ℕ∞) + ⨆ n, Container.cost (Op.weight w) (ProgECost.toFreeM (k n)) ≤ t ∧
       ∀ n, wpFold (OpSpec.demonic _) (ProgECost.toFreeM (k n)) P
     erw [natCast_add_le_natCast_iff, iSup_le_iff]
     simp only [ProgE.Bound, ih]
@@ -95,7 +95,8 @@ theorem bound_iff_cost (w : Q → ℕ) (p : ProgE Q E O α) (t : ℕ) (P : α �
 /-- The cost fold of `codeCharge w` at the code of `ProgE` is the cost fold of `Op.weight w` at
 the generated signature. -/
 theorem cost_equivCode (w : Q → ℕ) (p : ProgE Q E O α) :
-    cost (codeCharge w) (ProgECost.equivCode p) = cost (Op.weight w) (ProgECost.toFreeM p) := by
+    Container.cost (codeCharge w) (ProgECost.equivCode p) =
+      Container.cost (Op.weight w) (ProgECost.toFreeM p) := by
   rw [ProgECost.equivCode, Equiv.trans_apply, cost_freeMCongr_toLensEquiv]
   congr 1
   funext o
@@ -105,7 +106,7 @@ theorem cost_equivCode (w : Q → ℕ) (p : ProgE Q E O α) :
 `ProgE`, together with the invariant `P` on the returns. -/
 theorem bound_iff_cost_code (w : Q → ℕ) (p : ProgE Q E O α) (t : ℕ) (P : α → Prop) :
     ProgE.Bound w p t P ↔
-      cost (codeCharge w) (ProgECost.equivCode p) ≤ t ∧
+      Container.cost (codeCharge w) (ProgECost.equivCode p) ≤ t ∧
         wpFold (OpSpec.demonic _) (ProgECost.toFreeM p) P := by
   rw [cost_equivCode]
   exact bound_iff_cost w p t P
@@ -113,7 +114,7 @@ theorem bound_iff_cost_code (w : Q → ℕ) (p : ProgE Q E O α) (t : ℕ) (P : 
 /-- The step time of an activation in costed trees is at most the cost fold of the weight
 `weightT ι`. -/
 theorem stepTime_actT_le_cost (ι : Q → ℕ × SPTree.Timed ℕ) (p : ProgE (Costed Q) E O α)
-    (e : E) (t : ℕ) (h : cost (Op.weight (ProgE.weightT ι)) (ProgECost.toFreeM p) ≤ t) :
+    (e : E) (t : ℕ) (h : Container.cost (Op.weight (ProgE.weightT ι)) (ProgECost.toFreeM p) ≤ t) :
     SPTree.Timed.stepTime (ProgE.actT ι p e) ≤ t := by
   have hb : ProgE.Bound (ProgE.weightT ι) p t fun _ => True :=
     (bound_iff_cost _ p t _).2 ⟨h, wpFold_demonic_true _⟩

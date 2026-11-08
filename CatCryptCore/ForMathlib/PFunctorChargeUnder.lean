@@ -10,18 +10,13 @@ public import PolyFun.PFunctor.Free.WP.Charge
 /-!
 # The charge reading restricted to allowed answers
 
-`OpSpec.chargeUnder c allows` is the worst-case charge reading of `FreeM P` in which a call at
-`a` costs `c a` and is followed by the worst continuation over the answers `b` with
-`allows a b`, the answers a handler of the call can return. With `allows` true everywhere it is
-`OpSpec.charge c`.
-
-## Main definitions
-
-* `PFunctor.OpSpec.chargeUnder` — the charge reading over the allowed answers
+PolyFun's `OpSpec.chargeUnder c allows` is the worst-case charge reading of `FreeM P` in which a
+call at `a` costs `c a` and is followed by the worst continuation over the answers `b` with
+`allows a b`, the answers a handler of the call can return; with `allows` true everywhere it is
+`OpSpec.charge c` (`OpSpec.chargeUnder_true`). The results below are its fold rule.
 
 ## Main results
 
-* `PFunctor.OpSpec.chargeUnder_true` — with every answer allowed, `chargeUnder` is `charge`
 * `PFunctor.FreeM.wpFold_chargeUnder_liftBind_le_iff` — a natural-number budget `n` bounds the
   charge fold of a call at `a` iff `c a ≤ n` and `n - c a` bounds the charge fold of the
   continuation at every allowed answer
@@ -45,30 +40,6 @@ set_option autoImplicit false
 universe uA uB w uX uY
 
 namespace PFunctor
-
-namespace OpSpec
-
-variable {P : PFunctor.{uA, uB}}
-
-/-- The worst-case charge reading over the allowed answers: a call at `a` costs `c a`, followed
-by the worst continuation at an answer `b` with `allows a b`. -/
-noncomputable def chargeUnder {R : Type w} [CompleteLattice R] [Add R] (c : P.A → R)
-    (allows : (a : P.A) → P.B a → Prop) : OpSpec P R :=
-  fun a k => c a + ⨆ b, ⨆ (_ : allows a b), k b
-
-@[simp]
-theorem chargeUnder_apply {R : Type w} [CompleteLattice R] [Add R] (c : P.A → R)
-    (allows : (a : P.A) → P.B a → Prop) (a : P.A) (k : P.B a → R) :
-    chargeUnder c allows a k = c a + ⨆ b, ⨆ (_ : allows a b), k b :=
-  rfl
-
-/-- With every answer allowed, `chargeUnder` is `charge`. -/
-theorem chargeUnder_true {R : Type w} [CompleteLattice R] [Add R] (c : P.A → R) :
-    chargeUnder c (fun _ _ => True) = charge c := by
-  funext a k
-  simp
-
-end OpSpec
 
 namespace FreeM
 

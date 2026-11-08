@@ -222,10 +222,10 @@
     {
       "configFile": "lakefile.toml",
       "inherited": false,
-      "inputRev": "4181c82238142d9b73403fbf4c4b13e1a801e400",
+      "inputRev": "afb9c1e57b4eba18e074eb7002bc512a95308b87",
       "manifestFile": "lake-manifest.json",
       "name": "PolyFun",
-      "rev": "4181c82238142d9b73403fbf4c4b13e1a801e400",
+      "rev": "afb9c1e57b4eba18e074eb7002bc512a95308b87",
       "scope": "",
       "subDir": null,
       "type": "git",
