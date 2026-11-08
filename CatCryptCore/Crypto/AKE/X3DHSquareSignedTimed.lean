@@ -479,4 +479,268 @@ theorem x3dhSigSim_timeBoundGraded_layer (G : DHGroup S W) (Sg : PSigScheme W VK
 
 end Simulator
 
+/-! ## The potential certificate of the simulator -/
+
+section Potential
+
+open CatCrypt.Crypto.Signatures (PSigScheme)
+open CatCrypt.Crypto.PAKE.DHExtract (DHGroup)
+
+open Classical in
+/-- A distribution as a costed computation that returns only points of its support: one
+sampling node of unit time, whose leaf at a point outside the support returns a fixed point of
+the support. -/
+noncomputable def pmfS {α : Type} (p : PMF α) : SPTree.Timed α :=
+  .sampleDist α (p.map some) (fun _ => 0) fun b =>
+    .ret (if b ∈ p.support then b else p.support_nonempty.some)
+
+/-- The costed computation `pmfS p` erases to the lift of `p`. -/
+theorem pmfS_erase {α : Type} (p : PMF α) : (pmfS p).erase.compile = liftPMF p := by
+  classical
+  have e1 : liftSDistr (p.map some) = liftPMF p := by
+    rw [← pmfT_erase p]
+    simp only [pmfT, SPTree.Timed.erase_sampleDist, SPTree.Timed.erase_ret,
+      CatCrypt.Tactics.DeriveTimed.compile_sampleDist_ret]
+  have e2 : p.map (fun b => if b ∈ p.support then b else p.support_nonempty.some) = p := by
+    rw [← PMF.bind_pure_comp]
+    exact (PMF.bind_congr_support _ _ _ fun a ha => by simp_all).trans (PMF.bind_pure p)
+  simp only [pmfS, SPTree.Timed.erase_sampleDist, SPTree.Timed.erase_ret]
+  rw [CatCrypt.Tactics.DeriveTimed.compile_sampleDist_eq (fun _ => rfl), e1]
+  exact (liftPMF_bind_pure p _).trans (congrArg liftPMF e2)
+
+/-- The costed computation `pmfS p` takes unit time. -/
+@[simp] theorem pmfS_time {α : Type} (p : PMF α) : (pmfS p).time = 1 := by
+  simp only [pmfS, SPTree.Timed.time_sampleDist, SPTree.Timed.time_ret, Nat.add_zero]
+  rw [show (⨆ _ : α, (0 : ℕ)) = 0 from le_antisymm (ciSup_le' fun _ => le_rfl) (Nat.zero_le _)]
+
+/-- Every leaf of `pmfS p` is a point of the support of `p`. -/
+theorem allRet_pmfS {α : Type} (p : PMF α) {Q : α → Prop} (h : ∀ a ∈ p.support, Q a) :
+    SPTree.Timed.AllRet Q (pmfS p) := by
+  classical
+  intro b
+  simp only [SPTree.Timed.AllRet]
+  split_ifs with hb
+  · exact h b hb
+  · exact h _ p.support_nonempty.some_mem
+
+/-- An update of a function into `Option` defines it at one point more: its domain stays finite
+and grows by at most one. -/
+theorem ncard_update_isSome_le {α β : Type} [DecidableEq α] (f : α → Option β) (a : α)
+    (v : Option β) (hf : {x | (f x).isSome}.Finite) :
+    {x | (Function.update f a v x).isSome}.Finite ∧
+      {x | (Function.update f a v x).isSome}.ncard ≤ {x | (f x).isSome}.ncard + 1 := by
+  have hsub : {x | (Function.update f a v x).isSome} ⊆ insert a {x | (f x).isSome} := by
+    intro x hx
+    by_cases h : x = a
+    · simp [h]
+    · simp_all
+  exact ⟨(hf.insert a).subset hsub,
+    (Set.ncard_le_ncard hsub (hf.insert a)).trans (Set.ncard_insert_le _ _)⟩
+
+variable {W VK SK : Type}
+
+/-- The size of the state of the signature layer: the number of drawn signing key pairs, of
+parties with a signed prekey and of sessions with a peer. -/
+noncomputable def lsize (l : LSt W VK SK) : ℕ :=
+  {q | (l.keys q).isSome}.ncard + {q | (l.signed q).isSome}.ncard +
+    {x | (l.peers x).isSome}.ncard
+
+/-- The tables of the state of the signature layer are finite. -/
+def LFin (l : LSt W VK SK) : Prop :=
+  {q | (l.keys q).isSome}.Finite ∧ {q | (l.signed q).isSome}.Finite ∧
+    {x | (l.peers x).isSome}.Finite
+
+/-- The initial state of the signature layer has finite (empty) tables. -/
+theorem lfin_init : LFin (LSt.init : LSt W VK SK) := by
+  simp [LFin, LSt.init]
+
+/-- Drawing the signing key pair of `q` adds at most one entry. -/
+theorem lsize_keys_update (l : LSt W VK SK) (q : PartyId) (v : Option (VK × SK))
+    (hl : LFin l) :
+    LFin { l with keys := Function.update l.keys q v } ∧
+      lsize { l with keys := Function.update l.keys q v } ≤ lsize l + 1 := by
+  obtain ⟨h1, h2⟩ := ncard_update_isSome_le l.keys q v hl.1
+  exact ⟨⟨h1, hl.2⟩, by simp only [lsize]; omega⟩
+
+/-- Recording the signed prekey of `q` adds at most one entry. -/
+theorem lsize_signed_update (l : LSt W VK SK) (q : PartyId) (v : Option W) (hl : LFin l) :
+    LFin { l with signed := Function.update l.signed q v } ∧
+      lsize { l with signed := Function.update l.signed q v } ≤ lsize l + 1 := by
+  obtain ⟨h1, h2⟩ := ncard_update_isSome_le l.signed q v hl.2.1
+  exact ⟨⟨hl.1, h1, hl.2.2⟩, by simp only [lsize]; omega⟩
+
+/-- Recording the peer of a session adds at most one entry. -/
+theorem lsize_notePeer (l : LSt W VK SK) (x : Inst) (p : PartyId) (hl : LFin l) :
+    LFin (notePeer l x p) ∧ lsize (notePeer l x p) ≤ lsize l + 1 := by
+  unfold notePeer
+  split
+  · exact ⟨hl, by omega⟩
+  · obtain ⟨h1, h2⟩ := ncard_update_isSome_le l.peers x (some p) hl.2.2
+    exact ⟨⟨hl.1, hl.2.1, h1⟩, by simp only [lsize]; omega⟩
+
+/-- A draw of a signing key pair keeps the state or adds the key pair of `q`. -/
+theorem keyAt_support_cases (D : PartyId → PMF (VK × SK)) (l : LSt W VK SK) (q : PartyId) :
+    ∀ y ∈ (keyAt D l q).support,
+      y.2 = l ∨ ∃ v, y.2 = { l with keys := Function.update l.keys q v } := by
+  intro y hy
+  unfold keyAt at hy
+  split at hy
+  · simp_all
+  · simp only [PMF.support_map, Set.mem_image] at hy
+    obtain ⟨kp, -, rfl⟩ := hy
+    exact Or.inr ⟨_, rfl⟩
+
+/-- A draw of a signing key pair adds at most one entry. -/
+theorem keyAt_grow (D : PartyId → PMF (VK × SK)) (l : LSt W VK SK) (q : PartyId)
+    (hl : LFin l) : ∀ y ∈ (keyAt D l q).support, LFin y.2 ∧ lsize y.2 ≤ lsize l + 1 := by
+  intro y hy
+  rcases keyAt_support_cases D l q y hy with h | ⟨v, h⟩
+  · rw [h]
+    exact ⟨hl, by omega⟩
+  · rw [h]
+    exact lsize_keys_update l q v hl
+
+variable {S K Sig : Type} [DecidableEq W]
+
+/-- A `pre` step of the signature layer adds at most one entry to its tables. -/
+theorem layPre_grow (Sg : PSigScheme W VK SK Sig) (l : LSt W VK SK) (e : SEv W Sig)
+    (hl : LFin l) :
+    ∀ y ∈ (layPre (fun _ => Sg.keyDist) Sg id accSigned injComplete l e).support,
+      LFin y.1 ∧ lsize y.1 ≤ lsize l + 1 := by
+  intro y hy
+  rcases e with ((⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (a' | (q' | ⟨sid, pid, spk, σ⟩))) <;>
+    simp only [layPre] at hy
+  rotate_left 4
+  · split at hy
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hy
+      subst hy
+      exact ⟨hl, by simp only [lsize]; omega⟩
+    · simp only [PMF.support_map, Set.mem_image] at hy
+      obtain ⟨r, hr, rfl⟩ := hy
+      exact keyAt_grow _ l _ hl r hr
+  all_goals
+    simp only [PMF.support_pure, Set.mem_singleton_iff] at hy
+    subst hy
+  · exact lsize_notePeer l _ peer hl
+  all_goals exact ⟨hl, by simp only [lsize]; omega⟩
+
+omit [DecidableEq W] in
+/-- A `post` step of the signature layer adds at most two entries to its tables. -/
+theorem layPost_grow (Sg : PSigScheme W VK SK Sig) (l : LSt W VK SK) (o : OOut S W K)
+    (hl : LFin l) :
+    ∀ y ∈ (layPost (fun _ => Sg.keyDist) Sg l o).support, LFin y.1 ∧ lsize y.1 ≤ lsize l + 2 := by
+  intro y hy
+  unfold layPost at hy
+  split at hy
+  rotate_left 2
+  · simp only [PMF.support_bind, PMF.support_map, Set.mem_iUnion, Set.mem_image] at hy
+    obtain ⟨r', hr', σ, -, rfl⟩ := hy
+    obtain ⟨h1, h2⟩ := keyAt_grow _ l _ hl r' hr'
+    obtain ⟨h3, h4⟩ := lsize_signed_update r'.2 _ (some _) h1
+    exact ⟨h3, by dsimp only; omega⟩
+  all_goals
+    simp only [PMF.support_pure, Set.mem_singleton_iff] at hy
+    subst hy
+    exact ⟨hl, by dsimp only; omega⟩
+
+/-- The costed `pre` step of the signature layer on the support: the distribution of `layPre`
+as one sampling node that returns points of its support. -/
+noncomputable def sigPreS (Sg : PSigScheme W VK SK Sig) (l : LSt W VK SK) (e : SEv W Sig) :
+    SPTree.Timed (LSt W VK SK × OEv W) :=
+  pmfS (layPre (fun _ => Sg.keyDist) Sg id accSigned injComplete l e)
+
+/-- The costed `post` step of the signature layer on the support: the distribution of
+`layPost` as one sampling node that returns points of its support. -/
+noncomputable def sigPostS (Sg : PSigScheme W VK SK Sig) (l : LSt W VK SK) (o : OOut S W K) :
+    SPTree.Timed (LSt W VK SK × SOut S W K VK Sig) :=
+  pmfS (layPost (fun _ => Sg.keyDist) Sg l o)
+
+/-- The costed signature layer at the steps `sigPreS`, `sigPostS` and the step costs
+`preCost`, `postCost`. -/
+noncomputable def sigLayerS (Sg : PSigScheme W VK SK Sig)
+    (preCost : LSt W VK SK → SEv W Sig → ℕ) (postCost : LSt W VK SK → OOut S W K → ℕ) :
+    Hybrid.Timed (LSt W VK SK) (SEv W Sig) (SOut S W K VK Sig) (OEv W) (OOut S W K) :=
+  ⟨LSt.init, sigPreS Sg, preCost, sigPostS Sg, postCost⟩
+
+/-- The costed signature layer `sigLayerS` erases to `sigLayerH Sg`. -/
+theorem sigLayerS_erases (Sg : PSigScheme W VK SK Sig) (preCost : LSt W VK SK → SEv W Sig → ℕ)
+    (postCost : LSt W VK SK → OOut S W K → ℕ) :
+    (sigLayerS Sg preCost postCost).Erases (sigLayerH Sg) :=
+  ⟨fun _ _ => by dsimp only [sigLayerS, sigPreS]; rw [pmfS_erase]; exact liftPMF_noFail _,
+    fun _ _ => by dsimp only [sigLayerS, sigPostS]; rw [pmfS_erase]; exact liftPMF_noFail _,
+    by dsimp only [sigLayerS, sigPreS, sigPostS]; simp only [pmfS_erase]; rfl⟩
+
+/-- **Potential time bound of the costed signature layer.** With the potential `lsize` (drawn
+key pairs, signed prekeys, peers of sessions) and step costs at most `tl + tk · lsize l`, a
+`pre` step costs at most `tl + 1 + tk · (lsize l + 1)` and adds at most one entry, a `post`
+step at most `tl + 1 + tk · (lsize l + 2)` and adds at most two. -/
+noncomputable def sigLayerS_potentialBound (Sg : PSigScheme W VK SK Sig)
+    (preCost : LSt W VK SK → SEv W Sig → ℕ) (postCost : LSt W VK SK → OOut S W K → ℕ)
+    {tl tk : ℕ} (hpre : ∀ l e, preCost l e ≤ tl + tk * lsize l)
+    (hpost : ∀ l o, postCost l o ≤ tl + tk * lsize l) :
+    (sigLayerS Sg preCost postCost).PotentialBound (fun _ => 1) (fun _ => 2) 0 0 (tl + 1) tk where
+  Inv := LFin
+  Φ := lsize
+  init := lfin_init
+  pre s e hs := by
+    refine ⟨?_, allRet_pmfS _ fun y hy => ?_⟩
+    · have := hpre s e
+      simp only [sigLayerS, sigPreS, SPTree.Timed.stepTime, pmfS_time]
+      grind
+    · have := layPre_grow Sg s e hs y hy
+      simpa using this
+  post s o hs := by
+    refine ⟨?_, allRet_pmfS _ fun y hy => ?_⟩
+    · have := hpost s o
+      simp only [sigLayerS, sigPostS, SPTree.Timed.stepTime, pmfS_time]
+      grind
+    · have := layPost_grow Sg s o hs y hy
+      simpa using this
+
+variable [Field S] [Fintype S] [Fintype K] [Nonempty K] [Inhabited K]
+
+/-- **Erasure of the costed simulator of X3DH with signed prekeys at the steps on the
+support**: the derived costed form `x3dhSigSim.timed` at the costed steps `sigPreS`,
+`sigPostS` erases to `x3dhSigSim G Sg`. -/
+theorem x3dhSigSim_erases_support (G : DHGroup S W) (Sg : PSigScheme W VK SK Sig)
+    (preCost : LSt W VK SK → SEv W Sig → ℕ) (postCost : LSt W VK SK → OOut S W K → ℕ)
+    (coeCost : S ≃ W → S → ℕ) (expCost : W → S → ℕ) (toFunCost : S → ℕ) :
+    (x3dhSigSim.timed (K := K) G Sg (sigPreS Sg) preCost (sigPostS Sg) postCost
+      coeCost expCost toFunCost).Erases (x3dhSigSim G Sg) :=
+  x3dhSigSim.erase_timed G Sg _ _ _ _ coeCost expCost toFunCost
+    (fun _ _ => pmfS_erase _) (fun _ _ => pmfS_erase _)
+
+/-- **Potential running time of the costed simulator of X3DH with signed prekeys.** At the
+costed steps `sigPreS`, `sigPostS` of the layer, with step costs at most `tl + tk · lsize l` in
+the size `lsize l` of the tables of the layer, and group operations of costs at most `tc`, `te`,
+`tf`, the costed simulator has the potential time bound with the import `1` of every outer event
+and answer, the constants `tl + 2 + 200 + 20 tc + 20 te + 20 tf` and `tk + 40`, and the import
+`2` created per activation: the potential is the size of the tables of the layer plus that of
+the X3DH simulator (the least activation count of its graded invariant), the layer adds at most
+one entry at an event and two at an answer, and the X3DH simulator at most one activation per
+message. -/
+theorem x3dhSigSim.timeBoundPot_timed (G : DHGroup S W) (Sg : PSigScheme W VK SK Sig)
+    (preCost : LSt W VK SK → SEv W Sig → ℕ) (postCost : LSt W VK SK → OOut S W K → ℕ)
+    (coeCost : S ≃ W → S → ℕ) (expCost : W → S → ℕ) (toFunCost : S → ℕ)
+    {tl tk tc te tf : ℕ} (hpre : ∀ l e, preCost l e ≤ tl + tk * lsize l)
+    (hpost : ∀ l o, postCost l o ≤ tl + tk * lsize l) (hc : ∀ a b, coeCost a b ≤ tc)
+    (he : ∀ a b, expCost a b ≤ te) (hf : ∀ a, toFunCost a ≤ tf) :
+    (x3dhSigSim.timed (K := K) G Sg (sigPreS Sg) preCost (sigPostS Sg) postCost
+      coeCost expCost toFunCost).TimeBoundPot (fun _ => 1) 1 0 0
+      (tl + 2 + (200 + 20 * tc + 20 * te + 20 * tf)) (tk + 40) 2 := by
+  have P := sigLayerS_potentialBound Sg preCost postCost hpre hpost
+  have P' := Hybrid.Timed.PotentialBound.ofHybrid (sigLayerS_erases Sg preCost postCost) P
+  have h₂ := (x3dhSim.timeBoundGraded_timed (K := K) G coeCost expCost toFunCost hc he
+    hf).timeBoundPot
+  have h : (x3dhSigSim.timed (K := K) G Sg (sigPreS Sg) preCost (sigPostS Sg) postCost
+      coeCost expCost toFunCost).TimeBoundPot (fun _ => 1) 1 0 0
+      (tl + 1 + 1 + (200 + (20 * tc + (20 * te + 20 * tf)))) (tk + 40)
+      (0 + (x3dhSim.timed (K := K) G coeCost expCost toFunCost).compCount + 2) :=
+    Simulator.comp.timeBoundPot_timed (κ := 2) (Simulator.ofMultiHybrid.timeBoundPot_timed P') h₂
+      (fun _ => by simp) (fun _ => le_rfl)
+  exact h.mono (by omega) le_rfl (by simp [x3dhSim.timed, Simulator.Timed.compCount])
+    (fun _ => le_rfl) (fun _ => le_rfl) (fun _ => le_rfl) (fun _ => le_rfl)
+
+end Potential
+
 end CatCrypt.Crypto.AKE.X3DHSquareSigned
