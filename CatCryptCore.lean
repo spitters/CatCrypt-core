@@ -359,6 +359,8 @@ public import CatCryptCore.Crypto.Messaging.SMCorrupt
 public import CatCryptCore.Crypto.Messaging.SMScheme
 public import CatCryptCore.Crypto.Messaging.SMAuth
 public import CatCryptCore.Crypto.Messaging.SMAuthTimed
+public import CatCryptCore.Crypto.Messaging.TripleRatchetCorrupt
+public import CatCryptCore.Crypto.Messaging.TripleRatchetCorruptTimed
 public import CatCryptCore.Crypto.Messaging.SMMultiChallenge
 public import CatCryptCore.Crypto.Messaging.SignalStack
 public import CatCryptCore.Crypto.Messaging.SealedSender
