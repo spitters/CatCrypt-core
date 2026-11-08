@@ -706,6 +706,7 @@ public import CatCryptCore.Container.DialecticaCat
 public import CatCryptCore.Container.DNGraded
 public import CatCryptCore.Container.DNRel
 public import CatCryptCore.Container.PolyRel
+public import CatCryptCore.Container.RGraphCwF
 public import CatCryptCore.Container.DNLogic
 public import CatCryptCore.Crypto.Party.ProgECost
 public import CatCryptCore.Crypto.Party.ViewRelCode
