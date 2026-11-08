@@ -35,6 +35,7 @@ public import CatCryptCore.Core.SPTreeFree
 public import CatCryptCore.ForMathlib.PFunctorChargeUnder
 public import CatCryptCore.ForMathlib.PFunctorChargeVec
 public import CatCryptCore.ForMathlib.PFunctorRestrict
+public import CatCryptCore.ForMathlib.MultisetSum
 public import CatCryptCore.Core.SPTreeTimedFree
 public import CatCryptCore.Core.SPTreeTimedOps
 public import CatCryptCore.Core.StdDoBridge
@@ -685,6 +686,7 @@ public import CatCryptCore.Container.DNCert
 public import CatCryptCore.Crypto.Signatures.OracleProgUseBound
 public import CatCryptCore.Container.CwF
 public import CatCryptCore.Container.CwFPi
+public import CatCryptCore.Container.GodelFibration
 public import CatCryptCore.Crypto.Party.ProgECost
 public import CatCryptCore.Crypto.Party.ViewRelCode
 public import CatCryptCore.Container.PolyPiSigma
