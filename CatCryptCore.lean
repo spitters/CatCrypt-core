@@ -108,6 +108,7 @@ public import CatCryptCore.Complexity.D.PolyModel
 public import CatCryptCore.Complexity.D.PriceSound
 public import CatCryptCore.Complexity.D.DNHered
 public import CatCryptCore.Complexity.D.OpenTree
+public import CatCryptCore.Complexity.D.DNHeredFull
 public import CatCryptCore.XDijkstra.XErrMonad
 public import CatCryptCore.XDijkstra.XAdvantageHybrid
 public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl
