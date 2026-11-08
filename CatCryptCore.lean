@@ -365,6 +365,7 @@ public import CatCryptCore.Crypto.Messaging.CKAACD
 public import CatCryptCore.Crypto.Messaging.SMCorrupt
 public import CatCryptCore.Crypto.Messaging.SMCorruptPrekey
 public import CatCryptCore.Crypto.Messaging.SMCorruptPrekeyTimed
+public import CatCryptCore.Crypto.Messaging.SMPrekey
 public import CatCryptCore.Crypto.Messaging.SMScheme
 public import CatCryptCore.Crypto.Messaging.SMAuth
 public import CatCryptCore.Crypto.Messaging.SMAuthTimed
