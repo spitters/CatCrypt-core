@@ -36,6 +36,7 @@ public import CatCryptCore.ForMathlib.PFunctorChargeUnder
 public import CatCryptCore.ForMathlib.PFunctorChargeVec
 public import CatCryptCore.ForMathlib.PFunctorRestrict
 public import CatCryptCore.ForMathlib.MultisetSum
+public import CatCryptCore.ForMathlib.NatFindBounded
 public import CatCryptCore.Core.SPTreeTimedFree
 public import CatCryptCore.Core.SPTreeTimedOps
 public import CatCryptCore.Core.StdDoBridge
@@ -688,6 +689,7 @@ public import CatCryptCore.Container.CwF
 public import CatCryptCore.Container.CwFPi
 public import CatCryptCore.Container.GodelFibration
 public import CatCryptCore.Container.DNBang
+public import CatCryptCore.Container.DialecticaCat
 public import CatCryptCore.Crypto.Party.ProgECost
 public import CatCryptCore.Crypto.Party.ViewRelCode
 public import CatCryptCore.Container.PolyPiSigma
