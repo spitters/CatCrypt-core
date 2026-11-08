@@ -35,6 +35,7 @@ public import CatCryptCore.Core.SPTreeFree
 public import CatCryptCore.ForMathlib.PFunctorChargeUnder
 public import CatCryptCore.ForMathlib.PFunctorChargeVec
 public import CatCryptCore.ForMathlib.PFunctorRestrict
+public import CatCryptCore.ForMathlib.Difunctional
 public import CatCryptCore.ForMathlib.MultisetSum
 public import CatCryptCore.ForMathlib.NatFindBounded
 public import CatCryptCore.Core.SPTreeTimedFree
