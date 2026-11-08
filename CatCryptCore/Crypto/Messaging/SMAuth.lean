@@ -51,23 +51,78 @@ the log and the counters itself and answers every delivery from its log
 and for the ACD construction with decryption `acdAuthSM`, the corruption term is the bound of
 `acdSM_corruptAdvantage_le` at `smAuthRed A` (`acdAuthSM_authAdvantage_le`).
 
+## The hybrid over the epochs
+
+`smAuthGameAt M ΔFS ΔPCS idealC idealD A` takes the decryption mode per epoch: a delivery into
+the epoch `e` is answered from the log when `idealD e`. The hybrid `k` answers the deliveries
+into the epochs below `k` from the log. Every query raises each epoch counter by at most one, so
+for an adversary asking at most `N` queries every delivery is into an epoch below `N`
+(`smAuthGameAt_congr_of_isQueryBound`), and (`SMAuthScheme.intAdvantage_le_sum`)
+
+  `Adv_int(A) ≤ ∑_{k < N} Adv_int,k(A)`,
+
+where `Adv_int,k` (`SMAuthScheme.epochIntAdvantage`) distinguishes the hybrids `k` and `k + 1`,
+which differ only at the deliveries into the epoch `k`.
+
+## FS-AEAD integrity
+
+`fsaead_int_game G D ideal A` is the integrity game of a single epoch of the chain generator `G`
+and the AEAD `D`: encryption under the next key of the chain, with a log of the honest
+ciphertexts; decryption at a position under the key of the chain from the initial state, or
+from the log in the ideal game, refused after the corruption of the sender.
+`FSAEAD_Int_Advantage` is the distance between the two games.
+
 ## Main definitions
 
-* `SMAuthScheme`, `SMAuthQuery`, `SMAuthAns`, `SMLogEntry`, `SMAuthAux`, `smAuthOracle`,
-  `SMAuthAdv`, `smAuthGame`, `SMAuthScheme.authAdvantage`, `SMAuthScheme.intAdvantage`
+* `SMAuthScheme`, `SMAuthQuery`, `SMAuthAns`, `SMLogEntry`, `SMAuthAux`, `smAuthOracleAt`,
+  `smAuthOracle`, `SMAuthAdv`, `smAuthGameAt`, `smAuthGame`, `SMAuthScheme.authAdvantage`,
+  `SMAuthScheme.intAdvantage`, `SMAuthScheme.epochIntAdvantage`
 * `smAuthImpl`, `smAuthRed` — the reduction to the corruption game
 * `chainKey`, `acdAuthSM` — the ACD construction with the decryption of the receiving chain
+* `FSIntQuery`, `FSIntAns`, `FSIntSt`, `fsIntOracle`, `fsaead_int_game`,
+  `FSAEAD_Int_Advantage` — the FS-AEAD integrity game
 
 ## Main results
 
 * `smAuthGame_logDec_eq` — the game with ideal decryption is the corruption game of
   `smAuthRed`
 * `SMAuthScheme.authAdvantage_le`, `acdAuthSM_authAdvantage_le` — the bounds above
+* `OracleAdv.run_eq_of_agree_level` — runs of oracles that agree below a level of a graded
+  invariant, for an adversary with a query bound
+* `SMAuthScheme.intAdvantage_le_sum` — the integrity advantage as a sum over the epochs
 -/
 
 set_option autoImplicit false
 
 @[expose] public section
+
+namespace CatCrypt.Crypto.OracleAdv
+
+variable {S D R α : Type}
+
+/-- **Runs of oracles that agree below a level.** Let `L c` be state predicates such that every
+call of `O` from a state of `L c` leads to states of `L (c + 1)`, and let `O` and `O'` agree at
+the states of `L c` for `c < n`. A run of an adversary asking at most `m` queries from a state
+of `L c` with `c + m ≤ n` is the same under both oracles. -/
+theorem run_eq_of_agree_level (O O' : S → D → PMF (R × S)) (L : ℕ → S → Prop) (n : ℕ)
+    (hO : ∀ c s d, L c s → ∀ x ∈ (O s d).support, L (c + 1) x.2)
+    (hagree : ∀ c s d, c < n → L c s → O s d = O' s d) {A : OracleAdv D R α} {m : ℕ}
+    (hA : A.IsQueryBound m) (c : ℕ) (s : S) (hs : L c s) (hcm : c + m ≤ n) :
+    run O A s = run O' A s := by
+  induction A generalizing m c s with
+  | ret a => simp only [run_ret]
+  | rand p k ih =>
+    simp only [run_rand]
+    exact congrArg _ (funext fun b => ih b (hA b) c s hs hcm)
+  | query d k ih =>
+    cases m with
+    | zero => exact hA.elim
+    | succ m =>
+      rw [run_query, run_query, ← hagree c s d (by omega) hs]
+      exact PMF.bind_congr_support _ _ _ fun y hy =>
+        ih y.1 (hA y.1) (c + 1) y.2 (hO c s d hs y hy) (by omega)
+
+end CatCrypt.Crypto.OracleAdv
 
 namespace CatCrypt.Crypto.Messaging
 
@@ -181,19 +236,27 @@ section Game
 variable {St Pub Rand W Ct Leak : Type} [Fintype Rand] [Nonempty Rand] [DecidableEq W]
   [DecidableEq Ct]
 
-/-- The oracle of the authenticity game over `M` with the challenge epoch `t`: the queries of
-the corruption game are answered by `smSchemeOracle` with the challenge mode `idealC` and
-logged; a delivery is answered by `M.dec` (`idealD = false`) or from the log, and only when
+/-- The oracle of the authenticity game over `M` with the challenge epoch `t` and the
+decryption mode `idealD` per epoch: the queries of the corruption game are answered by
+`smSchemeOracle` with the challenge mode `idealC` and logged; a delivery into the epoch `e` is
+answered by `M.dec` (`idealD e = false`) or from the log, and only when
 `SMAuthAux.canDeliver` allows it. -/
-noncomputable def smAuthOracle (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS t : ℕ)
-    (idealC idealD : Bool) (s : SMSchemeSt St Pub × SMAuthAux W Ct) :
+noncomputable def smAuthOracleAt (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (s : SMSchemeSt St Pub × SMAuthAux W Ct) :
     SMAuthQuery W Ct → PMF (SMAuthAns Pub Ct Leak W × (SMSchemeSt St Pub × SMAuthAux W Ct))
   | .sm q => (smSchemeOracle M.toSMScheme ΔFS ΔPCS t idealC s.1 q).map fun y =>
       (.sm y.1, (y.2, s.2.upd (ckaShadow s.1.ck) q y.1))
-  | .deliver p j ad c => PMF.pure (.dec (if idealD then
+  | .deliver p j ad c => PMF.pure (.dec (if idealD ((ckaShadow s.1.ck).t p) then
       s.2.logAns ΔFS ΔPCS (ckaShadow s.1.ck) p j ad c
     else if s.2.canDeliver ΔFS ΔPCS (ckaShadow s.1.ck) p then M.dec (s.1.ck.st p) j ad c
     else none), s)
+
+/-- The oracle of the authenticity game over `M` with the challenge epoch `t`: `smAuthOracleAt`
+with the same decryption mode `idealD` in every epoch. -/
+noncomputable def smAuthOracle (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS t : ℕ)
+    (idealC idealD : Bool) (s : SMSchemeSt St Pub × SMAuthAux W Ct) :
+    SMAuthQuery W Ct → PMF (SMAuthAns Pub Ct Leak W × (SMSchemeSt St Pub × SMAuthAux W Ct)) :=
+  smAuthOracleAt M ΔFS ΔPCS t idealC (fun _ => idealD) s
 
 /-- An adversary of the authenticity game: a distribution of the challenge epoch, and for each
 challenge epoch and public value of the initialisation an oracle tree. -/
@@ -203,14 +266,21 @@ structure SMAuthAdv (Pub W Ct Leak : Type) : Type 1 where
   /-- The interaction with the oracles. -/
   play : ℕ → Pub → OracleAdv (SMAuthQuery W Ct) (SMAuthAns Pub Ct Leak W) Bool
 
+/-- The authenticity game over a scheme with the decryption mode `idealD` per epoch: the
+adversary chooses the challenge epoch `t`, the scheme is initialised, and the adversary
+interacts with `smAuthOracleAt`. -/
+noncomputable def smAuthGameAt (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (A : SMAuthAdv Pub W Ct Leak) : SPComp Bool :=
+  SPComp.bind (liftPMF A.tStar) fun t =>
+    SPComp.bind M.init fun i =>
+      liftPMF ((OracleAdv.run (smAuthOracleAt M ΔFS ΔPCS t idealC idealD) (A.play t i.1)
+        (SMSchemeSt.init i, SMAuthAux.init)).map Prod.fst)
+
 /-- **The authenticity game over a scheme**: the adversary chooses the challenge epoch `t`, the
 scheme is initialised, and the adversary interacts with `smAuthOracle`. -/
 noncomputable def smAuthGame (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS : ℕ)
     (idealC idealD : Bool) (A : SMAuthAdv Pub W Ct Leak) : SPComp Bool :=
-  SPComp.bind (liftPMF A.tStar) fun t =>
-    SPComp.bind M.init fun i =>
-      liftPMF ((OracleAdv.run (smAuthOracle M ΔFS ΔPCS t idealC idealD) (A.play t i.1)
-        (SMSchemeSt.init i, SMAuthAux.init)).map Prod.fst)
+  smAuthGameAt M ΔFS ΔPCS idealC (fun _ => idealD) A
 
 /-- **The advantage of `A` in the authenticity game over `M`**: the real game against the game
 with a uniform challenge ciphertext and decryption from the log. -/
@@ -280,19 +350,21 @@ theorem smAuth_step (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS t : ℕ
         (smAuthEmb s) d := by
   cases d with
   | sm q =>
-    simp only [smAuthOracle, OracleAdv.simOracle, smAuthImpl, smAuthEmb, OracleAdv.run_query,
+    simp only [smAuthOracle, smAuthOracleAt, OracleAdv.simOracle, smAuthImpl, smAuthEmb,
+      OracleAdv.run_query,
       OracleAdv.run_ret, PMF.map_comp, PMF.map_bind, PMF.pure_map]
     exact PMF.bind_congr_support _ _ _ fun y hy => by
       simp [smAuthEmb, smSchemeOracle_shadow _ _ _ _ _ _ _ y hy]
   | deliver p j ad c =>
-    simp [smAuthOracle, OracleAdv.simOracle, smAuthImpl, smAuthEmb, PMF.pure_map]
+    simp [smAuthOracle, smAuthOracleAt, OracleAdv.simOracle, smAuthImpl, smAuthEmb,
+      PMF.pure_map]
 
 /-- **The game with ideal decryption is the corruption game of the reduction.** -/
 theorem smAuthGame_logDec_eq (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS : ℕ)
     (idealC : Bool) (A : SMAuthAdv Pub W Ct Leak) :
     smAuthGame M ΔFS ΔPCS idealC true A =
       smCorruptGame M.toSMScheme ΔFS ΔPCS idealC (smAuthRed ΔFS ΔPCS A) := by
-  unfold smAuthGame smCorruptGame
+  unfold smAuthGame smAuthGameAt smCorruptGame
   refine congrArg _ (funext fun t => congrArg _ (funext fun i => congrArg _ ?_))
   simp only [smAuthRed]
   rw [OracleAdv.run_simulate_fst]
@@ -315,6 +387,96 @@ theorem SMAuthScheme.authAdvantage_le (M : SMAuthScheme St Pub Rand W Ct Leak) (
   exact advantage_triangle _ _ _
 
 end Red
+
+/-! ## The hybrid over the epochs -/
+
+section Hybrid
+
+variable {St Pub Rand W Ct Leak : Type} [Fintype Rand] [Nonempty Rand] [DecidableEq W]
+  [DecidableEq Ct]
+
+/-- The epoch counters of the state `s` of the authenticity game are at most `c`. -/
+def smAuthLevel (c : ℕ) (s : SMSchemeSt St Pub × SMAuthAux W Ct) : Prop := ∀ p, s.1.ck.t p ≤ c
+
+omit [DecidableEq W] in
+/-- A query of the corruption game raises each epoch counter by at most one. -/
+theorem ckaShadowStep_t_le (sh : CKAGameSt Unit Unit) (q : SMQuery W) (p : CKAParty) :
+    (ckaShadowStep sh q).t p ≤ sh.t p + 1 := by
+  cases q <;> simp only [ckaShadowStep] <;> (try split) <;>
+    (try simp only [CKAGameSt.sent, CKAGameSt.recvd]) <;> grind [Function.update_apply]
+
+/-- A call of the oracle of the authenticity game raises each epoch counter by at most one. -/
+theorem smAuthOracleAt_level (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (c : ℕ) (s : SMSchemeSt St Pub × SMAuthAux W Ct)
+    (d : SMAuthQuery W Ct) (hs : smAuthLevel c s) :
+    ∀ x ∈ (smAuthOracleAt M ΔFS ΔPCS t idealC idealD s d).support, smAuthLevel (c + 1) x.2 := by
+  intro x hx p
+  cases d with
+  | sm q =>
+    simp only [smAuthOracleAt, PMF.support_map, Set.mem_image] at hx
+    obtain ⟨y, hy, rfl⟩ := hx
+    have h := congrArg (fun z => z.t p)
+      (smSchemeOracle_shadow M.toSMScheme ΔFS ΔPCS t idealC s.1 q y hy)
+    have h' := ckaShadowStep_t_le (ckaShadow s.1.ck) q p
+    have h'' := hs p
+    simp only [ckaShadow] at h h'
+    grind
+  | deliver p' j ad c' =>
+    simp only [smAuthOracleAt, PMF.support_pure, Set.mem_singleton_iff] at hx
+    subst hx
+    exact (hs p).trans (Nat.le_succ _)
+
+/-- **Decryption modes that agree below the horizon.** For an adversary asking at most `N`
+queries, every delivery is into an epoch below `N`, so two decryption modes that agree on the
+epochs below `N` give the same game. -/
+theorem smAuthGameAt_congr_of_isQueryBound (M : SMAuthScheme St Pub Rand W Ct Leak)
+    (ΔFS ΔPCS : ℕ) (idealC : Bool) {idealD idealD' : ℕ → Bool} {N : ℕ}
+    (h : ∀ e < N, idealD e = idealD' e) (A : SMAuthAdv Pub W Ct Leak)
+    (hA : ∀ t pub, (A.play t pub).IsQueryBound N) :
+    smAuthGameAt M ΔFS ΔPCS idealC idealD A = smAuthGameAt M ΔFS ΔPCS idealC idealD' A := by
+  unfold smAuthGameAt
+  refine congrArg _ (funext fun t => congrArg _ (funext fun i => congrArg _ ?_))
+  rw [OracleAdv.run_eq_of_agree_level _ (smAuthOracleAt M ΔFS ΔPCS t idealC idealD')
+    smAuthLevel N (smAuthOracleAt_level M ΔFS ΔPCS t idealC idealD) ?_ (hA t i.1) 0 _ ?_
+    (by omega)]
+  · intro c s d hc hs
+    cases d with
+    | sm q => rfl
+    | deliver p j ad c' =>
+      have hp := hs p
+      simp only [smAuthOracleAt]
+      rw [h ((ckaShadow s.1.ck).t p) (by simp only [ckaShadow]; omega)]
+  · intro p
+    simp [SMSchemeSt.init, CKAGameSt.init]
+
+/-- **The integrity advantage at the epoch `k`**: the game with decryption from the log in the
+epochs below `k` and real decryption from the epoch `k` on, against the game with decryption
+from the log in the epochs up to `k`. -/
+noncomputable def SMAuthScheme.epochIntAdvantage (M : SMAuthScheme St Pub Rand W Ct Leak)
+    (ΔFS ΔPCS k : ℕ) (A : SMAuthAdv Pub W Ct Leak) : ℝ≥0∞ :=
+  Advantage (smAuthGameAt M ΔFS ΔPCS false (fun e => decide (e < k)) A)
+    (smAuthGameAt M ΔFS ΔPCS false (fun e => decide (e < k + 1)) A)
+
+/-- **Integrity as a sum over the epochs.** For an adversary asking at most `N` queries, the
+integrity advantage is at most the sum over the epochs `k < N` of the integrity advantages at
+the epoch `k`. -/
+theorem SMAuthScheme.intAdvantage_le_sum (M : SMAuthScheme St Pub Rand W Ct Leak)
+    (ΔFS ΔPCS N : ℕ) (A : SMAuthAdv Pub W Ct Leak)
+    (hA : ∀ t pub, (A.play t pub).IsQueryBound N) :
+    M.intAdvantage ΔFS ΔPCS A ≤
+      ∑ k ∈ Finset.range N, M.epochIntAdvantage ΔFS ΔPCS k A := by
+  have h0 : smAuthGame M ΔFS ΔPCS false false A =
+      smAuthGameAt M ΔFS ΔPCS false (fun e => decide (e < 0)) A := by
+    simp only [smAuthGame, Nat.not_lt_zero, decide_false]
+  have hN : smAuthGame M ΔFS ΔPCS false true A =
+      smAuthGameAt M ΔFS ΔPCS false (fun e => decide (e < N)) A :=
+    smAuthGameAt_congr_of_isQueryBound M ΔFS ΔPCS false (fun e he => by simp [he]) A hA
+  unfold SMAuthScheme.intAdvantage SMAuthScheme.epochIntAdvantage
+  rw [h0, hN]
+  exact HybridArgument.advantage_hybrid_dep_bool
+    (fun k => smAuthGameAt M ΔFS ΔPCS false (fun e => decide (e < k)) A) N
+
+end Hybrid
 
 /-! ## The ACD construction with decryption -/
 
@@ -364,5 +526,82 @@ theorem acdAuthSM_authAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
   exact add_le_add_right h _
 
 end ACD
+
+/-! ## Forward-secure AEAD integrity -/
+
+section FSInt
+
+variable {Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [DecidableEq W]
+  [DecidableEq Ct]
+
+/-- The queries of the FS-AEAD integrity adversary. -/
+inductive FSIntQuery (W Ct : Type) where
+  /-- The sender encrypts the message `m` under the next key of its chain. -/
+  | enc (m : W × W)
+  /-- The receiver decrypts the ciphertext `c` with associated data `ad` at the position `j`. -/
+  | dec (j : ℕ) (ad : W) (c : Ct)
+  /-- The state of the sender is returned; later decryptions are refused. -/
+  | corrupt
+
+/-- The answers of the FS-AEAD integrity oracle. -/
+inductive FSIntAns (Sa Ct W : Type) where
+  /-- A ciphertext. -/
+  | ct (c : Ct)
+  /-- A plaintext or a rejection. -/
+  | dec (m : Option W)
+  /-- The state of the sender. -/
+  | state (s : Sa)
+
+/-- The state of the FS-AEAD integrity game: the current state of the sender's chain, the
+initial state of the epoch (the state of the receiver), the log of the honest ciphertexts
+(position, plaintext, associated data, ciphertext) and the flag of the corruption. -/
+structure FSIntSt (Sa W Ct : Type) where
+  /-- The current state of the sender. -/
+  cur : Sa
+  /-- The initial state of the epoch, held by the receiver. -/
+  init : Sa
+  /-- The honest ciphertexts: position, plaintext, associated data, ciphertext. -/
+  log : List (ℕ × W × W × Ct)
+  /-- The sender has been corrupted. -/
+  corr : Bool
+
+omit [SampleableType W] [SampleableType Ct] in
+/-- Decryption from the log of the FS-AEAD integrity game: the plaintext of the honest
+ciphertext `c` with associated data `ad` at the position `j`, or `none`. -/
+def FSIntSt.logDec (s : FSIntSt Sa W Ct) (j : ℕ) (ad : W) (c : Ct) : Option W :=
+  (s.log.find? fun l => decide (l.1 = j ∧ l.2.2.1 = ad ∧ l.2.2.2 = c)).map fun l => l.2.1
+
+/-- The oracle of the FS-AEAD integrity game of the generator `G` and the AEAD `D` (the
+authenticity part of the FS-AEAD security of Alwen, Coretti and Dodis, §4.3, with immediate
+decryption): `enc m` encrypts under the next key `(G cur).1`, logs the ciphertext at the next
+position and moves the state to `(G cur).2`; `dec j ad c` decrypts under the key at the position
+`j` of the chain from the initial state (`ideal = false`) or from the log (`ideal = true`), and
+is refused after a corruption; `corrupt` returns the current state of the sender. -/
+noncomputable def fsIntOracle (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
+    (s : FSIntSt Sa W Ct) : FSIntQuery W Ct → PMF (FSIntAns Sa Ct W × FSIntSt Sa W Ct)
+  | .enc m =>
+    PMF.pure (.ct (D.encrypt (G.stretch s.cur).1 m.1 m.2),
+      { s with cur := (G.stretch s.cur).2,
+               log := (s.log.length, m.1, m.2, D.encrypt (G.stretch s.cur).1 m.1 m.2) :: s.log })
+  | .dec j ad c => PMF.pure (.dec (if s.corr then none
+      else if ideal then s.logDec j ad c else D.decrypt (chainKey G s.init j) c ad), s)
+  | .corrupt => PMF.pure (.state s.cur, { s with corr := true })
+
+variable [Fintype Sa] [Nonempty Sa]
+
+/-- **The FS-AEAD integrity game**: a uniform initial state of the epoch, and the run of the
+adversary against `fsIntOracle`. -/
+noncomputable def fsaead_int_game (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
+    (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) : SPComp Bool :=
+  liftPMF ((PMF.uniformFintype Sa).bind fun sa =>
+    (OracleAdv.run (fsIntOracle G D ideal) A ⟨sa, sa, [], false⟩).map Prod.fst)
+
+/-- **FS-AEAD integrity advantage** of the adversary `A`: real decryption against decryption
+from the log. -/
+noncomputable def FSAEAD_Int_Advantage (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) : ℝ≥0∞ :=
+  Advantage (fsaead_int_game G D false A) (fsaead_int_game G D true A)
+
+end FSInt
 
 end CatCrypt.Crypto.Messaging
