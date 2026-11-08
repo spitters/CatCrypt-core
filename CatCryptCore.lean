@@ -359,6 +359,8 @@ public import CatCryptCore.Crypto.AKE.PQXDH.SurfaceDeps
 public import CatCryptCore.Crypto.Messaging.FSPRG
 public import CatCryptCore.Crypto.Messaging.CKA
 public import CatCryptCore.Crypto.Messaging.CKACorrupt
+public import CatCryptCore.Crypto.Messaging.CKAPrekey
+public import CatCryptCore.Crypto.Messaging.CKAPrekeyTimed
 public import CatCryptCore.Crypto.Messaging.CKAACD
 public import CatCryptCore.Crypto.Messaging.SMCorrupt
 public import CatCryptCore.Crypto.Messaging.SMScheme
