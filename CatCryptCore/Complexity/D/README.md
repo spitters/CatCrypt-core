@@ -59,6 +59,10 @@ time measures of Forster, Kunze and Roth, is not proved here.
 | `Cost` | `Tm.cost` and its compositionality lemmas |
 | `Examples` | a list sum by `foldl`, a function applied twice, a sampler |
 | `TimeAdm` | time admissibility of `SPComp` arrows by closed D-terms, its graded laws, the time-bounded distance `ucCdistTime` |
+| `DNHered` | the hereditary Diller–Nahm object `Ty.dnH` of a type, the Dialectica predicate `Ty.simPred` of a value, and the soundness `Tm.dnH_sound` of the morphism of a pure term at a first-order variable |
+| `DNHeredFull` | the object `Ty.hatH` with call demands at function types, the translation `Tm.dtH` with `Tm.dtH_forget`, `Sim.arr_iff_dnSoundH` at every argument type and `Tm.dnHH_sound` |
+| `OpenTree` | the open costed tree `Tm.dtO` with the calls of function variables as operations, `Tm.wpFold_dtC_eq_liftM_dtO`, `Tm.cost_le_of_useBound` and `Tm.useBound_liftM_substHandler_clocked` |
+| `PriceSound` | the gluing of the Diller–Nahm category along `CTree`: `PriceSound`, `KeepsTokens`, `PriceObj`, `Sim.arr_iff_priceSound` and `Tm.priceHom` |
 
 ## Reflection of Lean definitions
 
@@ -313,6 +317,34 @@ LICS 2018, §8).
   `c.d` renamed into the caller's context (`Ren.liftN`), and `link_timed` applies the certificate
   at the call (`TSim.certCall`), without walking the body of the callee again. Test:
   `CatCryptCoreTest/Tactics/LinkTimedCertTest.lean`.
+
+* The hereditary object (`DNHered`). A type `τ` is the container `Ty.dnH τ` with the translated
+  values `τ.hat` as shapes. At a function type its positions at a costed closure are a clock
+  tick and the call tokens `⟨u, z⟩`, an argument with a position of the result (Pédrot, LICS
+  2014). `Ty.simPred τ v` is the Dialectica predicate of a value `v`, and `Sim` is this predicate
+  at every position (`Ty.sim_iff_forall_simPred`). `Sim` at a function type with a first-order
+  argument is the soundness of the morphism of the application (`Sim.arr_iff_dnSound`), and the
+  morphism `Tm.dnH` of a pure term of the fragment is sound (`Tm.dnH_sound`).
+* Call demands (`DNHeredFull`). In `Ty.hatH` a function type has as shapes a Diller–Nahm morphism
+  of the hereditary objects together with a cost at each argument, so that a shape records the
+  call demand. `Tm.dtH` is the costed tree of lifted values, and `Tm.dtC` is its image under
+  `Ty.forget` (`Tm.dtH_forget`). `Sim.arr_iff_dnSoundH` states the equivalence at every argument
+  type, and `Tm.dnHH_sound` the soundness of the morphism of an abstraction, whose body demands
+  of an argument of function type no call token. Soundness is for the pure fragment.
+* Open trees (`OpenTree`). `Tm.dtO` keeps the calls of the function variables of a context as
+  operations of the tree. The closed tree is the open tree interpreted by the entries of the
+  variables (`Tm.wpFold_dtC_eq_liftM_dtO`), and substitution of a callee is the interpretation of
+  the call tokens by a handler. `Tm.cost_le_of_useBound` bounds the cost of every evaluation by
+  the allowance, the base cost and the sum of the uses times the times of the entries, and
+  `Tm.useBound_liftM_substHandler_clocked` gives the use vector of `Clocked.comp` for the
+  substitution of a callee.
+* Price-soundness (`PriceSound`). `DNLens.PriceSound` bounds a closure `g : X' → CTree Y'` by a
+  Diller–Nahm morphism of clock objects at relations on the arguments and results, in the sense of
+  Danner, Licata and Ramyaa. `PriceObj` with the morphisms `PriceHom`, which keep tokens
+  (`DNLens.KeepsTokens`), is the gluing of the Diller–Nahm category along the Kleisli category of
+  `CTree`. `Sim` at a function type is price-soundness of the costed closure
+  (`Sim.arr_iff_priceSound`), and a pure term of the fragment in related environments is a
+  morphism (`Tm.priceHom`).
 
 ## The types of D in the polynomial model
 
