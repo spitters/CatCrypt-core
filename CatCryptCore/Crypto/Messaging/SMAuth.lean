@@ -64,6 +64,20 @@ for an adversary asking at most `N` queries every delivery is into an epoch belo
 where `Adv_int,k` (`SMAuthScheme.epochIntAdvantage`) distinguishes the hybrids `k` and `k + 1`,
 which differ only at the deliveries into the epoch `k`.
 
+## Identical until a forgery
+
+A forgery at the epoch `k` (`smAuthBadAt`) is an answered delivery into the epoch `k` whose
+real decryption differs from the decryption from the log. The hybrids `k` and `k + 1` with a
+flag set at a forgery (`smAuthFlagOracle`) agree on every transition that leaves the flag
+cleared, so (`SMAuthScheme.epochIntAdvantage_le_bad`)
+
+  `Adv_int,k(A) ≤ Pr[smAuthBadGame k A]`,
+
+the probability of a forgery at the epoch `k` in the hybrid `k + 1`. The truncated game
+`smAuthTruncGame` answers every query by a rejection from the first answered corruption with
+the epoch `k` in its window on; it has the same output (`smAuthTruncGame_eq`), since after
+such a corruption no delivery into the epoch `k` is answered.
+
 ## FS-AEAD integrity
 
 `fsaead_int_game G D ideal A` is the integrity game of a single epoch of the chain generator `G`
@@ -78,6 +92,8 @@ from the log in the ideal game, refused after the corruption of the sender.
   `smAuthOracle`, `SMAuthAdv`, `smAuthGameAt`, `smAuthGame`, `SMAuthScheme.authAdvantage`,
   `SMAuthScheme.intAdvantage`, `SMAuthScheme.epochIntAdvantage`
 * `smAuthImpl`, `smAuthRed` — the reduction to the corruption game
+* `smAuthBadAt`, `smAuthFlagOracle`, `smAuthFlagRun`, `smAuthBadGame`, `smAuthTruncOracle`,
+  `smAuthTruncGame` — the forgery event at an epoch and its truncated game
 * `chainKey`, `acdAuthSM` — the ACD construction with the decryption of the receiving chain
 * `FSIntQuery`, `FSIntAns`, `FSIntSt`, `fsIntOracle`, `fsaead_int_game`,
   `FSAEAD_Int_Advantage` — the FS-AEAD integrity game
@@ -90,6 +106,10 @@ from the log in the ideal game, refused after the corruption of the sender.
 * `OracleAdv.run_eq_of_agree_level` — runs of oracles that agree below a level of a graded
   invariant, for an adversary with a query bound
 * `SMAuthScheme.intAdvantage_le_sum` — the integrity advantage as a sum over the epochs
+* `OracleAdv.run_map_eq_of_agree_until_stop` — runs of oracles that agree until a stop after
+  which both keep an observation
+* `advantage_bind_liftPMF_le_flag` — identical until a flag, through a shared prefix
+* `SMAuthScheme.epochIntAdvantage_le_bad`, `smAuthTruncGame_eq` — the bounds above
 -/
 
 set_option autoImplicit false
@@ -121,6 +141,40 @@ theorem run_eq_of_agree_level (O O' : S → D → PMF (R × S)) (L : ℕ → S �
       rw [run_query, run_query, ← hagree c s d (by omega) hs]
       exact PMF.bind_congr_support _ _ _ fun y hy =>
         ih y.1 (hA y.1) (c + 1) y.2 (hO c s d hs y hy) (by omega)
+
+/-- **A frozen observation.** Let every call of `O` from a state of `Fr` lead to states of `Fr`
+with the same value of `g`. A run from a state of `Fr` ends with that value of `g`. -/
+theorem run_map_eq_pure_of_frozen {β : Type} (O : S → D → PMF (R × S)) (Fr : S → Prop)
+    (g : S → β) (hO : ∀ s d, Fr s → ∀ x ∈ (O s d).support, Fr x.2 ∧ g x.2 = g s)
+    (A : OracleAdv D R α) (s : S) (hs : Fr s) :
+    (run O A s).map (fun x => g x.2) = PMF.pure (g s) := by
+  induction A generalizing s with
+  | ret a => simp only [run_ret, PMF.pure_map]
+  | rand p k ih => simp only [run_rand, PMF.map_bind, fun b => ih b s hs, PMF.bind_const]
+  | query d k ih =>
+    rw [run_query, PMF.map_bind, PMF.bind_congr_support _ _ (fun _ => PMF.pure (g s))
+      fun y hy => by rw [ih y.1 y.2 (hO s d hs y hy).1, (hO s d hs y hy).2]]
+    exact PMF.bind_const _ _
+
+/-- **Runs that agree until a stop.** Let `O` and `O'` agree at the states outside `Stop`, and
+let every call of either from a state of `Stop` lead to states of `Stop` with the same value of
+`g`. The runs of an adversary against `O` and `O'` give the same distribution of the final value
+of `g`. -/
+theorem run_map_eq_of_agree_until_stop {β : Type} (O O' : S → D → PMF (R × S))
+    (Stop : S → Prop) (g : S → β) (hagree : ∀ s d, ¬ Stop s → O s d = O' s d)
+    (hO : ∀ s d, Stop s → ∀ x ∈ (O s d).support, Stop x.2 ∧ g x.2 = g s)
+    (hO' : ∀ s d, Stop s → ∀ x ∈ (O' s d).support, Stop x.2 ∧ g x.2 = g s)
+    (A : OracleAdv D R α) (s : S) :
+    (run O A s).map (fun x => g x.2) = (run O' A s).map (fun x => g x.2) := by
+  induction A generalizing s with
+  | ret a => rfl
+  | rand p k ih => simp only [run_rand, PMF.map_bind, fun b => ih b s]
+  | query d k ih =>
+    by_cases hs : Stop s
+    · rw [run_map_eq_pure_of_frozen O Stop g hO _ s hs,
+        run_map_eq_pure_of_frozen O' Stop g hO' _ s hs]
+    · rw [run_query, run_query, PMF.map_bind, PMF.map_bind, hagree s d hs]
+      exact congrArg _ (funext fun y => ih y.1 y.2)
 
 end CatCrypt.Crypto.OracleAdv
 
@@ -477,6 +531,235 @@ theorem SMAuthScheme.intAdvantage_le_sum (M : SMAuthScheme St Pub Rand W Ct Leak
     (fun k => smAuthGameAt M ΔFS ΔPCS false (fun e => decide (e < k)) A) N
 
 end Hybrid
+
+/-! ## Identical until a forgery at the epoch `k` -/
+
+section UntilBad
+
+/-- **Identical until a flag, through a shared prefix.** Let the flagged distributions `p₁ t i`
+and `p₂ t i` agree on every outcome with the flag cleared. The games that draw `t` from `T` and
+`i` from `I` and output the first component of `p₁ t i` and of `p₂ t i` are distinguished with
+at most the probability of the flag in the second game. -/
+theorem advantage_bind_liftPMF_le_flag {τ X σ : Type} (T : PMF τ) (I : SPComp X)
+    (p₁ p₂ : τ → X → PMF (Bool × σ × Bool))
+    (h : ∀ t i a s, p₁ t i (a, (s, false)) = p₂ t i (a, (s, false))) :
+    Advantage
+        (SPComp.bind (liftPMF T) fun t => SPComp.bind I fun i => liftPMF ((p₁ t i).map Prod.fst))
+        (SPComp.bind (liftPMF T) fun t => SPComp.bind I fun i => liftPMF ((p₂ t i).map Prod.fst))
+      ≤ prTrue (SPComp.bind (liftPMF T) fun t => SPComp.bind I fun i =>
+          liftPMF ((p₂ t i).map fun x => x.2.2)) Heap.empty := by
+  have h₁ : prTrue (SPComp.bind (liftPMF T) fun t => SPComp.bind I fun i =>
+      liftPMF ((p₁ t i).map Prod.fst)) Heap.empty ≤
+      prTrue (SPComp.bind (liftPMF T) fun t => SPComp.bind I fun i =>
+        liftPMF ((p₂ t i).map Prod.fst)) Heap.empty +
+      prTrue (SPComp.bind (liftPMF T) fun t => SPComp.bind I fun i =>
+        liftPMF ((p₂ t i).map fun x => x.2.2)) Heap.empty := by
+    refine ForkingLemma.prTrue_bind_le_add _ _ _ _ _ fun t _ => ?_
+    refine ForkingLemma.prTrue_bind_le_add _ _ _ _ _ fun i _ => ?_
+    simp only [PRPPRF.prTrue_liftPMF_map]
+    simpa only [Set.mem_singleton_iff] using
+      Constructions.ECBCPRF.toOuterMeasure_le_add_flag (p₁ t i) (p₂ t i) (h t i) {true}
+  have h₂ : prTrue (SPComp.bind (liftPMF T) fun t => SPComp.bind I fun i =>
+      liftPMF ((p₂ t i).map Prod.fst)) Heap.empty ≤
+      prTrue (SPComp.bind (liftPMF T) fun t => SPComp.bind I fun i =>
+        liftPMF ((p₁ t i).map Prod.fst)) Heap.empty +
+      prTrue (SPComp.bind (liftPMF T) fun t => SPComp.bind I fun i =>
+        liftPMF ((p₂ t i).map fun x => x.2.2)) Heap.empty := by
+    refine ForkingLemma.prTrue_bind_le_add _ _ _ _ _ fun t _ => ?_
+    refine ForkingLemma.prTrue_bind_le_add _ _ _ _ _ fun i _ => ?_
+    simp only [PRPPRF.prTrue_liftPMF_map]
+    rw [← Constructions.ECBCPRF.toOuterMeasure_flag_eq (p₁ t i) (p₂ t i) (h t i)]
+    simpa only [Set.mem_singleton_iff] using
+      Constructions.ECBCPRF.toOuterMeasure_le_add_flag (p₂ t i) (p₁ t i)
+        (fun a s => (h t i a s).symm) {true}
+  exact max_le (tsub_le_iff_left.mpr h₁) (tsub_le_iff_left.mpr h₂)
+
+variable {St Pub Rand W Ct Leak : Type} [Fintype Rand] [Nonempty Rand] [DecidableEq W]
+  [DecidableEq Ct]
+
+/-- **A forgery at the epoch `k`**: the query `d` from the state `s` is a delivery into the
+epoch `k` that is answered and whose real decryption differs from the decryption from the
+log. -/
+def smAuthBadAt (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS k : ℕ)
+    (s : SMSchemeSt St Pub × SMAuthAux W Ct) : SMAuthQuery W Ct → Bool
+  | .sm _ => false
+  | .deliver p j ad c => decide ((ckaShadow s.1.ck).t p = k) &&
+      s.2.canDeliver ΔFS ΔPCS (ckaShadow s.1.ck) p &&
+      (M.dec (s.1.ck.st p) j ad c != s.2.logDec ((ckaShadow s.1.ck).t p) j ad c)
+
+/-- The oracle `smAuthOracleAt` with a flag that is set at a forgery at the epoch `k`. -/
+noncomputable def smAuthFlagOracle (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ)
+    (s : (SMSchemeSt St Pub × SMAuthAux W Ct) × Bool) (d : SMAuthQuery W Ct) :
+    PMF (SMAuthAns Pub Ct Leak W × ((SMSchemeSt St Pub × SMAuthAux W Ct) × Bool)) :=
+  (smAuthOracleAt M ΔFS ΔPCS t idealC idealD s.1 d).map fun y =>
+    (y.1, (y.2, s.2 || smAuthBadAt M ΔFS ΔPCS k s.1 d))
+
+/-- The run of `A` against the flagged oracle `smAuthFlagOracle` at the challenge epoch `t`
+from the initial state `i` of the scheme. -/
+noncomputable def smAuthFlagRun (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ) (A : SMAuthAdv Pub W Ct Leak) (t : ℕ)
+    (i : Pub × St × St) :
+    PMF (Bool × ((SMSchemeSt St Pub × SMAuthAux W Ct) × Bool)) :=
+  OracleAdv.run (smAuthFlagOracle M ΔFS ΔPCS t idealC idealD k) (A.play t i.1)
+    ((SMSchemeSt.init i, SMAuthAux.init), false)
+
+/-- **The forgery event at the epoch `k`**: the game that runs `A` in the hybrid `k + 1` and
+outputs whether a forgery at the epoch `k` was delivered. -/
+noncomputable def smAuthBadGame (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS k : ℕ)
+    (A : SMAuthAdv Pub W Ct Leak) : SPComp Bool :=
+  SPComp.bind (liftPMF A.tStar) fun t => SPComp.bind M.init fun i =>
+    liftPMF ((smAuthFlagRun M ΔFS ΔPCS false (fun e => decide (e < k + 1)) k A t i).map
+      fun x => x.2.2)
+
+/-- The output of the flagged run is the output of the run against `smAuthOracleAt`. -/
+theorem smAuthFlagRun_map_fst (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ) (A : SMAuthAdv Pub W Ct Leak) (t : ℕ)
+    (i : Pub × St × St) :
+    (smAuthFlagRun M ΔFS ΔPCS idealC idealD k A t i).map Prod.fst =
+      (OracleAdv.run (smAuthOracleAt M ΔFS ΔPCS t idealC idealD) (A.play t i.1)
+        (SMSchemeSt.init i, SMAuthAux.init)).map Prod.fst := by
+  have hstep : ∀ s d, (smAuthFlagOracle M ΔFS ΔPCS t idealC idealD k s d).map
+      (Prod.map id Prod.fst) = smAuthOracleAt M ΔFS ΔPCS t idealC idealD s.1 d := by
+    intro s d
+    rw [smAuthFlagOracle, PMF.map_comp]
+    exact PMF.map_id _
+  have h := OracleAdv.run_map_state _ _ Prod.fst hstep (A.play t i.1)
+    ((SMSchemeSt.init i, SMAuthAux.init), false)
+  dsimp only at h
+  rw [smAuthFlagRun, ← h, PMF.map_comp]
+  rfl
+
+/-- Without a forgery at the epoch `k`, the hybrids `k` and `k + 1` answer a delivery alike. -/
+theorem smAuthOracleAt_deliver_agree (M : SMAuthScheme St Pub Rand W Ct Leak)
+    (ΔFS ΔPCS t : ℕ) (idealC : Bool) (k : ℕ) (s : SMSchemeSt St Pub × SMAuthAux W Ct)
+    (p : CKAParty) (j : ℕ) (ad : W) (c : Ct)
+    (h : smAuthBadAt M ΔFS ΔPCS k s (.deliver p j ad c) = false) :
+    smAuthOracleAt M ΔFS ΔPCS t idealC (fun e => decide (e < k)) s (.deliver p j ad c) =
+      smAuthOracleAt M ΔFS ΔPCS t idealC (fun e => decide (e < k + 1)) s
+        (.deliver p j ad c) := by
+  simp only [smAuthBadAt] at h
+  simp only [smAuthOracleAt]
+  grind [SMAuthAux.logAns]
+
+/-- The flag of `smAuthFlagOracle` stays set. -/
+theorem smAuthFlagOracle_sticky (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ) (s : SMSchemeSt St Pub × SMAuthAux W Ct)
+    (d : SMAuthQuery W Ct) (r : SMAuthAns Pub Ct Leak W)
+    (s' : SMSchemeSt St Pub × SMAuthAux W Ct) :
+    smAuthFlagOracle M ΔFS ΔPCS t idealC idealD k (s, true) d (r, (s', false)) = 0 := by
+  refine (PMF.apply_eq_zero_iff _ _).mpr ?_
+  simp [smAuthFlagOracle]
+
+/-- The flagged hybrids `k` and `k + 1` agree on every transition that leaves the flag
+cleared. -/
+theorem smAuthFlagOracle_agree (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (k : ℕ) (s : (SMSchemeSt St Pub × SMAuthAux W Ct) × Bool)
+    (d : SMAuthQuery W Ct) (r : SMAuthAns Pub Ct Leak W)
+    (s' : SMSchemeSt St Pub × SMAuthAux W Ct) :
+    smAuthFlagOracle M ΔFS ΔPCS t idealC (fun e => decide (e < k)) k s d (r, (s', false)) =
+      smAuthFlagOracle M ΔFS ΔPCS t idealC (fun e => decide (e < k + 1)) k s d
+        (r, (s', false)) := by
+  by_cases hb : (s.2 || smAuthBadAt M ΔFS ΔPCS k s.1 d) = true
+  · rw [(PMF.apply_eq_zero_iff _ _).mpr, (PMF.apply_eq_zero_iff _ _).mpr] <;>
+      simp [smAuthFlagOracle, hb]
+  · cases d with
+    | sm q => rfl
+    | deliver p j ad c =>
+      simp only [Bool.or_eq_true, not_or] at hb
+      simp only [smAuthFlagOracle]
+      rw [smAuthOracleAt_deliver_agree M ΔFS ΔPCS t idealC k s.1 p j ad c (by simpa using hb.2)]
+
+/-- **Identical until a forgery.** The integrity advantage at the epoch `k` is at most the
+probability of a forgery at the epoch `k` in the hybrid `k + 1`. -/
+theorem SMAuthScheme.epochIntAdvantage_le_bad (M : SMAuthScheme St Pub Rand W Ct Leak)
+    (ΔFS ΔPCS k : ℕ) (A : SMAuthAdv Pub W Ct Leak) :
+    M.epochIntAdvantage ΔFS ΔPCS k A ≤ prTrue (smAuthBadGame M ΔFS ΔPCS k A) Heap.empty := by
+  have hg : ∀ idealD, smAuthGameAt M ΔFS ΔPCS false idealD A =
+      SPComp.bind (liftPMF A.tStar) fun t => SPComp.bind M.init fun i =>
+        liftPMF ((smAuthFlagRun M ΔFS ΔPCS false idealD k A t i).map Prod.fst) := by
+    intro idealD
+    simp only [smAuthGameAt, smAuthFlagRun_map_fst]
+  unfold SMAuthScheme.epochIntAdvantage smAuthBadGame
+  rw [hg, hg]
+  exact advantage_bind_liftPMF_le_flag _ _
+    (fun t i => smAuthFlagRun M ΔFS ΔPCS false (fun e => decide (e < k)) k A t i)
+    (fun t i => smAuthFlagRun M ΔFS ΔPCS false (fun e => decide (e < k + 1)) k A t i)
+    fun t i a s => OracleAdv.run_apply_flag_false_eq _ _
+      (smAuthFlagOracle_sticky M ΔFS ΔPCS t false _ k)
+      (smAuthFlagOracle_sticky M ΔFS ΔPCS t false _ k)
+      (smAuthFlagOracle_agree M ΔFS ΔPCS t false k) _ _ a s
+
+omit [DecidableEq W] [DecidableEq Ct] in
+/-- An epoch outside the safe epochs stays outside them. -/
+theorem SMAuthAux.safe_upd_of_false (ΔFS ΔPCS k : ℕ) (x : SMAuthAux W Ct)
+    (sh : CKAGameSt Unit Unit) (q : SMQuery W) (a : SMSchemeAns Pub Ct Leak)
+    (h : x.safe ΔFS ΔPCS k = false) : (x.upd sh q a).safe ΔFS ΔPCS k = false := by
+  cases q <;> cases a <;> simp_all [SMAuthAux.upd, SMAuthAux.record, SMAuthAux.safe]
+
+/-- **The oracle truncated at the corruption of the epoch `k`**: the flagged oracle, which from
+the first answered corruption with the epoch `k` in its window on answers every query by a
+rejection and keeps its state. -/
+noncomputable def smAuthTruncOracle (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ)
+    (s : (SMSchemeSt St Pub × SMAuthAux W Ct) × Bool) (d : SMAuthQuery W Ct) :
+    PMF (SMAuthAns Pub Ct Leak W × ((SMSchemeSt St Pub × SMAuthAux W Ct) × Bool)) :=
+  if s.1.2.safe ΔFS ΔPCS k then smAuthFlagOracle M ΔFS ΔPCS t idealC idealD k s d
+  else PMF.pure (.dec none, s)
+
+/-- **The truncated forgery game at the epoch `k`**: `smAuthBadGame` with the oracle truncated
+at the first corruption that falls in the window of the epoch `k`. -/
+noncomputable def smAuthTruncGame (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS k : ℕ)
+    (A : SMAuthAdv Pub W Ct Leak) : SPComp Bool :=
+  SPComp.bind (liftPMF A.tStar) fun t => SPComp.bind M.init fun i =>
+    liftPMF ((OracleAdv.run
+      (smAuthTruncOracle M ΔFS ΔPCS t false (fun e => decide (e < k + 1)) k) (A.play t i.1)
+      ((SMSchemeSt.init i, SMAuthAux.init), false)).map fun x => x.2.2)
+
+/-- After a corruption in the window of the epoch `k`, the flagged oracle keeps the flag and
+the epoch outside the safe epochs. -/
+theorem smAuthFlagOracle_stopped (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ)
+    (s : (SMSchemeSt St Pub × SMAuthAux W Ct) × Bool) (hs : s.1.2.safe ΔFS ΔPCS k = false)
+    (d : SMAuthQuery W Ct) :
+    ∀ x ∈ (smAuthFlagOracle M ΔFS ΔPCS t idealC idealD k s d).support,
+      x.2.1.2.safe ΔFS ΔPCS k = false ∧ x.2.2 = s.2 := by
+  intro x hx
+  simp only [smAuthFlagOracle, PMF.support_map, Set.mem_image] at hx
+  obtain ⟨y, hy, rfl⟩ := hx
+  cases d with
+  | sm q =>
+    simp only [smAuthOracleAt, PMF.support_map, Set.mem_image] at hy
+    obtain ⟨z, -, rfl⟩ := hy
+    exact ⟨SMAuthAux.safe_upd_of_false _ _ _ _ _ _ _ hs, by simp [smAuthBadAt]⟩
+  | deliver p j ad c =>
+    simp only [smAuthOracleAt, PMF.support_pure, Set.mem_singleton_iff] at hy
+    subst hy
+    refine ⟨hs, ?_⟩
+    simp only [smAuthBadAt, SMAuthAux.canDeliver]
+    grind
+
+/-- **Every forgery precedes the corruption of its epoch.** The truncated forgery game at the
+epoch `k` is the forgery game at the epoch `k`: after a corruption in the window of the epoch
+`k`, no delivery into the epoch `k` is answered. -/
+theorem smAuthTruncGame_eq (M : SMAuthScheme St Pub Rand W Ct Leak) (ΔFS ΔPCS k : ℕ)
+    (A : SMAuthAdv Pub W Ct Leak) :
+    smAuthTruncGame M ΔFS ΔPCS k A = smAuthBadGame M ΔFS ΔPCS k A := by
+  unfold smAuthTruncGame smAuthBadGame smAuthFlagRun
+  refine congrArg _ (funext fun t => congrArg _ (funext fun i => congrArg _ ?_))
+  refine OracleAdv.run_map_eq_of_agree_until_stop _ _
+    (fun s : (SMSchemeSt St Pub × SMAuthAux W Ct) × Bool => s.1.2.safe ΔFS ΔPCS k = false)
+    (fun s => s.2) ?_ ?_ ?_ _ _
+  · intro s d hs
+    simp [smAuthTruncOracle, hs]
+  · intro s d hs x hx
+    simp only [smAuthTruncOracle, hs, Bool.false_eq_true, ite_false, PMF.support_pure,
+      Set.mem_singleton_iff] at hx
+    subst hx
+    exact ⟨hs, rfl⟩
+  · exact fun s d hs => smAuthFlagOracle_stopped M ΔFS ΔPCS t false _ k s hs d
+
+end UntilBad
 
 /-! ## The ACD construction with decryption -/
 
