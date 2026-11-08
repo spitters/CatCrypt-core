@@ -63,6 +63,7 @@ time measures of Forster, Kunze and Roth, is not proved here.
 | `DNHeredFull` | the object `Ty.hatH` with call demands at function types, the translation `Tm.dtH` with `Tm.dtH_forget`, `Sim.arr_iff_dnSoundH` at every argument type and `Tm.dnHH_sound` |
 | `OpenTree` | the open costed tree `Tm.dtO` with the calls of function variables as operations, `Tm.wpFold_dtC_eq_liftM_dtO`, `Tm.cost_le_of_useBound` and `Tm.useBound_liftM_substHandler_clocked` |
 | `PriceSound` | the gluing of the Diller–Nahm category along `CTree`: `PriceSound`, `KeepsTokens`, `PriceObj`, `Sim.arr_iff_priceSound` and `Tm.priceHom` |
+| `PriceTransfer` | transport of price-soundness along a change of implementation (`CTree.SimLE`, `DNLens.PriceSound.impl`) and along a square of specifications (`DNLens.PriceSound.spec`, `DNLens.KeepsTokens.of_dnSquare`), and of morphisms of the gluing along both (`PriceObj.transport`, `PriceHom.transport`) |
 
 ## Reflection of Lean definitions
 
