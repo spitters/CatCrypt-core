@@ -13,17 +13,20 @@ public import CatCryptCore.Crypto.AKE.X3DHSquareJointHop
 
 In the joint-key model of X3DH the world with simulated signatures `simSignO` and the filtered
 world `filtJO` differ only at an injection that `simSignO` accepts and `filtJO` refuses: an
-injection `inject sid pid spk σ` at a session whose peer `q` is honest, whose signature verifies
-under the identity key `IK_q` on the random-oracle value at the point `(σ.1, spk)`, with a prekey
-`spk` that the layer did not sign for `q` (`ForgeJ`).
+injection `inject sid pid spk σ` at a session whose peer `q` the layer has not seen corrupted,
+whose signature verifies under the identity key `IK_q` on the random-oracle value at the point
+`(σ.1, spk)`, with a prekey `spk` that the layer did not sign for `q` (`ForgeJ`). At a peer whose
+corruption revealed its identity key, which is its signing key, both worlds complete the initiator
+with the delivered prekey when the signature verifies (`simSignO_eq_filtJO_corr`).
 
 The second hop of the joint-key model bounds the distance of the two worlds by the probability
 of `ForgeJ` in `simSignO` (`joint_upto_forgery`). That probability equals the probability that
 the flag environment `flagEnv B` outputs `true` against the filtered world
-(`forgeJ_eq_flagEnv`). The flag environment runs `B`, records the peers of the sessions and the
-parties whose signatures `B` requested, and before each injection at a session with a peer `q`
-reads `IK_q` and `SPK_q` by `pub q` and the random-oracle value by `sigHash q (σ.1, spk)`; it
-outputs `true` at the first forbidden injection and passes the others on.
+(`forgeJ_eq_flagEnv`). The flag environment runs `B`, records the peers of the sessions, the
+parties whose signatures `B` requested and the parties whose corruption revealed their secrets,
+and before each injection at a session with a peer `q` not recorded corrupted reads `IK_q` and
+`SPK_q` by `pub q` and the random-oracle value by `sigHash q (σ.1, spk)`; it outputs `true` at
+the first forbidden injection and passes the others on.
 
 ## Main definitions
 
@@ -59,43 +62,50 @@ section Defs
 
 variable (P : FiatShamirROM.Sigma) [DecidableEq P.Stmt] {K : Type}
 
-/-- **A forbidden injection**: an injection at a session whose peer is `q`, whose signature
-verifies under the identity key of `q` on the random-oracle value of `q` at the point
-`(σ.1, spk)` after the step, with a prekey `spk` other than the signed prekey of `q` or before
-`q` signed. -/
+/-- **A forbidden injection**: an injection at a session whose peer `q` the layer has not seen
+corrupted, whose signature verifies under the identity key of `q` on the random-oracle value of
+`q` at the point `(σ.1, spk)` after the step, with a prekey `spk` other than the signed prekey of
+`q` or before `q` signed. -/
 def ForgeJ (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K) (e : JEv P)
     (x : JOut P K × (JSt P × RSt P.Wit P.Stmt K)) : Prop :=
   ∃ sid pid spk σ q v c, e = .inr (.inr (.inject sid pid spk σ)) ∧
-    t.1.peers (sid, pid) = some q ∧ x.2.2.lt q = some v ∧
+    t.1.peers (sid, pid) = some q ∧ t.1.corr q = none ∧ x.2.2.lt q = some v ∧
     (x.2.1.tabs q).1.lookup (σ.1, spk) = some c ∧ P.verify (A.pub v.1) σ.1 c σ.2 = true ∧
     ¬ ((t.1.sigs q).isSome = true ∧ spk = A.pub v.2)
 
 /-- **The layer state matches the real state**: the peer of each session is the peer of its
-record, and a party that signed has drawn long-term secrets whose public parts are its identity
-key and signed prekey. -/
+record, a party that signed has drawn long-term secrets whose public parts are its identity
+key and signed prekey, and the identity key recorded for a corrupted party is the public part of
+its drawn identity secret. -/
 def InvJ (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K) : Prop :=
   (∀ x, t.1.peers x = (t.2.st.recs x).map Rec.peer) ∧
-    ∀ q c, t.1.sigs q = some c → ∃ v, t.2.lt q = some v ∧ c.1 = A.pub v.1 ∧ c.2.1 = A.pub v.2
+    (∀ q c, t.1.sigs q = some c → ∃ v, t.2.lt q = some v ∧ c.1 = A.pub v.1 ∧ c.2.1 = A.pub v.2) ∧
+    ∀ q ik, t.1.corr q = some ik → ∃ v, t.2.lt q = some v ∧ ik = A.pub v.1
 
-/-- The state of the flag environment: the peer of each session and the parties whose
-signatures were requested. -/
+/-- The state of the flag environment: the peer of each session, the parties whose signatures
+were requested, and the parties whose corruption revealed their secrets. -/
 structure FlSt where
   /-- The peer of a session. -/
   peers : Inst → Option PartyId
   /-- Whether the signature of a party was requested. -/
   signed : PartyId → Bool
+  /-- Whether the corruption of a party revealed its secrets. -/
+  corr : PartyId → Bool
 
 /-- The initial state of the flag environment. -/
-def FlSt.init : FlSt := ⟨fun _ => none, fun _ => false⟩
+def FlSt.init : FlSt := ⟨fun _ => none, fun _ => false, fun _ => false⟩
 
-/-- The state of the flag environment after the event `e`: a new session notes its peer, and a
-signature request notes its party. -/
-def flNext (f : FlSt) : JEv P → FlSt
-  | .inl (.newSession sid pid peer _) =>
+/-- The state of the flag environment after the event `e` with the answer `o`: a new session
+notes its peer, a signature request notes its party, and a corruption that revealed secrets notes
+its party. -/
+def flNext (f : FlSt) : JEv P → JOut P K → FlSt
+  | .inl (.newSession sid pid peer _), _ =>
     if (f.peers (sid, pid)).isSome then f
     else { f with peers := Function.update f.peers (sid, pid) (some peer) }
-  | .inr (.inr (.sigPub q)) => { f with signed := Function.update f.signed q true }
-  | _ => f
+  | .inr (.inr (.sigPub q)), _ => { f with signed := Function.update f.signed q true }
+  | .inr (.inl (.corrupt q)), .inr (.inl (.secret (some _))) =>
+    { f with corr := Function.update f.corr q true }
+  | _, _ => f
 
 /-- **The test of the flag environment** at an injection of `spk` with `σ` at a session whose
 peer is `q`, on the answers to `pub q` and to `sigHash q (σ.1, spk)`: the signature verifies
@@ -107,16 +117,18 @@ def forgeObs (f : FlSt) (q : PartyId) (spk : P.Stmt) (σ : P.Com × P.Resp) :
   | _, _ => false
 
 /-- **The queries of the flag environment for an event**: the event itself, answered by
-`some`; at an injection at a session with a peer `q`, first `pub q` and `sigHash q (σ.1, spk)`,
-and `none` when the test `forgeObs` holds. -/
+`some`; at an injection at a session with a peer `q` not seen corrupted, first `pub q` and
+`sigHash q (σ.1, spk)`, and `none` when the test `forgeObs` holds. -/
 noncomputable def flagAsk (f : FlSt) : JEv P → OracleAdv (JEv P) (JOut P K) (Option (JOut P K))
   | .inr (.inr (.inject sid pid spk σ)) =>
     match f.peers (sid, pid) with
     | none => .query (.inr (.inr (.inject sid pid spk σ))) fun o => .ret (some o)
-    | some q => .query (.inr (.inl (.pub q))) fun o₁ =>
-      .query (.inr (.inr (.sigHash q (σ.1, spk)))) fun o₂ =>
-        if forgeObs P f q spk σ o₁ o₂ then .ret none
-        else .query (.inr (.inr (.inject sid pid spk σ))) fun o => .ret (some o)
+    | some q =>
+      if f.corr q then .query (.inr (.inr (.inject sid pid spk σ))) fun o => .ret (some o)
+      else .query (.inr (.inl (.pub q))) fun o₁ =>
+        .query (.inr (.inr (.sigHash q (σ.1, spk)))) fun o₂ =>
+          if forgeObs P f q spk σ o₁ o₂ then .ret none
+          else .query (.inr (.inr (.inject sid pid spk σ))) fun o => .ret (some o)
   | e => .query e fun o => .ret (some o)
 
 /-- **The flag environment** of the oracle adversary `B`: it runs `B`, asks the queries of
@@ -128,11 +140,13 @@ noncomputable def flagEnv :
   | .rand μ k, f => .rand μ fun b => flagEnv (k b) f
   | .query e k, f => (flagAsk P (K := K) f e).bind fun
       | none => .ret true
-      | some o => flagEnv (k o) (flNext P f e)
+      | some o => flagEnv (k o) (flNext P f e o)
 
-/-- The flag environment and the layer state agree on the peers and the signed parties. -/
+/-- The flag environment and the layer state agree on the peers, the signed parties and the
+corrupted parties. -/
 def RelF (f : FlSt) (t : JSt P × RSt P.Wit P.Stmt K) : Prop :=
-  f.peers = t.1.peers ∧ ∀ q, f.signed q = (t.1.sigs q).isSome
+  f.peers = t.1.peers ∧ (∀ q, f.signed q = (t.1.sigs q).isSome) ∧
+    ∀ q, f.corr q = (t.1.corr q).isSome
 
 end Defs
 
@@ -211,10 +225,10 @@ theorem simSignO_eq_filtJO (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.S
   rcases e with h | a | (q | ⟨q, k⟩ | ⟨sid, pid, spk, σ⟩)
   · exact jointOWith_inl P _ A t h
   · exact jointOWith_inr_inl P _ A t a
-  · simp only [simSignO, jointOWith, filtJO, layO, jPre, PMF.pure_bind, realStep_pub,
-      PMF.bind_map, PMF.map_comp, Function.comp_def, jPost]
-  · simp only [simSignO, jointOWith, filtJO, layO, jPre, PMF.pure_bind, realStep_pub,
-      PMF.bind_map, PMF.map_comp, Function.comp_def, jPost]
+  · simp only [simSignO, jointOWith, filtJO, layO, jPre, X3DHSquareSigned.sigSub, PMF.pure_bind,
+      realStep_pub, PMF.bind_map, PMF.map_comp, Function.comp_def, jPost]
+  · simp only [simSignO, jointOWith, filtJO, layO, jPre, X3DHSquareSigned.sigSub, PMF.pure_bind,
+      realStep_pub, PMF.bind_map, PMF.map_comp, Function.comp_def, jPost]
   · exact absurd rfl (he sid pid spk σ)
 
 /-- The two worlds agree at an injection at a session without a peer. -/
@@ -223,7 +237,8 @@ theorem simSignO_eq_filtJO_none (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wi
     (h : t.1.peers (sid, pid) = none) :
     simSignO P A t (.inr (.inr (.inject sid pid spk σ))) =
       filtJO P A t (.inr (.inr (.inject sid pid spk σ))) := by
-  simp [simSignO, jointOWith, filtJO, layO, jPre, h, jPost, X3DHSquareSigned.realStep, realGame,
+  simp [simSignO, jointOWith, filtJO, layO, jPre, h, jPost, X3DHSquareSigned.sigSub,
+    X3DHSquareSigned.realStep, realGame,
     realGameK, realAdvK, PMF.pure_map]
 
 /-- The completion with a delivered prekey keeps the peers of the records. -/
@@ -241,23 +256,95 @@ theorem completeSig_peer (A : AKEAlg P.Wit P.Stmt) (s : RSt P.Wit P.Stmt K) (x :
        have hb := (X3DHSquareSigned.ltAt_support _ _ lb hlb).1
        rw [keyed_recs_peer _ _ _ _ _ (by rwa [hb, ha]), hb, ha])
 
-/-- A step of the filtered world at an honest or X3DH adversary event: the layer state is the
-state of the event of the layer, and the X3DH state a state of the real step. -/
+/-- A step of the filtered world at an event that sets an honest or adversary phase: the layer
+state is the state of the event of the layer, and the X3DH state a state of the state machine. -/
 theorem filtJO_support_pre (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K)
-    (e : JEv P) (he : FiltPre t.1 e) : ∀ x ∈ (filtJO P A t e).support,
-      ∃ a ∈ (jPre P t.1 e).support, ∃ z ∈ (X3DHSquareSigned.realStep A t.2 a.2).support,
+    (e : JEv P) (he : ∀ a ∈ (jPre P t.1 e).support, a.1.ph = .hon ∨ a.1.ph = .adv) :
+    ∀ x ∈ (filtJO P A t e).support,
+      ∃ a ∈ (jPre P t.1 e).support, ∃ z ∈ (X3DHSquareSigned.sigSub A t.2 a.2).support,
         x.2 = (a.1, z.2) := by
   intro x hx
   simp only [filtJO, X3DHSquareSigned.layO, PMF.support_bind, PMF.support_map, Set.mem_iUnion,
     Set.mem_image] at hx
   obtain ⟨a, ha, z, hz, r, hr, rfl⟩ := hx
-  exact ⟨a, ha, z, hz, by rw [jPost_keep a.1 z.1 (he a ha).2.2 r hr]⟩
+  exact ⟨a, ha, z, hz, by rw [jPost_keep A.pub a.1 z.1 (he a ha) r hr]⟩
+
+omit [Fintype P.Wit] [Nonempty P.Wit] in
+/-- An honest event sets the honest phase. -/
+theorem jPre_inl_ph (l : JSt P) (h : HEv) :
+    ∀ a ∈ (jPre P l (.inl h)).support, a.1.ph = .hon ∨ a.1.ph = .adv := by
+  intro a ha
+  rcases h with ⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩ <;>
+    simp only [jPre, PMF.support_pure, Set.mem_singleton_iff] at ha <;> subst ha <;>
+    exact Or.inl rfl
+
+omit [Fintype P.Wit] [Nonempty P.Wit] in
+/-- An adversary event of the X3DH state machine other than a corruption sets the adversary
+phase. -/
+theorem jPre_adv_ph (l : JSt P) (g : RAEv P.Stmt) (hg : ∀ q, g ≠ .corrupt q) :
+    ∀ a ∈ (jPre P l (.inr (.inl g))).support, a.1.ph = .hon ∨ a.1.ph = .adv := by
+  intro a ha
+  cases g <;> simp only [jPre, PMF.support_pure, Set.mem_singleton_iff] at ha <;> subst ha <;>
+    first | exact Or.inr rfl | exact absurd rfl (hg _)
+
+/-- **A step of the filtered world at a corruption**: the real state machine keeps the peers of
+the records and extends the long-term secrets; the answer reveals no secrets and the layer keeps
+its state but for the phase, or it reveals the drawn long-term secrets `lt` of `q` and the layer
+records the identity key `pub lt.1` of `q`. -/
+theorem filtJO_corrupt_support (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K)
+    (q : PartyId) : ∀ x ∈ (filtJO P A t (.inr (.inl (.corrupt q)))).support,
+      (∀ y, (x.2.2.st.recs y).map Rec.peer = (t.2.st.recs y).map Rec.peer) ∧
+      (∀ p v, t.2.lt p = some v → x.2.2.lt p = some v) ∧
+      ((x.1 = .inr (.inl (.secret none)) ∧ x.2.1 = { t.1 with ph := .corr q }) ∨
+        ∃ lt, x.2.2.lt q = some lt ∧ x.1 = .inr (.inl (.secret (some lt))) ∧
+          x.2.1.corr = Function.update t.1.corr q (some (A.pub lt.1)) ∧
+          x.2.1 = { t.1 with corr := x.2.1.corr, ph := .corr q }) := by
+  intro x hx
+  simp only [filtJO, X3DHSquareSigned.layO, jPre, PMF.pure_bind, PMF.support_bind,
+    PMF.support_map, Set.mem_iUnion, Set.mem_image] at hx
+  obtain ⟨z, hz, r, hr, rfl⟩ := hx
+  obtain ⟨hz1, hz2⟩ := X3DHSquareSigned.realO_support A t.2 (.inr (.corrupt q)) z hz
+  refine ⟨hz1, hz2, ?_⟩
+  simp only [X3DHSquareSigned.sigSub, X3DHSquareSigned.realStep, realGame, realGameK, realAdvK,
+    PMF.support_map, Set.mem_image] at hz
+  obtain ⟨p, hp, rfl⟩ := hz
+  unfold corruptRStep at hp
+  split_ifs at hp
+  · simp only [PMF.support_pure, Set.mem_singleton_iff] at hp
+    subst hp
+    simp only [jPost, PMF.support_pure, Set.mem_singleton_iff] at hr
+    subst hr
+    exact Or.inl ⟨rfl, rfl⟩
+  · simp only [PMF.support_map, Set.mem_image] at hp
+    obtain ⟨l, hl, rfl⟩ := hp
+    obtain ⟨-, -, -, hl4, -⟩ := X3DHSquareSigned.ltAt_support _ _ l hl
+    simp only [jPost, PMF.support_pure, Set.mem_singleton_iff] at hr
+    subst hr
+    exact Or.inr ⟨l.1, hl4, rfl, rfl, rfl⟩
+
+/-- **The two worlds agree at an injection at a session whose peer the layer has seen
+corrupted**, from a state with `InvJ`. -/
+theorem simSignO_eq_filtJO_corr (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K)
+    (ht : InvJ P A t) (sid : SessionId) (pid q : PartyId) (spk : P.Stmt) (σ : P.Com × P.Resp)
+    (ik : P.Stmt) (hq : t.1.peers (sid, pid) = some q) (hc : t.1.corr q = some ik) :
+    simSignO P A t (.inr (.inr (.inject sid pid spk σ))) =
+      filtJO P A t (.inr (.inr (.inject sid pid spk σ))) := by
+  obtain ⟨v, hv, rfl⟩ := ht.2.2 q ik hc
+  simp only [filtJO, layO, jPre, hq, simSignO, jointOWith, hashAt_ph, PMF.bind_map,
+    Function.comp_def, simStep, ltAt_of_some _ _ v hv, PMF.pure_bind]
+  refine PMF.bind_congr_support _ _ _ fun r _ => ?_
+  simp only [injEvJ, hc]
+  split_ifs
+  · simp only [X3DHSquareSigned.sigSub, PMF.bind_map, Function.comp_def, jPost, PMF.pure_map]
+    rfl
+  · simp only [X3DHSquareSigned.sigSub, realStep_pub, ltAt_of_some _ _ v hv, PMF.pure_map,
+      PMF.pure_bind, jPost]
 
 /-- The world with simulated signatures keeps `InvJ`. -/
 theorem invJ_simSignO (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K) (e : JEv P)
     (ht : InvJ P A t) : ∀ x ∈ (simSignO P A t e).support, InvJ P A x.2 := by
   intro x hx
-  obtain ⟨hpe, hsg⟩ := ht
+  obtain ⟨hpe, hsg, hcr⟩ := ht
   have hlt := jointOWith_lt_mono P _ A t e x hx
   -- the signatures when they are kept
   have hkeep : x.2.1.sigs = t.1.sigs → ∀ q c, x.2.1.sigs q = some c →
@@ -266,34 +353,68 @@ theorem invJ_simSignO (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K
     rw [h] at hc
     obtain ⟨v, hv, h'⟩ := hsg q c hc
     exact ⟨v, hlt q v hv, h'⟩
+  -- the corrupted parties when they are kept
+  have hkeepc : x.2.1.corr = t.1.corr → ∀ q ik, x.2.1.corr q = some ik →
+      ∃ v, x.2.2.lt q = some v ∧ ik = A.pub v.1 := by
+    intro h q ik hc
+    rw [h] at hc
+    obtain ⟨v, hv, h'⟩ := hcr q ik hc
+    exact ⟨v, hlt q v hv, h'⟩
   rcases e with h | g | (q | ⟨q, k⟩ | ⟨sid, pid, spk, σ⟩)
   · rw [simSignO, jointOWith_inl] at hx
-    obtain ⟨a, ha, z, hz, hxa⟩ := filtJO_support_pre P A t _ (filtPre_inl t.1 h) x hx
-    obtain ⟨hz1, -⟩ := X3DHSquareSigned.realO_support A t.2 a.2 z hz
-    refine ⟨fun y => ?_, hkeep (by rw [hxa]; exact (filtPre_inl t.1 h a ha).2.1)⟩
-    rw [hxa]
+    obtain ⟨a, ha, z, hz, hxa⟩ := filtJO_support_pre P A t _ (jPre_inl_ph P t.1 h) x hx
     rcases h with ⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩ <;>
       simp only [jPre, PMF.support_pure, Set.mem_singleton_iff] at ha <;> subst ha <;>
+      obtain ⟨hz1, -⟩ := X3DHSquareSigned.realO_support A t.2 _ z hz
+    · refine ⟨fun y => ?_, hkeep (by rw [hxa]; unfold notePeerJ; split_ifs <;> rfl),
+        hkeepc (by rw [hxa]; unfold notePeerJ; split_ifs <;> rfl)⟩
+      rw [hxa]
+      simp only
       rw [hz1 y]
-    · unfold notePeerJ
+      unfold notePeerJ
       by_cases hy : y = (sid, pid)
       · subst hy
         cases hr : t.2.st.recs (sid, pid) <;> simp [hr, hpe]
       · split <;> simp [hy, hpe]
-    · exact hpe y
+    · refine ⟨fun y => ?_, hkeep (by rw [hxa]), hkeepc (by rw [hxa])⟩
+      rw [hxa]
+      simp only
+      rw [hz1 y]
+      exact hpe y
   · rw [simSignO, jointOWith_inr_inl] at hx
-    obtain ⟨a, ha, z, hz, hxa⟩ := filtJO_support_pre P A t _ (filtPre_inr_inl t.1 g) x hx
-    obtain ⟨hz1, -⟩ := X3DHSquareSigned.realO_support A t.2 a.2 z hz
-    refine ⟨fun y => ?_, hkeep (by rw [hxa]; exact (filtPre_inr_inl t.1 g a ha).2.1)⟩
-    simp only [jPre, PMF.support_pure, Set.mem_singleton_iff] at ha
-    subst ha
-    rw [hxa, hz1 y]
-    exact hpe y
+    by_cases hg : ∃ q, g = .corrupt q
+    · obtain ⟨q, rfl⟩ := hg
+      obtain ⟨hz1, -, hc | ⟨lt, hl, -, hc1, hc2⟩⟩ := filtJO_corrupt_support P A t q x hx
+      · refine ⟨fun y => ?_, hkeep (by rw [hc.2]), hkeepc (by rw [hc.2])⟩
+        rw [hz1 y, hc.2]
+        exact hpe y
+      · refine ⟨fun y => ?_, hkeep (by rw [hc2]), fun q' ik h => ?_⟩
+        · rw [hz1 y, hc2]
+          exact hpe y
+        · rw [hc1] at h
+          by_cases hq : q' = q
+          · subst hq
+            simp only [Function.update_self, Option.some.injEq] at h
+            exact ⟨lt, hl, h.symm⟩
+          · rw [Function.update_of_ne hq] at h
+            obtain ⟨v, hv, h'⟩ := hcr q' ik h
+            exact ⟨v, hlt q' v hv, h'⟩
+    · push Not at hg
+      obtain ⟨a, ha, z, hz, hxa⟩ := filtJO_support_pre P A t _ (jPre_adv_ph P t.1 g hg) x hx
+      cases g <;> simp only [jPre, PMF.support_pure, Set.mem_singleton_iff] at ha <;>
+        subst ha <;> first
+        | exact absurd rfl (hg _)
+        | (obtain ⟨hz1, -⟩ := X3DHSquareSigned.realO_support A t.2 _ z hz
+           refine ⟨fun y => ?_, hkeep (by rw [hxa]), hkeepc (by rw [hxa])⟩
+           rw [hxa]
+           simp only
+           rw [hz1 y]
+           exact hpe y)
   · simp only [simSignO, jointOWith, PMF.support_bind, PMF.support_map, Set.mem_iUnion,
       Set.mem_image] at hx
     obtain ⟨l, hl, r, hr, rfl⟩ := hx
     obtain ⟨hl1, -, -, hl4, hl5⟩ := X3DHSquareSigned.ltAt_support _ _ l hl
-    refine ⟨fun y => ?_, ?_⟩
+    refine ⟨fun y => ?_, ?_, ?_⟩
     · unfold signAt at hr
       split at hr
       · simp only [PMF.support_pure, Set.mem_singleton_iff] at hr
@@ -320,12 +441,21 @@ theorem invJ_simSignO (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K
         · simp only [Function.update_of_ne hq] at hc
           obtain ⟨v, hv, h'⟩ := hsg q' c hc
           exact ⟨v, hl5 q' v hv, h'⟩
+    · refine hkeepc ?_
+      unfold signAt at hr
+      split at hr
+      · simp only [PMF.support_pure, Set.mem_singleton_iff] at hr
+        subst hr
+        rfl
+      · simp only [PMF.support_map, Set.mem_image] at hr
+        obtain ⟨z, -, rfl⟩ := hr
+        rfl
   · simp only [simSignO, jointOWith, PMF.support_bind, PMF.support_map, Set.mem_iUnion,
       Set.mem_image] at hx
     obtain ⟨l, hl, r, hr, rfl⟩ := hx
     obtain ⟨hl1, -, -, -, -⟩ := X3DHSquareSigned.ltAt_support _ _ l hl
     obtain ⟨_, -, -, hr3⟩ := hashAt_support P _ (fun _ _ => rfl) _ q k r hr
-    refine ⟨fun y => ?_, hkeep (by simp only; rw [hr3])⟩
+    refine ⟨fun y => ?_, hkeep (by simp only; rw [hr3]), hkeepc (by simp only; rw [hr3])⟩
     simp only [hl1]
     rw [hr3]
     exact hpe y
@@ -333,7 +463,7 @@ theorem invJ_simSignO (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K
     split at hx
     · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
       subst hx
-      exact ⟨hpe, hsg⟩
+      exact ⟨hpe, hsg, hcr⟩
     · simp only [PMF.support_bind, Set.mem_iUnion] at hx
       obtain ⟨l, hl, r, hr, hx⟩ := hx
       obtain ⟨hl1, -, -, -, -⟩ := X3DHSquareSigned.ltAt_support _ _ l hl
@@ -353,7 +483,7 @@ theorem invJ_simSignO (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K
           rw [completeSig_peer P A _ _ spk c hc y, hl1]
         · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
           rw [hx, hl1]
-      refine ⟨fun y => ?_, hkeep (by rw [hx1, hr3])⟩
+      refine ⟨fun y => ?_, hkeep (by rw [hx1, hr3]), hkeepc (by rw [hx1, hr3])⟩
       rw [hx2 y, hx1, hr3]
       exact hpe y
 
@@ -361,44 +491,58 @@ theorem invJ_simSignO (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K
 signatures. -/
 theorem relF_simSignO (A : AKEAlg P.Wit P.Stmt) (f : FlSt) (t : JSt P × RSt P.Wit P.Stmt K)
     (e : JEv P) (hf : RelF P f t) :
-    ∀ x ∈ (simSignO P A t e).support, RelF P (flNext P f e) x.2 := by
+    ∀ x ∈ (simSignO P A t e).support, RelF P (flNext P f e x.1) x.2 := by
   intro x hx
-  rcases f with ⟨fp, fs⟩
-  obtain ⟨hp, hs⟩ := hf
-  simp only at hp hs
+  rcases f with ⟨fp, fs, fc⟩
+  obtain ⟨hp, hs, hc⟩ := hf
+  simp only at hp hs hc
   subst hp
   rcases e with h | g | (q | ⟨q, k⟩ | ⟨sid, pid, spk, σ⟩)
   · rw [simSignO, jointOWith_inl] at hx
-    obtain ⟨a, ha, z, -, hxa⟩ := filtJO_support_pre P A t _ (filtPre_inl t.1 h) x hx
+    obtain ⟨a, ha, z, -, hxa⟩ := filtJO_support_pre P A t _ (jPre_inl_ph P t.1 h) x hx
     rw [hxa]
     rcases h with ⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩ <;>
       simp only [jPre, PMF.support_pure, Set.mem_singleton_iff] at ha <;> subst ha
     · simp only [flNext, notePeerJ]
-      split_ifs <;> exact ⟨rfl, hs⟩
-    · exact ⟨rfl, hs⟩
+      split_ifs <;> exact ⟨rfl, hs, hc⟩
+    · exact ⟨rfl, hs, hc⟩
   · rw [simSignO, jointOWith_inr_inl] at hx
-    obtain ⟨a, ha, z, -, hxa⟩ := filtJO_support_pre P A t _ (filtPre_inr_inl t.1 g) x hx
-    simp only [jPre, PMF.support_pure, Set.mem_singleton_iff] at ha
-    subst ha
-    rw [hxa]
-    exact ⟨rfl, hs⟩
+    by_cases hg : ∃ q, g = .corrupt q
+    · obtain ⟨q, rfl⟩ := hg
+      obtain ⟨-, -, ⟨h1, h2⟩ | ⟨lt, -, h1, h2, h3⟩⟩ := filtJO_corrupt_support P A t q x hx
+      · unfold RelF
+        rw [h1, h2]
+        exact ⟨rfl, hs, hc⟩
+      · unfold RelF
+        rw [h1, h3]
+        refine ⟨rfl, hs, fun q' => ?_⟩
+        simp only [flNext, h2]
+        by_cases hq : q' = q
+        · subst hq
+          simp
+        · simp [Function.update_of_ne hq, hc]
+    · push Not at hg
+      obtain ⟨a, ha, z, -, hxa⟩ := filtJO_support_pre P A t _ (jPre_adv_ph P t.1 g hg) x hx
+      rw [hxa]
+      cases g <;> simp only [jPre, PMF.support_pure, Set.mem_singleton_iff] at ha <;>
+        subst ha <;> first | exact absurd rfl (hg _) | exact ⟨rfl, hs, hc⟩
   · simp only [simSignO, jointOWith, PMF.support_bind, PMF.support_map, Set.mem_iUnion,
       Set.mem_image] at hx
     obtain ⟨l, -, r, hr, rfl⟩ := hx
     unfold signAt at hr
     split at hr
-    · rename_i c hc
+    · rename_i c hc'
       simp only [PMF.support_pure, Set.mem_singleton_iff] at hr
       subst hr
-      refine ⟨rfl, fun q' => ?_⟩
+      refine ⟨rfl, fun q' => ?_, hc⟩
       by_cases hq : q' = q
       · subst hq
-        simp only at hc
-        simp [flNext, hc]
+        simp only at hc'
+        simp [flNext, hc']
       · simp [flNext, Function.update_of_ne hq, hs]
     · simp only [PMF.support_map, Set.mem_image] at hr
       obtain ⟨z, -, rfl⟩ := hr
-      refine ⟨rfl, fun q' => ?_⟩
+      refine ⟨rfl, fun q' => ?_, hc⟩
       by_cases hq : q' = q
       · subst hq
         simp [flNext]
@@ -409,13 +553,13 @@ theorem relF_simSignO (A : AKEAlg P.Wit P.Stmt) (f : FlSt) (t : JSt P × RSt P.W
     obtain ⟨_, -, -, hr3⟩ := hashAt_support P _ (fun _ _ => rfl) _ q k r hr
     simp only [flNext]
     rw [hr3]
-    exact ⟨rfl, hs⟩
+    exact ⟨rfl, hs, hc⟩
   · simp only [simSignO, jointOWith] at hx
     simp only [flNext]
     split at hx
     · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
       subst hx
-      exact ⟨rfl, hs⟩
+      exact ⟨rfl, hs, hc⟩
     · simp only [PMF.support_bind, Set.mem_iUnion] at hx
       obtain ⟨l, -, r, hr, hx⟩ := hx
       obtain ⟨_, -, -, hr3⟩ := hashAt_support P _ (fun _ _ => rfl) _ _ _ r hr
@@ -428,13 +572,13 @@ theorem relF_simSignO (A : AKEAlg P.Wit P.Stmt) (f : FlSt) (t : JSt P × RSt P.W
           rw [hx]
       unfold RelF
       rw [hx1, hr3]
-      exact ⟨rfl, hs⟩
+      exact ⟨rfl, hs, hc⟩
 
 /-- **The two worlds agree off the forbidden injections**, from a state with `InvJ`. -/
 theorem filtJO_apply_eq (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K) (e : JEv P)
     (x : JOut P K × (JSt P × RSt P.Wit P.Stmt K)) (ht : InvJ P A t)
     (hx : ¬ ForgeJ P A t e x) : filtJO P A t e x = simSignO P A t e x := by
-  obtain ⟨hpe, hsg⟩ := id ht
+  obtain ⟨hpe, hsg, -⟩ := id ht
   by_cases he : ∃ sid pid spk σ, e = .inr (.inr (.inject sid pid spk σ))
   swap
   · push Not at he
@@ -442,8 +586,11 @@ theorem filtJO_apply_eq (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt
   obtain ⟨sid, pid, spk, σ, rfl⟩ := he
   rcases hq : t.1.peers (sid, pid) with _ | q
   · rw [simSignO_eq_filtJO_none P A t sid pid spk σ hq]
+  rcases hcq : t.1.corr q with _ | ik
+  swap
+  · rw [simSignO_eq_filtJO_corr P A t ht sid pid q spk σ ik hq hcq]
   simp only [filtJO, layO, jPre, hq, simSignO, jointOWith, hashAt_ph, PMF.bind_map,
-    Function.comp_def, simStep, jPost]
+    Function.comp_def, simStep, jPost, injEvJ, hcq]
   rw [PMF.bind_comm (ltAt t.2 q), PMF.bind_apply, PMF.bind_apply]
   refine tsum_mul_congr_support _ _ _ fun r hr => ?_
   obtain ⟨e, hr1, hre, -⟩ := hashAt_support P _ (fun _ _ => rfl) _ q _ r hr
@@ -453,9 +600,9 @@ theorem filtJO_apply_eq (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt
       ForgeJ P A t (.inr (.inr (.inject sid pid spk σ))) (o, ({ r.2 with ph := .inj }, s)) := by
     intro o s v hs hv hn
     rw [hr1] at hv
-    exact ⟨sid, pid, spk, σ, q, v, e, rfl, hq, hs, hre, hv, hn⟩
+    exact ⟨sid, pid, spk, σ, q, v, e, rfl, hq, hcq, hs, hre, hv, hn⟩
   by_cases hacc : accJ P t.1 q spk σ r.1 = true
-  · simp only [hacc, ↓reduceIte]
+  · simp only [hacc, ↓reduceIte, X3DHSquareSigned.sigSub]
     unfold accJ at hacc
     split at hacc
     · rename_i c hc
@@ -479,7 +626,7 @@ theorem filtJO_apply_eq (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt
       rfl
     · exact absurd hacc Bool.false_ne_true
   · have hacc' : accJ P t.1 q spk σ r.1 = false := by simpa using hacc
-    simp only [hacc', Bool.false_eq_true, ↓reduceIte]
+    simp only [hacc', Bool.false_eq_true, ↓reduceIte, X3DHSquareSigned.sigSub]
     rw [X3DHSquareSigned.realStep_pub, PMF.bind_map, PMF.bind_apply, PMF.bind_apply]
     refine tsum_mul_congr_support _ _ _ fun lt hlt => ?_
     obtain ⟨-, -, -, hlt4, -⟩ := X3DHSquareSigned.ltAt_support _ _ lt hlt
@@ -506,8 +653,8 @@ theorem filtJO_apply_eq (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt
 theorem filtJO_pub (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K) (q : PartyId) :
     filtJO P A t (.inr (.inl (.pub q))) = (ltAt t.2 q).map fun lt =>
       (.inr (.inl (.pub (A.pub lt.1.1) (A.pub lt.1.2))), ({ t.1 with ph := .adv }, lt.2)) := by
-  simp only [filtJO, layO, jPre, PMF.pure_bind, realStep_pub, PMF.bind_map, Function.comp_def,
-    jPost, PMF.pure_map]
+  simp only [filtJO, layO, jPre, X3DHSquareSigned.sigSub, PMF.pure_bind, realStep_pub,
+    PMF.bind_map, Function.comp_def, jPost, PMF.pure_map]
   rfl
 
 /-- The filtered world at `sigHash q k`, when the long-term secrets of `q` are drawn, is the hash
@@ -517,22 +664,23 @@ theorem filtJO_sigHash (A : AKEAlg P.Wit P.Stmt) (l : JSt P) (s : RSt P.Wit P.St
     filtJO P A (l, s) (.inr (.inr (.sigHash q k))) =
       (hashAt P (fun s k => hashStep s.1 s.2 k) l q k).map fun r =>
         (.inr (.inr (hashOut P r.1)), ({ r.2 with ph := .hash q k }, s)) := by
-  simp only [filtJO, layO, jPre, PMF.pure_bind, realStep_pub, ltAt_of_some _ _ v hv,
-    PMF.pure_map, jPost, hashAt_ph, PMF.map_comp, simStep]
+  simp only [filtJO, layO, jPre, X3DHSquareSigned.sigSub, PMF.pure_bind, realStep_pub,
+    ltAt_of_some _ _ v hv, PMF.pure_map, jPost, hashAt_ph, PMF.map_comp, simStep]
   rfl
 
 /-- The filtered world at an injection at a session with the peer `q`, at a point where the
 table of `q` holds `e`, is the completion or `pub q` of the real state machine. -/
 theorem filtJO_inject_of_lookup (A : AKEAlg P.Wit P.Stmt) (l : JSt P) (s : RSt P.Wit P.Stmt K)
     (sid : SessionId) (pid q : PartyId) (spk : P.Stmt) (σ : P.Com × P.Resp) (e : P.Ch)
-    (hq : l.peers (sid, pid) = some q) (he : (l.tabs q).1.lookup (σ.1, spk) = some e) :
+    (hq : l.peers (sid, pid) = some q) (hc : l.corr q = none)
+    (he : (l.tabs q).1.lookup (σ.1, spk) = some e) :
     filtJO P A (l, s) (.inr (.inr (.inject sid pid spk σ))) =
       (X3DHSquareSigned.realStep A s (if accJ P l q spk σ (.inl e) then
         .inr (.complete sid pid) else .inr (.pub q))).map fun z =>
           (.inr (.inr .ack), ({ l with ph := .inj }, z.2)) := by
   simp only [filtJO, layO, jPre, hq, hashAt_of_lookup P _ (fun _ _ => rfl) l q _ e he,
-    PMF.pure_map, PMF.pure_bind, jPost]
-  rfl
+    PMF.pure_map, PMF.pure_bind, jPost, injEvJ, hc]
+  split_ifs <;> rfl
 
 /-- The completion of the real state machine at a session whose peer has drawn the long-term
 secrets of the prekey `spk` is the completion with the delivered prekey `spk`. -/
@@ -556,15 +704,15 @@ theorem flagAsk_run (A : AKEAlg P.Wit P.Stmt) (f : FlSt) (t : JSt P × RSt P.Wit
       p.map g = p.map g' := fun p g g' h =>
     PMF.bind_congr_support _ _ _ fun a ha => by
       rw [Function.comp_apply, Function.comp_apply, h a ha]
-  obtain ⟨hpe, hsg⟩ := id ht
-  rcases f with ⟨fp, fs⟩
-  obtain ⟨hp, hs⟩ := hf
-  simp only at hp hs
+  obtain ⟨hpe, hsg, -⟩ := id ht
+  rcases f with ⟨fp, fs, fc⟩
+  obtain ⟨hp, hs, hc⟩ := hf
+  simp only at hp hs hc
   subst hp
   -- the events at which `flagAsk` passes the event on
-  have hpass : flagAsk P (K := K) ⟨t.1.peers, fs⟩ e = .query e (fun o => .ret (some o)) →
+  have hpass : flagAsk P (K := K) ⟨t.1.peers, fs, fc⟩ e = .query e (fun o => .ret (some o)) →
       simSignO P A t e = filtJO P A t e → (∀ x, ¬ ForgeJ P A t e x) →
-      (OracleAdv.run (filtJO P A) (flagAsk P ⟨t.1.peers, fs⟩ e) t).map
+      (OracleAdv.run (filtJO P A) (flagAsk P ⟨t.1.peers, fs, fc⟩ e) t).map
           (fun y => y.1.map fun o => (o, y.2)) =
         (simSignO P A t e).map fun x => if ForgeJ P A t e x then none else some x := by
     intro hfa hso hF
@@ -588,7 +736,20 @@ theorem flagAsk_run (A : AKEAlg P.Wit P.Stmt) (f : FlSt) (t : JSt P × RSt P.Wit
     obtain ⟨rfl, rfl, -, -⟩ := he
     rw [hq] at h
     exact absurd h (by simp)
-  simp only [flagAsk, hq, OracleAdv.run_query, filtJO_pub, PMF.bind_map, PMF.map_bind]
+  rcases hcq : t.1.corr q with _ | ik
+  swap
+  · refine hpass (by simp only [flagAsk, hq, hc q, hcq, Option.isSome_some, ↓reduceIte])
+      (simSignO_eq_filtJO_corr P A t ht sid pid q spk σ ik hq hcq) ?_
+    rintro x ⟨sid', pid', spk', σ', q', v, c, he, h, h', -⟩
+    simp only [Sum.inr.injEq, JSigEv.inject.injEq] at he
+    obtain ⟨rfl, rfl, -, -⟩ := he
+    rw [hq, Option.some.injEq] at h
+    subst h
+    rw [hcq] at h'
+    exact absurd h' (by simp)
+  have hfc : fc q = false := by rw [hc q, hcq]; rfl
+  simp only [flagAsk, hq, hfc, Bool.false_eq_true, ↓reduceIte, OracleAdv.run_query, filtJO_pub,
+    PMF.bind_map, PMF.map_bind]
   simp only [simSignO, jointOWith, hq, PMF.map_bind]
   refine PMF.bind_congr_support _ _ _ fun lt hlt => ?_
   obtain ⟨hl1, -, -, hlt4, -⟩ := X3DHSquareSigned.ltAt_support _ _ lt hlt
@@ -601,12 +762,12 @@ theorem flagAsk_run (A : AKEAlg P.Wit P.Stmt) (f : FlSt) (t : JSt P × RSt P.Wit
   -- the forbidden injections among the outcomes of this branch
   have hFj : ∀ (o : JOut P K) (s : RSt P.Wit P.Stmt K), s.lt q = some lt.1 →
       (ForgeJ P A t (.inr (.inr (.inject sid pid spk σ)))
-          (o, ({ tabs := r.2.tabs, sigs := r.2.sigs, peers := r.2.peers, ph := .inj }, s)) ↔
+          (o, ({ r.2 with ph := .inj }, s)) ↔
         P.verify (A.pub lt.1.1) σ.1 e σ.2 = true ∧
           ¬ ((t.1.sigs q).isSome = true ∧ spk = A.pub lt.1.2)) := by
     intro o s hs
     constructor
-    · rintro ⟨sid', pid', spk', σ', q', v, c, he, hq', hv, hc, hver, hn⟩
+    · rintro ⟨sid', pid', spk', σ', q', v, c, he, hq', -, hv, hc, hver, hn⟩
       simp only [Sum.inr.injEq, JSigEv.inject.injEq] at he
       obtain ⟨rfl, rfl, rfl, rfl⟩ := he
       rw [hq, Option.some.injEq] at hq'
@@ -617,7 +778,7 @@ theorem flagAsk_run (A : AKEAlg P.Wit P.Stmt) (f : FlSt) (t : JSt P × RSt P.Wit
       subst hc
       exact ⟨hver, hn⟩
     · rintro ⟨hver, hn⟩
-      exact ⟨sid, pid, spk, σ, q, lt.1, e, rfl, hq, hs, hre, hver, hn⟩
+      exact ⟨sid, pid, spk, σ, q, lt.1, e, rfl, hq, hcq, hs, hre, hver, hn⟩
   -- the long-term secrets of a party that signed
   have hsig : ∀ c, t.1.sigs q = some c → c.1 = A.pub lt.1.1 ∧ c.2.1 = A.pub lt.1.2 := by
     intro c hc
@@ -627,18 +788,19 @@ theorem flagAsk_run (A : AKEAlg P.Wit P.Stmt) (f : FlSt) (t : JSt P × RSt P.Wit
     exact ⟨hc1, hc2⟩
   have hpeers : r.2.peers (sid, pid) = some q := by rw [hr3]; exact hq
   have hsigs : r.2.sigs = t.1.sigs := by rw [hr3]
+  have hcorr : r.2.corr q = none := by rw [hr3]; exact hcq
   by_cases hv : P.verify (A.pub lt.1.1) σ.1 e σ.2 = true
   · by_cases hn : (t.1.sigs q).isSome = true ∧ spk = A.pub lt.1.2
     · obtain ⟨c, hc⟩ := Option.isSome_iff_exists.mp hn.1
       have h1 : fs q = true := by rw [hs]; exact hn.1
       have h2 : (spk == A.pub lt.1.2) = true := by simp [hn.2]
-      have hacc : accJ P ⟨r.2.tabs, r.2.sigs, r.2.peers, .hash q (σ.1, spk)⟩ q spk σ (.inl e) =
-          true := by
+      have hacc : accJ P ⟨r.2.tabs, r.2.sigs, r.2.peers, r.2.corr, .hash q (σ.1, spk)⟩ q spk σ
+          (.inl e) = true := by
         simp [accJ, hsigs, hc, verAns, (hsig c hc).1, (hsig c hc).2, hn.2, hv]
       simp only [hv, h1, h2, Bool.and_self, Bool.not_true, Bool.and_false, Bool.false_eq_true,
         ↓reduceIte, OracleAdv.run_query, OracleAdv.run_ret]
-      rw [filtJO_inject_of_lookup P A ⟨r.2.tabs, r.2.sigs, r.2.peers, .hash q (σ.1, spk)⟩ lt.2
-        sid pid q spk σ e hpeers hre, hacc]
+      rw [filtJO_inject_of_lookup P A ⟨r.2.tabs, r.2.sigs, r.2.peers, r.2.corr, .hash q (σ.1, spk)⟩
+        lt.2 sid pid q spk σ e hpeers hcorr hre, hacc]
       simp only [↓reduceIte]
       rw [realStep_complete P A lt.2 sid pid spk fun rc hrc => ?_]
       · simp only [PMF.map, PMF.bind_bind, PMF.pure_bind, Function.comp_apply]
@@ -662,20 +824,20 @@ theorem flagAsk_run (A : AKEAlg P.Wit P.Stmt) (f : FlSt) (t : JSt P × RSt P.Wit
         simp only [Function.comp_apply, (hFj (.inr (.inr .ack)) c.2
           (completeSig_lt_mono P A lt.2 _ spk c hc q lt.1 hlt4)).mpr ⟨hv, hn⟩, ↓reduceIte]
   · have hv' : P.verify (A.pub lt.1.1) σ.1 e σ.2 = false := by simpa using hv
-    have hacc : accJ P ⟨r.2.tabs, r.2.sigs, r.2.peers, .hash q (σ.1, spk)⟩ q spk σ (.inl e) =
-        false := by
+    have hacc : accJ P ⟨r.2.tabs, r.2.sigs, r.2.peers, r.2.corr, .hash q (σ.1, spk)⟩ q spk σ
+        (.inl e) = false := by
       simp only [accJ, hsigs]
       split
       · rename_i c hc
         simp [verAns, (hsig c hc).1, hv]
       · rfl
     have hnF : ¬ ForgeJ P A t (.inr (.inr (.inject sid pid spk σ)))
-        (.inr (.inr .ack), (⟨r.2.tabs, r.2.sigs, r.2.peers, .inj⟩, lt.2)) := fun h =>
+        (.inr (.inr .ack), (⟨r.2.tabs, r.2.sigs, r.2.peers, r.2.corr, .inj⟩, lt.2)) := fun h =>
           hv ((hFj _ _ hlt4).mp h).1
     simp only [hv', Bool.false_and, Bool.false_eq_true, ↓reduceIte, OracleAdv.run_query,
       OracleAdv.run_ret]
-    rw [filtJO_inject_of_lookup P A ⟨r.2.tabs, r.2.sigs, r.2.peers, .hash q (σ.1, spk)⟩ lt.2
-      sid pid q spk σ e hpeers hre, hacc]
+    rw [filtJO_inject_of_lookup P A ⟨r.2.tabs, r.2.sigs, r.2.peers, r.2.corr, .hash q (σ.1, spk)⟩
+      lt.2 sid pid q spk σ e hpeers hcorr hre, hacc]
     simp only [Bool.false_eq_true, ↓reduceIte, X3DHSquareSigned.realStep_pub,
       ltAt_of_some _ _ _ hlt4, PMF.pure_map, PMF.pure_bind, Option.map_some, hnF]
 
@@ -691,14 +853,15 @@ variable (P : FiatShamirROM.Sigma) [DecidableEq P.Stmt] [Fintype P.Wit] [Nonempt
 omit [Fintype P.Wit] [Nonempty P.Wit] [Fintype K] [Nonempty K] in
 /-- The initial state satisfies `InvJ`. -/
 theorem invJ_jInit (A : AKEAlg P.Wit P.Stmt) : InvJ P A (jInit P (K := K)) := by
-  refine ⟨fun x => ?_, fun q c h => ?_⟩
+  refine ⟨fun x => ?_, fun q c h => ?_, fun q ik h => ?_⟩
   · rfl
+  · simp [jInit, JSt.init] at h
   · simp [jInit, JSt.init] at h
 
 omit [Fintype P.Wit] [Nonempty P.Wit] [Fintype K] [Nonempty K] in
 /-- The initial states of the flag environment and of the worlds agree. -/
 theorem relF_init : RelF P FlSt.init (jInit P (K := K)) :=
-  ⟨rfl, fun _ => rfl⟩
+  ⟨rfl, fun _ => rfl, fun _ => rfl⟩
 
 open Classical in
 /-- **Hop 2 of the joint-key model, up to forgery.** For every oracle adversary `B`, the
@@ -742,7 +905,7 @@ theorem flag_eq_flagEnv (A : AKEAlg P.Wit P.Stmt) (B : OracleAdv (JEv P) (JOut P
     let Q : Option (JOut P K × (JSt P × RSt P.Wit P.Stmt K)) →
         PMF (Bool × (JSt P × RSt P.Wit P.Stmt K)) := fun z => match z with
       | none => PMF.pure (true, t)
-      | some x => OracleAdv.run (filtJO P A) (flagEnv P (k x.1) (flNext P f e)) x.2
+      | some x => OracleAdv.run (filtJO P A) (flagEnv P (k x.1) (flNext P f e x.1)) x.2
     have hR : (OracleAdv.run (filtJO P A) (flagEnv P (.query e k) f) t).toOuterMeasure
           {y | y.1 = true} =
         (((simSignO P A t e).map fun x => if ForgeJ P A t e x then none else some x).bind
@@ -763,7 +926,7 @@ theorem flag_eq_flagEnv (A : AKEAlg P.Wit P.Stmt) (B : OracleAdv (JEv P) (JOut P
     · simp only [hb, decide_true, ↓reduceIte, Q, X3DHSquareGDH.run_flag_true_one]
       simp [PMF.toOuterMeasure_pure_apply]
     · simp only [hb, decide_false, ↓reduceIte, Q]
-      exact ih x.1 (flNext P f e) x.2 (invJ_simSignO P A t e ht x hx)
+      exact ih x.1 (flNext P f e x.1) x.2 (invJ_simSignO P A t e ht x hx)
         (relF_simSignO P A f t e hf x hx)
 
 open Classical in

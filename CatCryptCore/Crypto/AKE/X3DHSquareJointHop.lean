@@ -238,18 +238,30 @@ section Tabs
 variable {P : FiatShamirROM.Sigma} [DecidableEq P.Stmt] {K : Type}
 
 /-- The answer of the layer in the phases of an honest or adversary event keeps its state. -/
-theorem jPost_keep (l : JSt P) (o : OOut P.Wit P.Stmt K) (hl : l.ph = .hon ∨ l.ph = .adv) :
-    ∀ r ∈ (jPost P l o).support, r.1 = l := by
+theorem jPost_keep (pub : P.Wit → P.Stmt) (l : JSt P) (o : OOut P.Wit P.Stmt K)
+    (hl : l.ph = .hon ∨ l.ph = .adv) : ∀ r ∈ (jPost P pub l o).support, r.1 = l := by
   intro r hr
-  rcases l with ⟨tb, sg, pe, ph⟩
+  rcases l with ⟨tb, sg, pe, cr, ph⟩
   rcases hl with h | h <;> (simp only at h; subst h) <;> rcases o with o | o <;>
     simp only [jPost, PMF.support_pure, Set.mem_singleton_iff] at hr <;> rw [hr]
 
+/-- The answer of the layer in the phase of a corruption keeps the tables, the signatures, the
+peers and the phase. -/
+theorem jPost_keep_corr (pub : P.Wit → P.Stmt) (l : JSt P) (o : OOut P.Wit P.Stmt K)
+    (q : PartyId) (hl : l.ph = .corr q) : ∀ r ∈ (jPost P pub l o).support,
+      r.1.tabs = l.tabs ∧ r.1.sigs = l.sigs ∧ r.1.peers = l.peers ∧ r.1.ph = l.ph := by
+  intro r hr
+  rcases l with ⟨tb, sg, pe, cr, ph⟩
+  simp only at hl
+  subst hl
+  simp only [jPost] at hr
+  split at hr <;> simp_all
+
 /-- An event of the state machine of the layer keeps the tables and the signatures, and sets an
-honest or adversary phase. -/
+honest, adversary or corruption phase. -/
 def FiltPre (l : JSt P) (e : JEv P) : Prop :=
   ∀ a ∈ (jPre P l e).support, a.1.tabs = l.tabs ∧ a.1.sigs = l.sigs ∧
-    (a.1.ph = .hon ∨ a.1.ph = .adv)
+    (a.1.ph = .hon ∨ a.1.ph = .adv ∨ ∃ q, a.1.ph = .corr q)
 
 /-- An honest event is an event of the state machine of the layer. -/
 theorem filtPre_inl (l : JSt P) (h : HEv) : FiltPre l (.inl h) := by
@@ -264,9 +276,8 @@ theorem filtPre_inl (l : JSt P) (h : HEv) : FiltPre l (.inl h) := by
 layer. -/
 theorem filtPre_inr_inl (l : JSt P) (g : RAEv P.Stmt) : FiltPre l (.inr (.inl g)) := by
   intro a ha
-  simp only [jPre, PMF.support_pure, Set.mem_singleton_iff] at ha
-  subst ha
-  exact ⟨rfl, rfl, Or.inr rfl⟩
+  cases g <;> simp only [jPre, PMF.support_pure, Set.mem_singleton_iff] at ha <;> subst ha <;>
+    grind
 
 /-- A property of the state of one party after an update at a party. -/
 theorem update_tabs_prop (Q : FSt P → Prop) (f : PartyId → FSt P) (q q' : PartyId) (v : FSt P)
@@ -287,9 +298,13 @@ theorem filtJO_keep (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt K) 
   simp only [filtJO, X3DHSquareSigned.layO, PMF.support_bind, PMF.support_map, Set.mem_iUnion,
     Set.mem_image] at hy
   obtain ⟨a, ha, z, -, r, hr, rfl⟩ := hy
-  obtain ⟨h1, h2, h3⟩ := he a ha
-  rw [jPost_keep a.1 z.1 h3 r hr]
-  exact ⟨h1, h2⟩
+  obtain ⟨h1, h2, h3 | h3 | ⟨q, h3⟩⟩ := he a ha
+  · rw [jPost_keep A.pub a.1 z.1 (Or.inl h3) r hr]
+    exact ⟨h1, h2⟩
+  · rw [jPost_keep A.pub a.1 z.1 (Or.inr h3) r hr]
+    exact ⟨h1, h2⟩
+  · obtain ⟨k1, k2, -⟩ := jPost_keep_corr A.pub a.1 z.1 q h3 r hr
+    exact ⟨k1.trans h1, k2.trans h2⟩
 
 /-- **The tables of a party along a step of the real protocol with the signature oracles `O`.**
 A property of the state of a party that every transition of the oracles keeps holds after a

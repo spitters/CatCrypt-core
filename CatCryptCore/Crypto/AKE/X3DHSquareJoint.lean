@@ -37,12 +37,19 @@ Corruption reveals `ik_p`, which is also the signing key. `jointOWith O A` is th
 protocol with the oracle family `O` of the Fiat–Shamir game in place of `realStep`; at
 `O = simStep` the signatures are simulated (`simSignO`).
 
-**Simulator.** `x3dhJointSim G` is the layer `sigLayerJ` over `x3dhSim G`. The layer reads
+**Simulator.** `x3dhJointSim G` is the layer `sigLayerJ` over `x3dhSimC G`. The layer reads
 `IK_q` and `SPK_q` through `pub q`, answers `sigPub q` with the signature of the simulated
-signing oracle `FiatShamirROM.simStep IK_q`, which programs the table of `q`, and passes an
-injection on as `complete sid a` when the signature verifies and the prekey is the one it
-signed; it passes `pub q` otherwise. It holds no secret key. The layer over the real X3DH state
-machine is the filtered world `filtJO A`.
+signing oracle `FiatShamirROM.simStep IK_q`, which programs the table of `q`, and records the
+identity key `IK_q` of a party `q` whose corruption revealed its secrets. It passes an injection
+for the peer `q` on as the completion of the initiator with the delivered prekey (the event
+`.inr (x, spk)` of `CEv`) when `q` is recorded corrupted and the signature verifies under
+`IK_q`, as the real protocol does; when `q` is not recorded corrupted, as `complete sid a` when
+the signature verifies and the prekey is the one it signed. It passes `pub q` otherwise.
+`x3dhSimC G` is the X3DH simulator `x3dhSim G` with that completion (`simCompleteSig`): a
+session whose peer is corrupt is exposed in `F_AKE`, and the simulator gives it the value of
+its key-derivation table at the initiator's input with the delivered prekey. The layer over the
+real X3DH state machine with that completion (`X3DHSquareSigned.sigSub`) is the filtered world
+`filtJO A`.
 
 ## Main definitions
 
@@ -53,15 +60,19 @@ machine is the filtered world `filtJO A`.
 * `jointOWith`, `jointO`, `simSignO`, `filtJO` — the real protocol, with simulated signatures,
   and the filtered world
 * `jointGame`, `x3dhJointRealOf` — the real protocol as a system
+* `CEv`, `cView`, `injEvJ` — the interface below the layer and the event of a delivery
+* `simCompleteSig`, `simProtC`, `x3dhSimC` — the X3DH simulator with the completion at a
+  delivered prekey
 * `sigLayerJH`, `sigLayerJ`, `x3dhJointSim` — the layer as a hybrid, and the simulator
 
 ## Main results
 
 * `sigLayerJ_opaque` — the layer reads no answer of the honest port of its subroutine
+* `simProtC_opaque` — the X3DH simulator with the completion reads no key of `F_AKE`
 * `joint_plug_realizes`, `jointLayer_plug_realizes` — the real protocol and the layer over the
   real X3DH protocol as forwarding protocols against oracles, at distance `0`
 * `adv_joint_plug` — the advantage against a forwarding protocol as an oracle-run difference
-* `x3dhJointSim_withSub` — the simulator over a subroutine is the layer over `x3dhSim`
+* `x3dhJointSim_withSub` — the simulator over a subroutine is the layer over `x3dhSimC`
 -/
 
 @[expose] public section
@@ -75,6 +86,7 @@ open CatCrypt.Crypto.UCConcrete CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UC
 open CatCrypt.Crypto.FiatShamirROM CatCrypt.Crypto.PAKE.DHExtract CatCrypt.Crypto.OracleForking
 open CatCrypt.Examples
 open CatCrypt.Crypto.AKE.X3DHSquareSigned (completeSig layO plug_realizes layer_plug_realizes)
+open CatCrypt.Crypto.PAKE.CPaceSquare (PureNF pureNF_pure PureNF.bind)
 open PubView (eqView)
 open scoped ENNReal
 
@@ -159,6 +171,18 @@ inductive JPh where
   | hash (q : PartyId) (k : P.Com × P.Stmt)
   /-- Acknowledge a delivery. -/
   | inj
+  /-- Forward the answer to `corrupt q`, and record `q` as corrupted when it reveals secrets. -/
+  | corr (q : PartyId)
+
+/-- The events of the X3DH state machine below the layer: its events, and the completion
+`(x, spk)` of the initiator `x` with the delivered prekey `spk` (`completeSig`). -/
+abbrev CEv (W : Type) := OEv W ⊕ (Inst × W)
+
+/-- The view of the interface below the layer: equal events, and outputs related as by
+`outerView`. -/
+abbrev cView {S W K : Type} : PubView (CEv W) (OOut S W K) where
+  ev := Eq
+  out := outerView.out
 
 variable [DecidableEq P.Stmt]
 
@@ -174,7 +198,8 @@ abbrev SigOracles :=
   P.Stmt × P.Wit → FSt P → (fsOf P).Query → Step (fsOf P).Answer (FSt P) P.Ch
 
 /-- The state of the layer: the Fiat–Shamir state of each party, the identity key, signed
-prekey and signature of each party that signed, the peer of each session, and the phase. -/
+prekey and signature of each party that signed, the peer of each session, the identity key of
+each party seen corrupted, and the phase. -/
 structure JSt where
   /-- The tables of the random oracle of each party, with the flag of the game. -/
   tabs : PartyId → FSt P
@@ -182,12 +207,14 @@ structure JSt where
   sigs : PartyId → Option (P.Stmt × P.Stmt × Option (P.Com × P.Resp))
   /-- The peer of a session. -/
   peers : Inst → Option PartyId
+  /-- The identity key of a party whose corruption revealed its secrets. -/
+  corr : PartyId → Option P.Stmt
   /-- The phase. -/
   ph : JPh P
 
 /-- The initial state of the layer. -/
 def JSt.init : JSt P :=
-  ⟨fun _ => (Protocol.Tables.empty, false), fun _ => none, fun _ => none, .hon⟩
+  ⟨fun _ => (Protocol.Tables.empty, false), fun _ => none, fun _ => none, fun _ => none, .hon⟩
 
 end Interface
 
@@ -243,32 +270,50 @@ noncomputable def hashAt (H : FSt P → (fsOf P).Key → Step (fsOf P).Answer (F
     (l : JSt P) (q : PartyId) (k : (fsOf P).Key) : PMF ((fsOf P).Answer × JSt P) :=
   (toOracle H (l.tabs q) k).map fun r => (r.1, { l with tabs := Function.update l.tabs q r.2 })
 
+/-- **The event of the state machine for a delivery** of `spk` with `σ` at the initiator `x`
+whose peer is `q`, on the hash answer `a` at the point of the verifier. When `q` was seen
+corrupted with identity key `ik`, the completion of `x` with `spk` if `σ` verifies under `ik`;
+otherwise `complete` when the layer accepts the delivery (`accJ`). It is `pub q` in the other
+cases. -/
+def injEvJ (l : JSt P) (x : Inst) (q : PartyId) (spk : P.Stmt) (σ : P.Com × P.Resp)
+    (a : (fsOf P).Answer) : CEv P.Stmt :=
+  match l.corr q with
+  | some ik => if verAns P ik σ a then .inr (x, spk) else .inl (.inr (.pub q))
+  | none => if accJ P l q spk σ a then .inl (.inr (.complete x.1 x.2)) else .inl (.inr (.pub q))
+
 /-- **The event of the state machine** for an event of the joint interface. `sigPub q` and
-`sigHash q k` read the keys of `q` by `pub q`; an injection queries the random oracle of the
-peer at the point of the verifier and becomes `complete` when the layer accepts it (`accJ`),
-and `pub q` otherwise. -/
-noncomputable def jPre (l : JSt P) : JEv P → PMF (JSt P × OEv P.Stmt)
+`sigHash q k` read the keys of `q` by `pub q`; `corrupt q` is forwarded in the phase `corr q`;
+an injection queries the random oracle of the peer at the point of the verifier and becomes the
+event `injEvJ`. -/
+noncomputable def jPre (l : JSt P) : JEv P → PMF (JSt P × CEv P.Stmt)
   | .inl (.newSession sid pid peer role) =>
     PMF.pure ({ notePeerJ P l (sid, pid) peer with ph := .hon },
-      .inl (.newSession sid pid peer role))
-  | .inl (.getKey sid pid) => PMF.pure ({ l with ph := .hon }, .inl (.getKey sid pid))
-  | .inr (.inl a) => PMF.pure ({ l with ph := .adv }, .inr a)
-  | .inr (.inr (.sigPub q)) => PMF.pure ({ l with ph := .sign q }, .inr (.pub q))
-  | .inr (.inr (.sigHash q k)) => PMF.pure ({ l with ph := .hash q k }, .inr (.pub q))
+      .inl (.inl (.newSession sid pid peer role)))
+  | .inl (.getKey sid pid) => PMF.pure ({ l with ph := .hon }, .inl (.inl (.getKey sid pid)))
+  | .inr (.inl (.corrupt q)) => PMF.pure ({ l with ph := .corr q }, .inl (.inr (.corrupt q)))
+  | .inr (.inl a) => PMF.pure ({ l with ph := .adv }, .inl (.inr a))
+  | .inr (.inr (.sigPub q)) => PMF.pure ({ l with ph := .sign q }, .inl (.inr (.pub q)))
+  | .inr (.inr (.sigHash q k)) => PMF.pure ({ l with ph := .hash q k }, .inl (.inr (.pub q)))
   | .inr (.inr (.inject sid pid spk σ)) =>
     match l.peers (sid, pid) with
-    | none => PMF.pure ({ l with ph := .inj }, .inr .idle)
+    | none => PMF.pure ({ l with ph := .inj }, .inl (.inr .idle))
     | some q => (hashAt P (fun s k => hashStep s.1 s.2 k) l q (σ.1, spk)).map fun r =>
-      ({ r.2 with ph := .inj },
-        if accJ P l q spk σ r.1 then .inr (.complete sid pid) else .inr (.pub q))
+      ({ r.2 with ph := .inj }, injEvJ P l (sid, pid) q spk σ r.1)
 
-/-- **The answer of the layer** to an answer of the state machine: forward it, sign the prekey
-of the answer to `pub q` with the simulated signing oracle `FiatShamirROM.simStep` at the
-identity key of the answer, answer a hash query with it, or acknowledge. -/
-noncomputable def jPost (l : JSt P) (o : OOut P.Wit P.Stmt K) : PMF (JSt P × JOut P K) :=
+/-- **The answer of the layer** to an answer of the state machine, with `pub` the public key of
+an identity secret: forward it, record the identity key `pub ik` of `q` when the answer to
+`corrupt q` reveals the secrets `(ik, _)`, sign the prekey of the answer to `pub q` with the
+simulated signing oracle `FiatShamirROM.simStep` at the identity key of the answer, answer a
+hash query with it, or acknowledge. -/
+noncomputable def jPost (pub : P.Wit → P.Stmt) (l : JSt P) (o : OOut P.Wit P.Stmt K) :
+    PMF (JSt P × JOut P K) :=
   match l.ph, o with
   | .hon, .inl h => PMF.pure (l, .inl h)
   | .adv, .inr a => PMF.pure (l, .inr (.inl a))
+  | .corr q, .inr (.secret (some lt)) =>
+    PMF.pure ({ l with corr := Function.update l.corr q (some (pub lt.1)) },
+      .inr (.inl (.secret (some lt))))
+  | .corr _, .inr a => PMF.pure (l, .inr (.inl a))
   | .sign q, .inr (.pub ik spk) =>
     (signAt P (FiatShamirROM.simStep ik) l q ik spk).map fun r => (r.1, .inr (.inr r.2))
   | .hash q k, .inr (.pub ik _) =>
@@ -285,10 +330,11 @@ section Real
 variable (P : FiatShamirROM.Sigma) [DecidableEq P.Stmt] [Fintype P.Wit] [Nonempty P.Wit]
   {K : Type} [Fintype K] [Nonempty K]
 
-/-- **The filtered world**: the layer of the signatures over the real X3DH state machine. -/
+/-- **The filtered world**: the layer of the signatures over the real X3DH state machine with
+the completion at a delivered prekey (`sigSub`). -/
 noncomputable def filtJO (A : AKEAlg P.Wit P.Stmt) :
     JSt P × RSt P.Wit P.Stmt K → JEv P → PMF (JOut P K × (JSt P × RSt P.Wit P.Stmt K)) :=
-  layO (jPre P) (X3DHSquareSigned.realStep A) (jPost P)
+  layO (jPre P) (X3DHSquareSigned.sigSub A) (jPost P A.pub)
 
 /-- **A step of the real protocol with the signature oracles `O`.** `sigPub q` signs the
 signed prekey of `q` by the signing query of `O (IK_q, ik_q)`, `sigHash q k` is the hash query
@@ -362,43 +408,41 @@ section Sim
 
 variable (P : FiatShamirROM.Sigma) [DecidableEq P.Stmt] {K : Type}
 
-/-- **The layer of the signatures as a one-call hybrid** over the X3DH interface. -/
-noncomputable def sigLayerJH :
-    Hybrid (JSt P) (JEv P) (JOut P K) (OEv P.Stmt) (OOut P.Wit P.Stmt K) where
+/-- **The layer of the signatures as a one-call hybrid** over the X3DH interface with the
+completion at a delivered prekey, with `pub` the public key of an identity secret. -/
+noncomputable def sigLayerJH (pub : P.Wit → P.Stmt) :
+    Hybrid (JSt P) (JEv P) (JOut P K) (CEv P.Stmt) (OOut P.Wit P.Stmt K) where
   init := JSt.init P
   pre l e := liftPMF (jPre P l e)
-  post l o := liftPMF (jPost P l o)
+  post l o := liftPMF (jPost P pub l o)
   pre_noFail _ _ := liftPMF_noFail _
   post_noFail _ _ := liftPMF_noFail _
 
 /-- **The layer of the signatures as a multi-call simulator**, one call per activation. -/
-noncomputable def sigLayerJ :
-    MultiHybrid (JSt P) (JEv P) (JOut P K) (OEv P.Stmt) (OOut P.Wit P.Stmt K) :=
-  MultiHybrid.ofHybrid (sigLayerJH P)
+noncomputable def sigLayerJ (pub : P.Wit → P.Stmt) :
+    MultiHybrid (JSt P) (JEv P) (JOut P K) (CEv P.Stmt) (OOut P.Wit P.Stmt K) :=
+  MultiHybrid.ofHybrid (sigLayerJH P pub)
 
 /-- **The unwinding condition of the layer** for the equality of states: it reads no honest
 answer of its subroutine. -/
-theorem sigLayerJ_opaque : (sigLayerJ P (K := K)).Opaque (jView P) outerView := by
-  have hrefl : ∀ g : OEv P.Stmt, (outerView (S := P.Wit) (K := K)).ev g g := by
-    rintro (h | a)
-    · exact Sum.LiftRel.inl rfl
-    · exact Sum.LiftRel.inr rfl
+theorem sigLayerJ_opaque (pub : P.Wit → P.Stmt) :
+    (sigLayerJ P pub (K := K)).Opaque (jView P) cView := by
   have houtRefl : ∀ o : JOut P K, (jView P).out o o := by
     rintro (h | a)
     · exact Sum.LiftRel.inl trivial
     · exact Sum.LiftRel.inr rfl
-  have hdecRefl : ∀ d : OEv P.Stmt ⊕ JOut P K,
-      (jView P).StepRel (outerView (S := P.Wit) (K := K)) d d := by
+  have hdecRefl : ∀ d : CEv P.Stmt ⊕ JOut P K,
+      (jView P).StepRel (cView (S := P.Wit) (K := K)) d d := by
     rintro (g | o)
-    · exact hrefl g
+    · exact rfl
     · exact houtRefl o
   have hpost : ∀ (l : JSt P) (o o' : OOut P.Wit P.Stmt K), outerView.out o o' →
-      rHoare eqPre (liftPMF (jPost P l o)) (liftPMF (jPost P l o'))
+      rHoare eqPre (liftPMF (jPost P pub l o)) (liftPMF (jPost P pub l o'))
         (fun r h r' h' => h = h' ∧ r.1 = r'.1 ∧ (jView P).out r.2 r'.2) := by
     intro l o o' ho
     cases ho with
     | inl _ =>
-      rcases l with ⟨tb, sg, pe, ph⟩
+      rcases l with ⟨tb, sg, pe, cr, ph⟩
       cases ph <;> simp only [jPost, ← liftPMF_pure] <;>
         exact rHoare_ret fun _ _ hh => ⟨hh, rfl, by first
           | exact Sum.LiftRel.inl trivial | exact Sum.LiftRel.inr rfl⟩
@@ -424,32 +468,122 @@ theorem sigLayerJ_opaque : (sigLayerJ P (K := K)).Opaque (jView P) outerView := 
     refine rHoare_bind (hpost s o o' ho) fun r r' => ?_
     intro h₁ h₂ hp
     exact rHoare_ret (Φ := fun h h' => h = h' ∧ r.1 = r'.1 ∧ (jView P).out r.2 r'.2)
-      (a := (r.1, (Sum.inr r.2 : OEv P.Stmt ⊕ JOut P K)))
-      (b := (r'.1, (Sum.inr r'.2 : OEv P.Stmt ⊕ JOut P K)))
+      (a := (r.1, (Sum.inr r.2 : CEv P.Stmt ⊕ JOut P K)))
+      (b := (r'.1, (Sum.inr r'.2 : CEv P.Stmt ⊕ JOut P K)))
       (Ψ := fun r h r' h' => h = h' ∧ r.1 = r'.1 ∧
-        (jView P).StepRel (outerView (S := P.Wit) (K := K)) r.2 r'.2)
+        (jView P).StepRel (cView (S := P.Wit) (K := K)) r.2 r'.2)
       (fun _ _ hh => ⟨hh.1, hh.2.1, hh.2.2⟩) h₁ h₂ hp
   · rintro s _ o o' rfl ho
     exact hpost s o o' ho
 
-variable {S W : Type} [Field S] [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype K]
+end Sim
+
+/-! ## The X3DH simulator with the completion at a delivered prekey -/
+
+section SimC
+
+variable {S W K : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W)
+
+/-- **The simulator on the completion of `x` with the delivered prekey `spk`**: the computation
+of `completeSig` on its copy, with `spk` in place of the signed prekey of the peer, and the
+delivery by `deliver`. At a corrupted peer the session is exposed in `F_AKE`, and `deliver`
+gives it the key-derivation value of its copy. -/
+noncomputable def simCompleteSig (s : SimSt S W K) (x : Inst) (spk : W) :
+    SPComp (SimSt S W K × Dec S W K) :=
+  match s.1.st.recs x, s.1.eph x with
+  | some r, some ek =>
+    match opkOf s.1 x.1 r.peer with
+    | some opk =>
+      if r.role = .initiator ∧ r.key.isNone then
+        SPComp.bind (ltStep s.1 x.2) fun la => SPComp.bind (ltStep la.2 r.peer) fun lb =>
+          deliver lb.2 s.2.1 x r
+            (aliceInp G x.1 x.2 r.peer la.1.1 ek (G.pub lb.1.1) spk (G.pub opk))
+      else SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr .ack))
+    | none => SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr .ack))
+  | _, _ => SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr .ack))
+
+/-- The start of an activation of the simulator with the completion at a delivered prekey: an
+event of the X3DH interface as `simStart`, a completion by `simCompleteSig`. -/
+noncomputable def simStartC (s : SimSt S W K) : CEv W → SPComp (SimSt S W K × Dec S W K)
+  | .inl e => simStart G s e
+  | .inr p => simCompleteSig G s p.1 p.2
+
+/-- `simCompleteSig` neither touches the heap nor fails. -/
+theorem simCompleteSig_pureNF (s : SimSt S W K) (x : Inst) (spk : W) :
+    PureNF (simCompleteSig G s x spk) := by
+  unfold simCompleteSig
+  repeat' split
+  all_goals first
+    | exact pureNF_pure _
+    | exact (ltStep_pureNF _ _).bind fun _ => (ltStep_pureNF _ _).bind fun _ =>
+        deliver_pureNF _ _ _ _ _
+
+/-- The start of the simulator with the completion at a delivered prekey neither touches the
+heap nor fails. -/
+theorem simStartC_pureNF (s : SimSt S W K) (e : CEv W) : PureNF (simStartC G s e) := by
+  rcases e with e | p
+  · exact simStart_pureNF G s e
+  · exact simCompleteSig_pureNF G s p.1 p.2
+
+/-- **The X3DH simulator with the completion at a delivered prekey** as a multi-call simulator
+over `F_AKE`, one call per activation. -/
+noncomputable def simProtC :
+    MultiHybrid (SimSt S W K) (CEv W) (OOut S W K) (FEv K) (FOut K) where
+  init := (rInit, fun _ => none, .fwd)
+  fuel := 0
+  start := simStartC G
+  resume s o := SPComp.pure ((s.1, s.2.1, .fwd), .inr (simOut s.2.2 o))
+  finish s o := SPComp.pure ((s.1, s.2.1, .fwd), simOut s.2.2 o)
+  start_noFail s e := (simStartC_pureNF G s e).2
+  resume_noFail _ _ := CatCrypt.Crypto.SPComp.pure_noFail _
+  finish_noFail _ _ := CatCrypt.Crypto.SPComp.pure_noFail _
+
+/-- **Opacity of the simulator with the completion at a delivered prekey**: its state and its
+decisions depend on its events and not on the answers of `F_AKE` on its honest port. -/
+theorem simProtC_opaque : (simProtC (K := K) G).Opaque cView subView := by
+  refine ⟨Eq, rfl, ?_, ?_, ?_⟩
+  · rintro s _ e _ rfl rfl
+    exact rHoare_conseq (fun _ _ h => h)
+      (fun _ _ _ _ hp => by obtain ⟨rfl, rfl⟩ := hp; exact ⟨rfl, rfl, stepRel_refl _⟩)
+      (rHoare_refl _)
+  · rintro s _ o o' rfl ho
+    exact rHoare_ret fun _ _ hh => ⟨hh, rfl, simOut_rel _ ho⟩
+  · rintro s _ o o' rfl ho
+    exact rHoare_ret fun _ _ hh => ⟨hh, rfl, simOut_rel _ ho⟩
+
+/-- **The X3DH simulator with the completion at a delivered prekey** as a bundled opaque
+simulator. -/
+noncomputable def x3dhSimC :
+    Simulator (CEv W) (OOut S W K) (FEv K) (FOut K) cView subView :=
+  Simulator.ofMultiHybrid (simProtC G) (simProtC_opaque G)
+
+end SimC
+
+/-! ## The simulator -/
+
+section JointSim
+
+variable {S W K : Type} [Field S] [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype K]
   [Nonempty K] [Inhabited K]
 
 /-- **The simulator of X3DH with a joint identity and signing key**: the layer of the
-signatures, with the Schnorr Σ-protocol at `ofDHGroup G`, running over the X3DH simulator. -/
+signatures, with the Schnorr Σ-protocol at `ofDHGroup G` and the public keys of
+`x3dhJointAlg G`, running over the X3DH simulator with the completion at a delivered prekey. -/
 noncomputable def x3dhJointSim (G : DHGroup S W) :
     Simulator (JEv (schnorrSigma (GroupParam.ofDHGroup G)))
       (JOut (schnorrSigma (GroupParam.ofDHGroup G)) K) (FEv K) (FOut K) (jView _) subView :=
-  (Simulator.ofMultiHybrid (sigLayerJ _) (sigLayerJ_opaque _)).comp (x3dhSim (S := S) (W := W) G)
+  (Simulator.ofMultiHybrid (sigLayerJ _ (x3dhJointAlg G).pub)
+    (sigLayerJ_opaque _ (x3dhJointAlg G).pub)).comp (x3dhSimC (S := S) (W := W) G)
 
-/-- The simulator over a subroutine system is the layer over `x3dhSim G` over it. -/
+/-- The simulator over a subroutine system is the layer over `x3dhSimC G` over it. -/
 theorem x3dhJointSim_withSub (G : DHGroup S W) {τ : Type} (X : Sys τ (FEv K) (FOut K)) :
     (x3dhJointSim (K := K) G).withSub X =
-      (sigLayerJH (schnorrSigma (GroupParam.ofDHGroup G))).withSub
-        ((x3dhSim (S := S) (W := W) G).withSub X) :=
+      (sigLayerJH (schnorrSigma (GroupParam.ofDHGroup G)) (x3dhJointAlg G).pub).withSub
+        ((x3dhSimC (S := S) (W := W) G).withSub X) :=
   MultiHybrid.ofHybrid_withSub _ _
 
-end Sim
+end JointSim
 
 /-! ## Forwarding -/
 
@@ -466,14 +600,14 @@ theorem joint_plug_realizes (A : JointSigAKEAlg P) :
       (fun _ _ => 0) :=
   plug_realizes (jointGame P A) () (fun _ => rfl) rfl
 
-/-- **The layer over the real X3DH protocol is the forwarding protocol against the filtered
-world**, at distance `0`. -/
+/-- **The layer over the real X3DH protocol with the completion at a delivered prekey is the
+forwarding protocol against the filtered world**, at distance `0`. -/
 theorem jointLayer_plug_realizes (A : AKEAlg P.Wit P.Stmt) :
-    Realizes ((sigLayerJH P).withSub ((OProt.oracle (Q := OEv P.Stmt)
-        (A := OOut P.Wit P.Stmt K)).plug ((realGame A).oracle ()) (realGame A).init))
+    Realizes ((sigLayerJH P A.pub).withSub ((OProt.oracle (Q := CEv P.Stmt)
+        (A := OOut P.Wit P.Stmt K)).plug (X3DHSquareSigned.sigSub A) (realGame A).init))
       ((OProt.oracle (Q := JEv P) (A := JOut P K)).plug (filtJO P A) (jInit P))
       (fun _ _ => 0) :=
-  layer_plug_realizes (sigLayerJH P) _ _ (fun _ _ => rfl) (fun _ _ => rfl) _ _
+  layer_plug_realizes (sigLayerJH P A.pub) _ _ (fun _ _ => rfl) (fun _ _ => rfl) _ _
 
 /-- The advantage of an environment between the joint real protocol and the forwarding protocol
 against an oracle `O'` from the initial state is the difference of the probabilities of `true`

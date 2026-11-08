@@ -32,8 +32,8 @@ pair `(0, s)`; at `p = a` the public identity key of `a` in the reduction is the
 
 * `OracleAdv.run_bind_draw_comm`, `OracleAdv.run_map_obs_eq_bind_draw`,
   `OracleAdv.run_flag_eq_bind_draw` — a run against an oracle that commutes with a draw kernel
-* `drawComm_ltAt`, `realStep_drawComm`, `completeSig_drawComm`, `filtJO_drawComm`,
-  `jointOWith_drawComm` — the steps commute with the draw of `lt p`
+* `drawComm_ltAt`, `realStep_drawComm`, `completeSig_drawComm`, `sigSub_drawComm`,
+  `filtJO_drawComm`, `jointOWith_drawComm` — the steps commute with the draw of `lt p`
 * `run_map_obs_eq_bind_ltSet`, `run_flag_eq_tsum_ltSet` — a run of an oracle on layered states
   that commutes with the draw, from a state without `lt p`
 * `jointOWith_run_eager`, `jointOWith_flag_eager` and their instances at `jointO`, `simSignO`,
@@ -530,6 +530,15 @@ theorem realStep_drawComm (A : AKEAlg S W) (p : PartyId) (g : OEv W) (s : RSt S 
       obtain ⟨_, -, rfl⟩ := hy
       rfl
 
+/-- **A step of the real X3DH state machine with the completion at a delivered prekey**
+commutes with the draw of `lt p`. -/
+theorem sigSub_drawComm (A : AKEAlg S W) (p : PartyId) (g : CEv W) (s : RSt S W K) :
+    DrawComm p (fun s => X3DHSquareSigned.sigSub A s g) s := by
+  rcases g with g | ⟨x, spk⟩
+  · exact realStep_drawComm A p g s
+  · exact drawComm_map p _ (fun s => completeSig A s x spk) (fun o => (Sum.inr o : OOut S W K))
+      s (fun _ => rfl) (completeSig_drawComm A p x spk s)
+
 end Steps
 
 /-! ## The draw on the states of a layer over the real state machine -/
@@ -697,7 +706,13 @@ theorem filtJO_lt_mono (A : AKEAlg P.Wit P.Stmt) (t : JSt P × RSt P.Wit P.Stmt 
   simp only [filtJO, X3DHSquareSigned.layO, PMF.support_bind, PMF.support_map, Set.mem_iUnion,
     Set.mem_image] at hy
   obtain ⟨a, -, z, hz, r, -, rfl⟩ := hy
-  exact (X3DHSquareSigned.realO_support A t.2 a.2 z hz).2 q v h
+  rcases ha : a.2 with g | ⟨x, spk⟩
+  · rw [ha] at hz
+    exact (X3DHSquareSigned.realO_support A t.2 g z hz).2 q v h
+  · rw [ha] at hz
+    simp only [X3DHSquareSigned.sigSub, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨c, hc, rfl⟩ := hz
+    exact completeSig_lt_mono P A t.2 x spk c hc q v h
 
 /-- A step of the real protocol with the signature oracles `O` keeps the drawn long-term
 secrets. -/
@@ -739,9 +754,10 @@ theorem filtJO_drawComm (A : AKEAlg P.Wit P.Stmt) (p : PartyId)
     (t : JSt P × RSt P.Wit P.Stmt K) (e : JEv P) :
     (drawP p t).bind (fun l => filtJO P A l.2 e) =
       (filtJO P A t e).bind fun y => (drawP p y.2).map fun l => (y.1, l.2) := by
-  refine drawP_comm p (fun t => filtJO P A t e) t (jPre P t.1 e) (fun a s => realStep A s a.2)
-    (fun a q => jPost P a.1 q) (fun _ _ _ s => PMF.pure ((), s)) (fun _ _ r _ => r.2)
-    (fun _ _ r => r.1) ?_ (fun a _ => realStep_drawComm A p a.2 t.2)
+  refine drawP_comm p (fun t => filtJO P A t e) t (jPre P t.1 e)
+    (fun a s => X3DHSquareSigned.sigSub A s a.2) (fun a q => jPost P A.pub a.1 q)
+    (fun _ _ _ s => PMF.pure ((), s)) (fun _ _ r _ => r.2)
+    (fun _ _ r => r.1) ?_ (fun a _ => sigSub_drawComm A p a.2 t.2)
     (fun _ _ y _ _ => drawComm_pure p () y.2)
   intro s
   simp only [filtJO, X3DHSquareSigned.layO, PMF.pure_map]
