@@ -157,6 +157,7 @@ public import CatCryptCore.Tactics.DeriveTimed.Basic
 public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Tactics.AutoTime.Basic
 public import CatCryptCore.Tactics.DeriveTimeBound.Basic
+public import CatCryptCore.Tactics.CsimpAudit
 public import CatCryptCore.Tactics.DeriveTimedStructure
 public import CatCryptCore.Tactics.DerivePMF
 public import CatCryptCore.Tactics.DeriveTimeRec
