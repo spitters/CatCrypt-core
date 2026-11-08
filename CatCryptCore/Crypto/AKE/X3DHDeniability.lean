@@ -6,8 +6,11 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.AKE.X3DHPassive
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Signal X3DH offline deniability against the responder

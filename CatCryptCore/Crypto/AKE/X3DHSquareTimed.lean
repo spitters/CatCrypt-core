@@ -8,9 +8,11 @@ module
 public import CatCryptCore.Crypto.AKE.X3DHSquare
 public import CatCryptCore.Crypto.UCSimulatorCostGraded
 public import CatCryptCore.Crypto.UCSimulatorTimed
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Tactics.DeriveSimulator
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 
 /-!
 # Running time of the X3DH simulator

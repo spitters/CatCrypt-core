@@ -9,9 +9,10 @@ public import CatCryptCore.Crypto.AKE.X3DHSquareSigned
 public import CatCryptCore.Crypto.AKE.X3DHSquareTimed
 public import CatCryptCore.Tactics.DeriveSimulator
 public import CatCryptCore.Crypto.UCOracleGameTimed
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.DeriveTimeBound
-public import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
 
 /-!
 # Running time of the forger of the signed X3DH square

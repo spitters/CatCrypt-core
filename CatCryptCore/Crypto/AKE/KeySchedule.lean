@@ -8,7 +8,8 @@ module
 public import CatCryptCore.Crypto.Assumptions.AEAD
 public import CatCryptCore.Crypto.Assumptions.DualPRF
 public import CatCryptCore.Crypto.KEM.Games
-public import CatCryptCore.Tactics.DeriveTimed
+import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
 
 /-!
 # From a key exchange to a secure channel

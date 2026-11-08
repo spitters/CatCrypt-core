@@ -7,8 +7,11 @@ module
 
 public import CatCryptCore.Crypto.AKE.PQXDHPassiveHops
 public import CatCryptCore.Crypto.AKE.PQXDHPassiveKeygen
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Costed forms of the PQXDH hop reductions

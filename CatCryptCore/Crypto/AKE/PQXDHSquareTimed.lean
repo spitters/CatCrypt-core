@@ -8,8 +8,10 @@ module
 public import CatCryptCore.Crypto.AKE.PQXDHSquare
 public import CatCryptCore.Crypto.AKE.X3DHSquareTimed
 public import CatCryptCore.Crypto.UCSimulatorTimed
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 
 /-!
 # Running time of the PQXDH simulator

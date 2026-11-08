@@ -7,9 +7,14 @@ module
 
 public import CatCryptCore.Crypto.AKE.PQXDHSquareGDH
 public import CatCryptCore.Crypto.AKE.X3DHSquareGDHTimed
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.DeriveTimeBound
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Core.SPTreeTimedFree
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
 
 /-!
 # Running time of the gap Diffie–Hellman reduction of the PQXDH square

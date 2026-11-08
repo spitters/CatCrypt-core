@@ -7,9 +7,14 @@ module
 
 public import CatCryptCore.Crypto.AKE.PQXDHSquareKEM
 public import CatCryptCore.Crypto.AKE.X3DHSquareGDHTimed
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 public import CatCryptCore.Tactics.StdCosts
+public import CatCryptCore.Core.SPTreeTimedFree
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
+import CatCryptCore.Tactics.AutoTime
 
 /-!
 # Running time of the KEM reduction of the PQXDH square

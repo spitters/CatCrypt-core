@@ -9,7 +9,8 @@ public import CatCryptCore.Crypto.Assumptions.CR
 public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
-public import CatCryptCore.Tactics.DeriveTimed
+import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
 import CatCryptCore.Tactics.DerivePMF
 
 /-!

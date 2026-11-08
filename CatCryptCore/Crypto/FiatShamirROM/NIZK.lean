@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.FiatShamirROM.Timed
 public import CatCryptCore.Crypto.FiatShamirROM.LinearRelation
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # The strong Fiat–Shamir transform of a Σ-protocol in the random-oracle model

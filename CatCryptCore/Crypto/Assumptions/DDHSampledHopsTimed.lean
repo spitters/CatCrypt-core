@@ -6,7 +6,9 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Assumptions.DDHSampledHops
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Running time of the DDH hop reductions
