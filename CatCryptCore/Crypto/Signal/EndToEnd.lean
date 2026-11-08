@@ -254,7 +254,7 @@ theorem signal_extracted_e2e [X3dh.X3dhDeps] (GX : DHGroup S G) (P : Finset Part
       (signalExtractedBound GX P R F D ptLen encR encG encSk decE encS encW encC Sch t n ΔFS
         ΔPCS) ∧
     (OProt.oracle (Q := HEv ⊕ RAEv G) (A := HOut RK ⊕ ROut S G RK)).sys
-        (extGame H encCtx encX encG decG decR) = x3dhRealOfK (fixedKDF H) (x3dhAlg GX) ∧
+        (extGame encCtx encX encG decG decR) = x3dhRealOfK (fixedKDF H) (x3dhAlg GX) ∧
     ∀ (u : Doubleratchet.Uninitialized_T) (g : Array Int) (sid : SessionId) (a b : PartyId)
       (ik ek : S) (IKB SPKB OPKB : G) (sig : Array Int) (y : Sk) (sk₀ pk₀ : Array Int),
       (X3dh.initiate (encCtx (sid, a, b)) (encX ik) (encX ek)
