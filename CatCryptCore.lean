@@ -687,6 +687,7 @@ public import CatCryptCore.Crypto.Signatures.OracleProgUseBound
 public import CatCryptCore.Container.CwF
 public import CatCryptCore.Container.CwFPi
 public import CatCryptCore.Container.GodelFibration
+public import CatCryptCore.Container.DNBang
 public import CatCryptCore.Crypto.Party.ProgECost
 public import CatCryptCore.Crypto.Party.ViewRelCode
 public import CatCryptCore.Container.PolyPiSigma
