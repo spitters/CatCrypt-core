@@ -106,6 +106,7 @@ public import CatCryptCore.Complexity.D.LinkDt
 public import CatCryptCore.Complexity.D.DillerNahm
 public import CatCryptCore.Complexity.D.PolyModel
 public import CatCryptCore.Complexity.D.PriceSound
+public import CatCryptCore.Complexity.D.DNHered
 public import CatCryptCore.XDijkstra.XErrMonad
 public import CatCryptCore.XDijkstra.XAdvantageHybrid
 public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl
