@@ -332,6 +332,7 @@ public import CatCryptCore.Crypto.AKE.X3DHSquareSignedTimed
 public import CatCryptCore.Crypto.AKE.X3DHSquareJoint
 public import CatCryptCore.Crypto.AKE.X3DHSquareJointTimed
 public import CatCryptCore.Crypto.AKE.X3DHSquareJointEager
+public import CatCryptCore.Crypto.AKE.X3DHSquareJointHop
 public import CatCryptCore.Crypto.AKE.X3DHPassive
 public import CatCryptCore.Crypto.AKE.X3DHPassiveHops
 public import CatCryptCore.Crypto.AKE.X3DHPassiveKeygen
