@@ -7,9 +7,9 @@ module
 
 public import CatCryptCore.Crypto.UCSemiHonest
 public import CatCryptCore.Crypto.UCSimulatorTimed
-public import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Tactics.DeriveSimulator
-public import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 
 /-!
 # Running time of the semi-honest simulator

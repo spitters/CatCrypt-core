@@ -7,10 +7,12 @@ module
 
 public import CatCryptCore.Crypto.UCGlobalSquare
 public import CatCryptCore.Crypto.UCTransparentMultiTimed
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Crypto.UCSimulatorTimed
 public import CatCryptCore.Tactics.DeriveSimulator
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 public import CatCryptCore.Tactics.StdCosts
 
 /-!

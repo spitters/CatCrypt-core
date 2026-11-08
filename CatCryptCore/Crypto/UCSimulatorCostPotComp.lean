@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.UCSimulatorCostPot
 public import CatCryptCore.Crypto.UCSimulatorCostMono
+import CatCryptCore.Tactics.DeriveReduction
 
 /-!
 # Potential time bounds of costed simulators under composition

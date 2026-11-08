@@ -7,7 +7,8 @@ module
 
 public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Crypto.Assumptions.OWF
-public import CatCryptCore.Tactics.DeriveTimed
+import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
 public import CatCryptCore.Crypto.Assumptions.ODH
 
 /-!

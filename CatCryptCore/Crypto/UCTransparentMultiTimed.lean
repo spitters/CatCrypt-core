@@ -7,7 +7,9 @@ module
 
 public import CatCryptCore.Crypto.UCTransparentMulti
 public import CatCryptCore.Tactics.DeriveTimedStructure
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # The costed mirrors of the hybrid machines

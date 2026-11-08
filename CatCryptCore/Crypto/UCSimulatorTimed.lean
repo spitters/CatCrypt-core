@@ -7,9 +7,16 @@ module
 
 public import CatCryptCore.Crypto.UCSimulator
 public import CatCryptCore.Crypto.UCTransparentMultiTimed
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 public import CatCryptCore.Tactics.StdCosts
+public import CatCryptCore.Crypto.OracleAdversaryFree
+public import CatCryptCore.Core.SPTreeTimedFree
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
 
 /-!
 # Running time of the forwarding simulator

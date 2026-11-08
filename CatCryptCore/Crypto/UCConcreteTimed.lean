@@ -6,9 +6,15 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCOracleGame
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.DeriveTimeBound
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Crypto.OracleAdversaryFree
+public import CatCryptCore.Core.SPTreeTimedFree
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Time of the environment reductions

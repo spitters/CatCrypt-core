@@ -6,8 +6,10 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.TreeForkingLemma
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Tactics.StdCosts
+import CatCryptCore.Tactics.DeriveCost
 
 /-!
 # Time of the tree extractor of the tree-forking lemma

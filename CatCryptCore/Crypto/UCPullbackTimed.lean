@@ -9,9 +9,15 @@ public import CatCryptCore.Crypto.UCPullback
 public import CatCryptCore.Crypto.UCConcreteTimed
 public import CatCryptCore.Crypto.UCTransparentMultiTimed
 public import CatCryptCore.Crypto.UCSimulatorCostGraded
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 public import CatCryptCore.Tactics.DeriveTimedStructure
+public import CatCryptCore.Crypto.OracleAdversaryFree
+public import CatCryptCore.Core.SPTreeTimedFree
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
 
 /-!
 # Time certificates of the environment reductions of the pullback law

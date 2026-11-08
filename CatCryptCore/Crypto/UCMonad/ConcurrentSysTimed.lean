@@ -8,7 +8,13 @@ module
 public import CatCryptCore.Crypto.UCMonad.ConcurrentSys
 public import CatCryptCore.Crypto.UCSimulatorCostGraded
 public import CatCryptCore.Tactics.DeriveTimedStructure
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Crypto.OracleAdversaryFree
+public import CatCryptCore.Core.SPTreeTimedFree
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
 
 /-!
 # Running time of the composite adversary system

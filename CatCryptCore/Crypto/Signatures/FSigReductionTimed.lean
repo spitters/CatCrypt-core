@@ -6,8 +6,15 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Signatures.FSigReduction
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
+public import CatCryptCore.Crypto.OracleAdversaryFree
+public import CatCryptCore.Core.SPTreeTimedFree
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Running time of the forger of the signature functionality

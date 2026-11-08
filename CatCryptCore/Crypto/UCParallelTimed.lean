@@ -9,7 +9,12 @@ public import CatCryptCore.Crypto.UCParallel
 public import CatCryptCore.Crypto.UCPullbackCost
 public import CatCryptCore.Crypto.UCTransparentMultiTimed
 public import CatCryptCore.Crypto.HybridWithSubTimed
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Crypto.OracleAdversaryFree
+public import CatCryptCore.Core.SPTreeTimedFree
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
 
 /-!
 # Parallel composition with time certificates

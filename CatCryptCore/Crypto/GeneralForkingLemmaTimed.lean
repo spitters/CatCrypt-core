@@ -6,10 +6,15 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.GeneralForkingLemma
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.AutoTime
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.AutoTime.Basic
+import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 public import CatCryptCore.Container.DNCert
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Time of the forking algorithm and of the guessing reduction of the general forking lemma
