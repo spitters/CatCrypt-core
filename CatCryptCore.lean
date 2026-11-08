@@ -223,6 +223,7 @@ public import CatCryptCore.Crypto.SwitchingLemma
 public import CatCryptCore.Crypto.MultiQueryPRF
 public import CatCryptCore.Crypto.MultiKeyPRF
 public import CatCryptCore.Crypto.OracleAdversary
+public import CatCryptCore.Crypto.OracleAdversaryEager
 public import CatCryptCore.Crypto.OracleAdversaryTimed
 public import CatCryptCore.Crypto.OracleAdversaryDist
 public import CatCryptCore.Crypto.OracleUpTo

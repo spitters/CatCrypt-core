@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.AKE.PQXDHSquareGDH
 public import CatCryptCore.Crypto.OracleSimulation
+public import CatCryptCore.Crypto.OracleAdversaryEager
 public import CatCryptCore.ForMathlib.PMFSupport
 public import CatCryptCore.Tactics.AutoDispatchExt
 
@@ -17,7 +18,7 @@ public import CatCryptCore.Tactics.AutoDispatchExt
 (a session whose encapsulation the adversary did not create, `HonestEnc`) and its
 Diffie–Hellman part, and bounds both by gap Diffie–Hellman advantages. This module bounds the
 KEM part by the IND-CCA security of the KEM, without any Diffie–Hellman assumption: a session
-whose shared secret comes from an honestly generated encapsulation stays secure against an
+whose shared secret comes from an encapsulation of an honest party is secure against an
 adversary that computes discrete logarithms (security against harvest-now-decrypt-later
 attacks), and the bound of the square becomes a minimum over the two routes.
 
@@ -47,7 +48,7 @@ over the guesses `g = (sid, a, b)` of `I × N × N` of the KEM part at the initi
 **Eager sampling.** The simulated world draws a KEM key pair at every step and an encapsulation
 at every completion. The world `gwO kp kc` uses the key pair `kp` at the start of the responder
 session of the guess and the encapsulation `kc` at the completion of its initiator session. Each
-is used at most once, so drawing them first gives the same probability (`run_eager`,
+is used at most once, so drawing them first gives the same probability (`OracleAdv.run_eager`,
 `flag_w_eq_gw1`, `flag_gw1_eq_gw`).
 
 **The world of the reduction.** The reduction does not know the secret key of the challenge
@@ -103,8 +104,7 @@ adversary that computes discrete logarithms makes the bad event hold with probab
 
 ## Main results
 
-* `run_eager`, `flag_le_of_coupling_hit`: eager sampling of a value used once, and bad flags
-  under a coupling up to a bad event of the second oracle.
+* `flag_le_of_coupling_hit`: bad flags under a coupling up to a bad event of the second oracle.
 * `badGame_le_splitM`, `partBadM_le_gapDH`: the split into the matched KEM part and the rest, and
   the gap Diffie–Hellman bounds of both.
 * `gw_le_y`: the coupling of the eager world with the world of the reduction.
@@ -144,68 +144,6 @@ open CatCrypt.Crypto.AKE.PQXDHSquareGDH
 open CatCrypt.Crypto.KEM.Games (Scheme)
 open CatCrypt.Crypto.OracleGameUpToBad
 open scoped ENNReal
-
-/-! ## Eager sampling of a value used at most once -/
-
-section Eager
-
-variable {σ D R α X : Type}
-
-/-- After the use, the oracle with the pre-sampled value is the lazy oracle. -/
-theorem run_eager_used (O₁ : σ → D → PMF (R × σ)) (O₂ : X → σ → D → PMF (R × σ))
-    (U : σ → Prop) (use : σ → D → Prop) (hno : ∀ x s d, ¬ use s d → O₂ x s d = O₁ s d)
-    (hpers : ∀ s d, ¬ U s → ∀ y ∈ (O₁ s d).support, ¬ U y.2)
-    (hnu : ∀ s d, ¬ U s → ¬ use s d) (x : X) (A : OracleAdv D R α) (s : σ) (hs : ¬ U s) :
-    OracleAdv.run (O₂ x) A s = OracleAdv.run O₁ A s :=
-  OracleAdv.run_eq_run_of_inv O₁ (O₂ x) (fun s => ¬ U s) hpers
-    (fun s d hs => hno x s d (hnu s d hs)) A s hs
-
-/-- **Eager sampling of a value used at most once.** The lazy oracle `O₁` draws a value of `ν`
-at the step that uses it (`use`), and the oracle `O₂ x` reads the pre-sampled value `x` there
-and agrees with `O₁` elsewhere. When the use happens only from states where the value is
-unused (`U`), makes it used, and a used value stays used, a run of `O₁` from an unused state is
-the run of `O₂ x` for `x` drawn from `ν` first. -/
-theorem run_eager (ν : PMF X) (O₁ : σ → D → PMF (R × σ)) (O₂ : X → σ → D → PMF (R × σ))
-    (U : σ → Prop) (use : σ → D → Prop) (hno : ∀ x s d, ¬ use s d → O₂ x s d = O₁ s d)
-    (huse : ∀ s d, U s → use s d → O₁ s d = ν.bind fun x => O₂ x s d)
-    (hnext : ∀ x s d, U s → use s d → ∀ y ∈ (O₂ x s d).support, ¬ U y.2)
-    (hpers : ∀ s d, ¬ U s → ∀ y ∈ (O₁ s d).support, ¬ U y.2)
-    (hnu : ∀ s d, ¬ U s → ¬ use s d) (A : OracleAdv D R α) (s : σ) (hs : U s) :
-    OracleAdv.run O₁ A s = ν.bind fun x => OracleAdv.run (O₂ x) A s :=
-  OracleAdv.run_eq_bind_run_of_trigger ν O₁ O₂ U use (fun _ s => ¬ U s) huse
-    (fun x s d _ hu => hno x s d hu) (fun _ _ _ _ y _ => (em (U y.2)).imp id fun h _ => h)
-    hnext (fun _ => hpers) (fun x s d hs => hno x s d (hnu s d hs)) A s hs
-
-/-- `run_eager` for flagged oracles whose bad event reads the reached state. -/
-theorem run_eager_flag (ν : PMF X) (O₁ : σ → D → PMF (R × σ)) (O₂ : X → σ → D → PMF (R × σ))
-    (bad : σ → Prop) [DecidablePred bad]
-    (U : σ → Prop) (use : σ → D → Prop) (hno : ∀ x s d, ¬ use s d → O₂ x s d = O₁ s d)
-    (huse : ∀ s d, U s → use s d → O₁ s d = ν.bind fun x => O₂ x s d)
-    (hnext : ∀ x s d, U s → use s d → ∀ y ∈ (O₂ x s d).support, ¬ U y.2)
-    (hpers : ∀ s d, ¬ U s → ∀ y ∈ (O₁ s d).support, ¬ U y.2)
-    (hnu : ∀ s d, ¬ U s → ¬ use s d) (A : OracleAdv D R α) (s : σ) (hs : U s) :
-    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ y => bad y.2) O₁) A (s, false)).toOuterMeasure
-        {y | y.2.2 = true} =
-      ∑' x, ν x * (OracleAdv.run (OracleAdv.flagWhen (fun _ _ y => bad y.2) (O₂ x)) A
-        (s, false)).toOuterMeasure {y | y.2.2 = true} := by
-  rw [run_eager ν _ (fun x => OracleAdv.flagWhen (fun _ _ y => bad y.2) (O₂ x))
-    (fun t => U t.1) (fun t d => use t.1 d) _ _ _ _ _ A (s, false) hs,
-    PMF.toOuterMeasure_bind_apply]
-  · intro x t d h
-    simp only [OracleAdv.flagWhen, hno x t.1 d h]
-  · intro t d ht h
-    simp only [OracleAdv.flagWhen, huse t.1 d ht h, PMF.map_bind]
-  · intro x t d ht h y hy
-    simp only [OracleAdv.flagWhen, PMF.support_map, Set.mem_image] at hy
-    obtain ⟨z, hz, rfl⟩ := hy
-    exact hnext x t.1 d ht h z hz
-  · intro t d ht y hy
-    simp only [OracleAdv.flagWhen, PMF.support_map, Set.mem_image] at hy
-    obtain ⟨z, hz, rfl⟩ := hy
-    exact hpers t.1 d ht z hz
-  · exact fun t d ht => hnu t.1 d ht
-
-end Eager
 
 /-! ## Bad flags under a coupling up to a second bad event -/
 
@@ -829,7 +767,7 @@ theorem flag_w_eq_gw1 (E : WSt S W K PK SK SS C → Prop)
         (wInit, false)).toOuterMeasure {y | y.2.2 = true} =
       ∑' kp, P.keygen kp * (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => E x.2)
         (gw1O P G g kp)) B (wInit, false)).toOuterMeasure {y | y.2.2 = true} := by
-  refine run_eager_flag P.keygen (wO P G) (gw1O P G g) E
+  refine OracleAdv.run_eager_flag P.keygen (wO P G) (gw1O P G g) E
     (fun t => t.1.1.1.x.st.recs (gR g) = none) (fun t e => isCreate g t.1.1 e = true)
     ?_ ?_ ?_ ?_ ?_ B wInit rfl
   · intro kp t e h
@@ -871,7 +809,7 @@ theorem flag_gw1_eq_gw [DecidableEq PK] (E : WSt S W K PK SK SS C → Prop) (kp 
         (wInit, false)).toOuterMeasure {y | y.2.2 = true} =
       ∑' kc, P.encaps kp.1 kc * (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => E x.2)
         (gwO P G g kp kc)) B (wInit, false)).toOuterMeasure {y | y.2.2 = true} := by
-  refine run_eager_flag (P.encaps kp.1) (gw1O P G g kp) (gwO P G g kp) E
+  refine OracleAdv.run_eager_flag (P.encaps kp.1) (gw1O P G g kp) (gwO P G g kp) E
     (fun t => ∀ ri, t.1.1.1.x.st.recs (gI g) = some ri → ri.key = none)
     (fun t e => isEnc g kp.1 t.1.1 e = true) ?_ ?_ ?_ ?_ ?_ B wInit (fun _ h => by cases h)
   · intro kc t e h
