@@ -100,6 +100,7 @@ public import CatCryptCore.Complexity.D.TimeAdm
 public import CatCryptCore.Complexity.D.Reflect
 public import CatCryptCore.Complexity.D.Asymptotic
 public import CatCryptCore.Complexity.HandlerCost
+public import CatCryptCore.Complexity.TimeBoundCharge
 public import CatCryptCore.Complexity.D.Link
 public import CatCryptCore.Complexity.D.Translate
 public import CatCryptCore.Complexity.D.TranslateDt
