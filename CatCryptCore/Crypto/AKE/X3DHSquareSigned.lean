@@ -487,18 +487,30 @@ noncomputable def forgeryAt (A : SigAKEAlg S W VK SK Sig) (p : PartyId) (pk : VK
     else none
   | _ => none
 
+/-- **A simulation that stops at the first output.** The reduction runs the oracle adversary `B`
+from the state `t`, answering a query `e` by the oracle tree `step t e`, which returns the answer
+and the next state; when `stop t e` is an output `f`, it stops with `f` after the answer is
+computed, and when `B` returns, it runs `fin`. The state is a parameter of the reduction, so that
+its costed form is derived for every state type. -/
+noncomputable def stopRed {σ E A D R Out : Type} (step : σ → E → OracleAdv D R (A × σ))
+    (stop : σ → E → Option Out) (fin : OracleAdv D R Out) :
+    OracleAdv E A Bool → σ → OracleAdv D R Out
+  | .ret _, _ => fin
+  | .rand μ k, t => .rand μ fun b => stopRed step stop fin (k b) t
+  | .query e k, t => (step t e).bind fun x =>
+      match stop t e with
+      | some f => .ret f
+      | none => stopRed step stop fin (k x.1) x.2
+
 /-- **The loop of the forger** of `p` with the challenge key `pk`: it runs the oracle adversary
 `B` against the simulated filtered world and stops at the first forgery; without a forgery it
-asks the signing oracle at `m₀` and outputs the answer. -/
+asks the signing oracle at `m₀` and outputs the answer. It is `stopRed` at the step `forgeStep`,
+the forgery `forgeryAt` and the final signing query at `m₀`. -/
 noncomputable def forgeLoop (A : SigAKEAlg S W VK SK Sig) (p : PartyId) (pk : VK) (m₀ : W) :
     OracleAdv (SEv W Sig) (SOut S W K VK Sig) Bool → LSt W VK SK × RSt S W K →
-      OracleAdv W Sig (W × Sig)
-  | .ret _, _ => .query m₀ fun σ => .ret (m₀, σ)
-  | .rand μ k, t => .rand μ fun b => forgeLoop A p pk m₀ (k b) t
-  | .query e k, t => (forgeStep A p pk t e).bind fun x =>
-      match forgeryAt A p pk t.1 e with
-      | some f => .ret f
-      | none => forgeLoop A p pk m₀ (k x.1) x.2
+      OracleAdv W Sig (W × Sig) :=
+  stopRed (forgeStep A p pk) (fun t e => forgeryAt A p pk t.1 e)
+    (.query m₀ fun σ => .ret (m₀, σ))
 
 /-- The initial state of the simulated filtered world. -/
 def fInit : LSt W VK SK × RSt S W K := (LSt.init, rInit)
@@ -1508,13 +1520,15 @@ theorem flag_le_forge (A : SigAKEAlg S W VK SK Sig) (p : PartyId) (pk : VK) (sk 
     rw [OracleAdv.run_ret, PMF.toOuterMeasure_pure_apply]
     simp
   | rand μ k ih =>
-    rw [OracleAdv.run_rand, forgeLoop, OracleAdv.run_rand, PMF.toOuterMeasure_bind_apply,
+    rw [OracleAdv.run_rand, forgeLoop, stopRed, ← forgeLoop, OracleAdv.run_rand,
+      PMF.toOuterMeasure_bind_apply,
       PMF.toOuterMeasure_bind_apply]
     exact ENNReal.tsum_le_tsum fun b => mul_le_mul_right (ih b t L hk hI hL) _
   | query e k ih =>
     have hI' : Inv A (t.1.modKey p (some (pk, sk)), t.2) := hI
     have hk' : (t.1.modKey p (some (pk, sk))).keys p = some (pk, sk) := by simp [LSt.modKey]
-    rw [OracleAdv.run_query, forgeLoop, OracleAdv.run_bind, run_forgeStep A p pk sk t e L hk,
+    rw [OracleAdv.run_query, forgeLoop, stopRed, ← forgeLoop, OracleAdv.run_bind,
+      run_forgeStep A p pk sk t e L hk,
       PMF.bind_map]
     rcases hf : forgeryAt A p pk t.1 e with _ | f
     · simp only [OracleAdv.flagWhen, PMF.bind_map]
