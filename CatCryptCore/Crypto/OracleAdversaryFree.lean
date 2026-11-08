@@ -9,7 +9,7 @@ public import CatCryptCore.Crypto.OracleAdversaryTimed
 public import CatCryptCore.Crypto.OracleForkingLemma
 public import PolyFun.PFunctor.Free.WP.Charge
 public import CatCryptCore.ForMathlib.PFunctorChargeUnder
-public import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
 public import CatCryptCore.Tactics.TimeFoldRegistry
 
 /-!
