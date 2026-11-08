@@ -709,6 +709,7 @@ public import CatCryptCore.Container.DNRel
 public import CatCryptCore.Container.PolyRel
 public import CatCryptCore.Container.RGraphCwF
 public import CatCryptCore.Container.PolyRGraph
+public import CatCryptCore.Container.RGraphUniverse
 public import CatCryptCore.Container.DNLogic
 public import CatCryptCore.Crypto.Party.ProgECost
 public import CatCryptCore.Crypto.Party.ViewRelCode
