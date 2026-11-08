@@ -5,8 +5,10 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.DeriveReduction
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Tests for erasure along computed companions under a node (rule (h))

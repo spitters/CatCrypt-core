@@ -7,6 +7,8 @@ module
 
 public import CatCryptCore.Tactics.StdCosts
 public import CatCryptCore.Core.SPTree
+import CatCryptCore.Tactics.DeriveCost
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # Tests for the option `derive_timed.priceProps`

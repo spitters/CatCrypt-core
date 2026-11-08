@@ -6,7 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Examples.CyclicGroupDDH
-public import CatCryptCore.Tactics.DeriveTimed
+import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
 
 /-!
 # Cost of the exponentiation of a group element

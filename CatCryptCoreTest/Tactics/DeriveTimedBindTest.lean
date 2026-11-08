@@ -5,8 +5,10 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.DeriveTimed
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
 
 /-!
 # Tests for the bind rules of `derive_timed`

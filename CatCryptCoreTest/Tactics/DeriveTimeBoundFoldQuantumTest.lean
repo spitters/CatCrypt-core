@@ -5,9 +5,12 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 public import CatCryptCore.Quantum.QTreeKindFree
 public import CatCryptCore.Quantum.QROM.QAdvTreeKindFree
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
 
 /-!
 # Tests of the fold rule of `derive_time_bound` on the quantum kinds

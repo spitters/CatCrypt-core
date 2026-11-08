@@ -6,8 +6,11 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.CryptoWord
-public import CatCryptCore.Tactics.AutoTime
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Tests of `time_bound` on values bound before a costed bind

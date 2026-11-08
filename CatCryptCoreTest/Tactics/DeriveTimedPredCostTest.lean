@@ -7,6 +7,8 @@ module
 
 public import CatCryptCore.Tactics.StdCosts
 public import CatCryptCore.Core.SPTree
+import CatCryptCore.Tactics.DeriveCost
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # Tests for decidable predicate companions and unmirrored closures in data

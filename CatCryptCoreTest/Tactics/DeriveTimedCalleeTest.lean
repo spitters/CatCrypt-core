@@ -5,9 +5,11 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.DeriveTimed
+import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
 public import CatCryptCore.Crypto.SPCompPMF
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
 
 /-!
 # Tests for `derive_timed`: extra arguments of a local function and a `match` under a binder

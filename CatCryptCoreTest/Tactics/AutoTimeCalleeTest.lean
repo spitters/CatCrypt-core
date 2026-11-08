@@ -5,8 +5,10 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
 public import CatCryptCore.Crypto.KEM.FOTransformTimed
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Tests of `time_bound` on callee time theorems and of `allret_bound`

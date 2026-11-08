@@ -6,7 +6,9 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QROM.QAdvTreeKind
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Test of a tree-valued field of a binder of a kind other than oracle trees

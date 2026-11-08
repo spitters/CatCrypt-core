@@ -5,8 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.DeriveTimed
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
+public import CatCryptCore.Tactics.AutoTime.Basic
 
 /-!
 # Tests for the rule of `derive_timed` for registered callees generic in their result type

@@ -5,8 +5,10 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Tactics.StdCosts
+import CatCryptCore.Tactics.DeriveCost
 
 /-!
 # Tests for functions in values of computed types and tabulated closures

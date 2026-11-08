@@ -6,7 +6,9 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QROM.AdversariesTimed
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Time certificates of the module-LWE reductions of `QMLWEAux`

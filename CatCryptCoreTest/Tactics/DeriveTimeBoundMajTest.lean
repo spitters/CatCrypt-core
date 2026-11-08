@@ -6,8 +6,13 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Signatures.OracleProgUseBound
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 public import CatCryptCore.Core.CostMajorant
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.ForMathlib.ListLength
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Tests of time bounds in majorants of cost companions

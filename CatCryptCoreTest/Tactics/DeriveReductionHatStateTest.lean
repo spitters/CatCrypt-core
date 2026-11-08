@@ -5,8 +5,10 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 public import CatCryptCore.Crypto.UCTransparentMultiTimed
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Tests of `derive_reduction` on a hybrid machine with a costed state

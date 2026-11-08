@@ -6,6 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Tactics.StdCosts
+import CatCryptCore.Tactics.DeriveCost
+import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # Tests for instance methods as cost companions

@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Tactics.DeriveTimedStructure
 public import CatCryptCore.Tactics.StdCosts
 public import CatCryptCore.Complexity.HandlerCost
+import CatCryptCore.Tactics.DeriveCost
 
 /-!
 # Tests of the registered costs of `Finset.toList` and `Fin.foldl`, and of

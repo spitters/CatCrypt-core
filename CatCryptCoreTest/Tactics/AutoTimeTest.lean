@@ -5,7 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
 import all CatCryptCore.Crypto.Anon.Signalling
 
 /-!

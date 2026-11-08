@@ -5,8 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.DeriveTimed
-public import CatCryptCore.Tactics.AutoTime
+import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
+public import CatCryptCore.Tactics.AutoTime.Basic
 public import CatCryptCore.Crypto.UC
 import CatCryptCore.Core.SPTree
 

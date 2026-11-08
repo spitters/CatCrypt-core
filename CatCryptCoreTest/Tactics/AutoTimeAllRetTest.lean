@@ -5,11 +5,14 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.AutoTime
-public import CatCryptCore.Tactics.DeriveTimed
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
+import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimed.Basic
 public import CatCryptCore.Crypto.UCConcrete
-public import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
 import CatCryptCore.Core.SPTree
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Tests of `time_bound` on continuations bounded under a leaf invariant

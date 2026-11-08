@@ -5,9 +5,16 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 public import CatCryptCore.Crypto.UCTransparentMultiTimed
 public import CatCryptCore.Crypto.AKE.ChannelSquare
+public import CatCryptCore.Crypto.OracleAdversaryFree
+public import CatCryptCore.Core.SPTreeTimedFree
+public import CatCryptCore.Tactics.AutoTime.Basic
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Tests of `derive_timed` and `derive_reduction` on optional and sampling shapes

@@ -5,9 +5,17 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.AutoTime
-public import CatCryptCore.Tactics.DeriveTimeBound
-public import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.AutoTime.Basic
+import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.DeriveTimeBound.Basic
+import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.DeriveReduction.Basic
+public import CatCryptCore.Crypto.OracleAdversaryFree
+public import CatCryptCore.Core.SPTreeTimedFree
+public import CatCryptCore.Crypto.OracleAdversaryPotential
+public import CatCryptCore.ForMathlib.ListLength
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Tests of `time_bound` on a nested match in a step cost
