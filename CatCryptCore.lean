@@ -342,9 +342,11 @@ public import CatCryptCore.Crypto.AKE.X3DH.ExtractedCorrespondence
 public import CatCryptCore.Crypto.AKE.X3DH.PassiveG25519
 public import CatCryptCore.Crypto.AKE.X3DH.SurfaceDeps
 public import CatCryptCore.Crypto.AKE.X3DH.SquareCorrespondence
+public import CatCryptCore.Crypto.AKE.X3DH.ExtractedGame
 public import CatCryptCore.Crypto.AKE.PQXDH.SquareCorrespondence
 public import CatCryptCore.Crypto.AKE.PQXDH.Extraction.Pqxdh_haxpipe
 public import CatCryptCore.Crypto.AKE.PQXDH.ExtractedCorrespondence
+public import CatCryptCore.Crypto.AKE.PQXDH.ExtractedGame
 public import CatCryptCore.Crypto.AKE.PQXDH.PassiveG25519
 public import CatCryptCore.Crypto.AKE.PQXDH.SurfaceDeps
 public import CatCryptCore.Crypto.Messaging.FSPRG
