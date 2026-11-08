@@ -78,6 +78,21 @@ the probability of a forgery at the epoch `k` in the hybrid `k + 1`. The truncat
 the epoch `k` in its window on; it has the same output (`smAuthTruncGame_eq`), since after
 such a corruption no delivery into the epoch `k` is answered.
 
+## The CKA hop of the forgery event
+
+Over the ACD construction, `smAuthHopGame C R G D ΔFS ΔPCS k root A` is the truncated forgery
+game at the epoch `k` on the states of the secure-messaging game, with the root step `root` at
+the opening of the epoch `k` (`smOracleOfAt`) and the challenge and corruption gates of the
+challenge epoch `t` of `A`; the corruption that stops the game is answered by a rejection. At
+the real root step it is the truncated game over `acdAuthSM` (`acdAuthSM_truncGame_eq_hop`).
+The reduction `smAuthCKARed R G D ΔFS ΔPCS k A` sets the CKA challenge at the epoch `k`, draws
+the challenge epoch of `A` and a root key, and runs `A` against the simulator `smAuthCKAImpl`,
+which stops at the first answered corruption with the epoch `k` in its window and outputs the
+flag of a forgery. Its CKA games are the truncated games with the root step `ckaHopRoot R
+idealK` (`smAuthHopGame_eq_cka`), so (`acdAuthSM_truncGame_le_cka`)
+
+  `Pr[smAuthTruncGame k A] ≤ Adv_CKA(smAuthCKARed k A) + Pr[smAuthHopGame k (unifKeyRoot R) A]`.
+
 ## FS-AEAD integrity
 
 `fsaead_int_game G D ideal A` is the integrity game of a single epoch of the chain generator `G`
@@ -95,6 +110,11 @@ from the log in the ideal game, refused after the corruption of the sender.
 * `smAuthBadAt`, `smAuthFlagOracle`, `smAuthFlagRun`, `smAuthBadGame`, `smAuthTruncOracle`,
   `smAuthTruncGame` — the forgery event at an epoch and its truncated game
 * `chainKey`, `acdAuthSM` — the ACD construction with the decryption of the receiving chain
+* `smOracleOfAt`, `acdRecvDec`, `acdDeliverAns`, `acdDeliverBad`, `smAuthCut`,
+  `smAuthHopStep`, `smAuthHopOracle`, `smAuthHopGame` — the truncated forgery game with a root
+  step at the epoch `k`
+* `smCKAImplAt`, `smAuthCKAFwd`, `smAuthCKAImpl`, `smAuthCKATree`, `smAuthCKARed` — the CKA
+  reduction of the forgery event
 * `FSIntQuery`, `FSIntAns`, `FSIntSt`, `fsIntOracle`, `fsaead_int_game`,
   `FSAEAD_Int_Advantage` — the FS-AEAD integrity game
 
@@ -110,6 +130,10 @@ from the log in the ideal game, refused after the corruption of the sender.
   which both keep an observation
 * `advantage_bind_liftPMF_le_flag` — identical until a flag, through a shared prefix
 * `SMAuthScheme.epochIntAdvantage_le_bad`, `smAuthTruncGame_eq` — the bounds above
+* `OracleAdv.run_map_eq_of_cut` — answers replaced on the transitions into a frozen stop
+* `smCKAImplAt_step`, `smAuthHop_step`, `smAuthHop_acd_step` — the simulations of the hop
+* `acdAuthSM_truncGame_eq_hop`, `smAuthHopGame_eq_cka`, `acdAuthSM_truncGame_le_cka` — the
+  CKA hop of the forgery event
 -/
 
 set_option autoImplicit false
@@ -175,6 +199,36 @@ theorem run_map_eq_of_agree_until_stop {β : Type} (O O' : S → D → PMF (R ×
         run_map_eq_pure_of_frozen O' Stop g hO' _ s hs]
     · rw [run_query, run_query, PMF.map_bind, PMF.map_bind, hagree s d hs]
       exact congrArg _ (funext fun y => ih y.1 y.2)
+
+/-- **Answers replaced at the stop.** Let every call of `O` from a state of `Stop` lead to
+states of `Stop` with the same value of `g`. The oracle that answers `r₀` on every transition
+into `Stop` and keeps the transitions of `O` otherwise gives the same distribution of the final
+value of `g` as `O`. -/
+theorem run_map_eq_of_cut {β : Type} (O : S → D → PMF (R × S)) (Stop : S → Prop)
+    [DecidablePred Stop] (g : S → β) (r₀ : R)
+    (hO : ∀ s d, Stop s → ∀ x ∈ (O s d).support, Stop x.2 ∧ g x.2 = g s)
+    (A : OracleAdv D R α) (s : S) :
+    (run (fun s d => (O s d).map fun x => if Stop x.2 then (r₀, x.2) else x) A s).map
+        (fun x => g x.2) = (run O A s).map (fun x => g x.2) := by
+  have hO' : ∀ s d, Stop s → ∀ x ∈ ((O s d).map fun x =>
+      if Stop x.2 then (r₀, x.2) else x).support, Stop x.2 ∧ g x.2 = g s := by
+    intro s d hs x hx
+    rw [PMF.support_map] at hx
+    obtain ⟨y, hy, rfl⟩ := hx
+    have := hO s d hs y hy
+    grind
+  induction A generalizing s with
+  | ret a => rfl
+  | rand p k ih => simp only [run_rand, PMF.map_bind, fun b => ih b s]
+  | query d k ih =>
+    rw [run_query, run_query, PMF.map_bind, PMF.map_bind, PMF.bind_map]
+    refine PMF.bind_congr_support _ _ _ fun y _ => ?_
+    by_cases hy2 : Stop y.2
+    · simp only [Function.comp_apply, hy2, ite_true]
+      rw [run_map_eq_pure_of_frozen _ Stop g hO' _ _ hy2,
+        run_map_eq_pure_of_frozen O Stop g hO _ _ hy2]
+    · simp only [Function.comp_apply, hy2, ite_false]
+      exact ih y.1 y.2
 
 end CatCrypt.Crypto.OracleAdv
 
@@ -809,6 +863,498 @@ theorem acdAuthSM_authAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
   exact add_le_add_right h _
 
 end ACD
+
+/-! ## The CKA hop of the forgery event at the epoch `k` -/
+
+section AuthCKA
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct] [DecidableEq W] [DecidableEq Ct]
+
+/-- The oracle of the secure-messaging game with the root step `root` at the opening of the
+epoch `k` and the challenge and corruption gates of the challenge epoch `t`. -/
+noncomputable def smOracleOfAt (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t k : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa))
+    (s : SMSt Sc Msg RK Sa) : SMQuery W → PMF (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa)
+  | .ratchet p => smOracleOf C R G D ΔFS ΔPCS k ideal root s (.ratchet p)
+  | .recv p => smOracleOf C R G D ΔFS ΔPCS t ideal root s (.recv p)
+  | .send p m => smOracleOf C R G D ΔFS ΔPCS t ideal root s (.send p m)
+  | .chall p m => smOracleOf C R G D ΔFS ΔPCS t ideal root s (.chall p m)
+  | .corrupt p => smOracleOf C R G D ΔFS ΔPCS t ideal root s (.corrupt p)
+
+/-- The decryption of the ACD construction from the local state `l`: the ciphertext `c` with
+associated data `ad` at the position `j` under the key at the position `j` of the receiving
+chain of `p`. -/
+def acdRecvDec (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (l : SMLoc RK Sa) (p : CKAParty)
+    (j : ℕ) (ad : W) (c : Ct) : Option W :=
+  (l.rcv p).bind fun sa => D.decrypt (chainKey G sa j) c ad
+
+/-- The answer of the hybrid `k + 1` to a delivery to `p` at the epoch counters `sh`: from the
+log in the epochs up to `k`, by `acdRecvDec` in the later ones, when the delivery is
+answered. -/
+def acdDeliverAns (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS k : ℕ)
+    (sh : CKAGameSt Unit Unit) (l : SMLoc RK Sa) (x : SMAuthAux W Ct) (p : CKAParty) (j : ℕ)
+    (ad : W) (c : Ct) : Option W :=
+  if decide (sh.t p < k + 1) then x.logAns ΔFS ΔPCS sh p j ad c
+  else if x.canDeliver ΔFS ΔPCS sh p then acdRecvDec G D l p j ad c else none
+
+/-- A forgery at the epoch `k` of the ACD construction: an answered delivery into the epoch `k`
+whose decryption by `acdRecvDec` differs from the decryption from the log. -/
+def acdDeliverBad (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS k : ℕ)
+    (sh : CKAGameSt Unit Unit) (l : SMLoc RK Sa) (x : SMAuthAux W Ct) (p : CKAParty) (j : ℕ)
+    (ad : W) (c : Ct) : Bool :=
+  decide (sh.t p = k) && x.canDeliver ΔFS ΔPCS sh p &&
+    (acdRecvDec G D l p j ad c != x.logDec (sh.t p) j ad c)
+
+/-- The rejection of every transition into a state with the epoch `k` outside the safe
+epochs. -/
+def smAuthCut {Pub Leak S' : Type} (ΔFS ΔPCS k : ℕ)
+    (x : SMAuthAns Pub Ct Leak W × ((S' × SMAuthAux W Ct) × Bool)) :
+    SMAuthAns Pub Ct Leak W × ((S' × SMAuthAux W Ct) × Bool) :=
+  if x.2.1.2.safe ΔFS ΔPCS k = false then (.dec none, x.2) else x
+
+/-- The flagged oracle of the hybrid `k + 1` over the ACD construction, on the states of the
+secure-messaging game with the root step `root` at the opening of the epoch `k`. -/
+noncomputable def smAuthHopStep (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t k : ℕ) (root : RK → Key → PMF (RK × Sa))
+    (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) :
+    SMAuthQuery W Ct →
+      PMF (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W × ((SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool))
+  | .sm q => (smOracleOfAt C R G D ΔFS ΔPCS t k false root s.1.1 q).map fun y =>
+      (.sm y.1.toScheme, ((y.2, s.1.2.upd (ckaShadow s.1.1.ck) q y.1.toScheme), s.2))
+  | .deliver p j ad c => PMF.pure
+      (.dec (acdDeliverAns G D ΔFS ΔPCS k (ckaShadow s.1.1.ck) s.1.1.loc s.1.2 p j ad c),
+        (s.1, s.2 || acdDeliverBad G D ΔFS ΔPCS k (ckaShadow s.1.1.ck) s.1.1.loc s.1.2 p j ad c))
+
+/-- **The truncated hybrid with the root step `root` at the epoch `k`**: `smAuthHopStep` until
+the first answered corruption with the epoch `k` in its window, which is answered by a
+rejection, and a rejection of every later query. -/
+noncomputable def smAuthHopOracle (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t k : ℕ) (root : RK → Key → PMF (RK × Sa))
+    (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) (d : SMAuthQuery W Ct) :
+    PMF (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W × ((SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool)) :=
+  (if s.1.2.safe ΔFS ΔPCS k then smAuthHopStep C R G D ΔFS ΔPCS t k root s d
+    else PMF.pure (.dec none, s)).map (smAuthCut ΔFS ΔPCS k)
+
+variable [Fintype RK] [Nonempty RK]
+
+/-- **The forgery game at the epoch `k` with the root step `root` at the epoch `k`**: the run
+of `A` against `smAuthHopOracle` from the initial state of the secure-messaging game, with the
+flag of a forgery as output. At the real root step it is the truncated forgery game over
+`acdAuthSM` (`acdAuthSM_truncGame_eq_hop`); at `unifKeyRoot R` the root step of the epoch `k`
+takes a uniform key in place of the CKA key. -/
+noncomputable def smAuthHopGame (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS k : ℕ) (root : RK → Key → PMF (RK × Sa))
+    (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) : SPComp Bool :=
+  SPComp.bind (liftPMF A.tStar) fun t => SPComp.bind C.init fun i =>
+    SPComp.bind (SPComp.sample RK) fun rk =>
+      liftPMF ((OracleAdv.run (smAuthHopOracle C R G D ΔFS ΔPCS t k root) (A.play t i.1)
+        ((smInit i rk, SMAuthAux.init), false)).map fun x => x.2.2)
+
+/-- The simulator of the CKA reduction with the CKA challenge at the opening of the epoch `k`
+and the challenge and corruption gates of the challenge epoch `t`. -/
+noncomputable def smCKAImplAt (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (ΔFS ΔPCS t k : ℕ) (ideal : Bool)
+    (σ : SMLoc RK Sa × CKAGameSt Unit Unit) (q : SMQuery W) :
+    OracleAdv CKAQuery (CKAAns Sc Msg Key Rand)
+      (SMAns Sc Msg RK Sa Ct × (SMLoc RK Sa × CKAGameSt Unit Unit)) :=
+  match q with
+  | .ratchet p => smCKAImplOf R G D k ideal σ (.ratchet p)
+  | .recv p => smCKAImplOf R G D k ideal σ (.recv p)
+  | .send p m => smCKAImplOf R G D k ideal σ (.send p m)
+  | .chall p m => smCKAImplOf R G D t ideal σ (.chall p m)
+  | .corrupt p => if ckaAllowCorr ΔFS ΔPCS t σ.2 p then smCKAImplOf R G D k ideal σ (.corrupt p)
+      else .ret (.none, σ)
+
+/-- A query of the corruption game forwarded to `smCKAImplAt` and logged. -/
+noncomputable def smAuthCKAFwd (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (ΔFS ΔPCS t k : ℕ)
+    (σ : ((SMLoc RK Sa × CKAGameSt Unit Unit) × SMAuthAux W Ct) × Bool) (q : SMQuery W) :
+    OracleAdv CKAQuery (CKAAns Sc Msg Key Rand)
+      (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W ×
+        (((SMLoc RK Sa × CKAGameSt Unit Unit) × SMAuthAux W Ct) × Bool)) :=
+  (smCKAImplAt R G D ΔFS ΔPCS t k false σ.1.1 q).bind fun r =>
+    .ret (.sm r.1.toScheme, ((r.2, σ.1.2.upd σ.1.1.2 q r.1.toScheme), σ.2))
+
+/-- The simulator of the CKA reduction of the forgery event at the epoch `k`. Its state is the
+part `SMLoc` of the secure-messaging state, the epoch counters, the bookkeeping of the
+authenticity game and the flag of a forgery. A corruption with the epoch `k` in its window
+stops the simulation. -/
+noncomputable def smAuthCKAImpl (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (ΔFS ΔPCS t k : ℕ)
+    (σ : ((SMLoc RK Sa × CKAGameSt Unit Unit) × SMAuthAux W Ct) × Bool)
+    (d : SMAuthQuery W Ct) :
+    OracleAdv CKAQuery (CKAAns Sc Msg Key Rand)
+      (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W ×
+        (((SMLoc RK Sa × CKAGameSt Unit Unit) × SMAuthAux W Ct) × Bool)) :=
+  if σ.1.2.safe ΔFS ΔPCS k then
+    match d with
+    | .sm (.ratchet p) => smAuthCKAFwd R G D ΔFS ΔPCS t k σ (.ratchet p)
+    | .sm (.recv p) => smAuthCKAFwd R G D ΔFS ΔPCS t k σ (.recv p)
+    | .sm (.send p m) => smAuthCKAFwd R G D ΔFS ΔPCS t k σ (.send p m)
+    | .sm (.chall p m) => smAuthCKAFwd R G D ΔFS ΔPCS t k σ (.chall p m)
+    | .sm (.corrupt p) =>
+      if ckaAllowCorr ΔFS ΔPCS t σ.1.1.2 p && !ckaAllowCorr ΔFS ΔPCS k σ.1.1.2 p then
+        .ret (.dec none, ((σ.1.1, { σ.1.2 with corrs := (p, σ.1.1.2) :: σ.1.2.corrs }), σ.2))
+      else smAuthCKAFwd R G D ΔFS ΔPCS t k σ (.corrupt p)
+    | .deliver p j ad c =>
+      .ret (.dec (acdDeliverAns G D ΔFS ΔPCS k σ.1.1.2 σ.1.1.1 σ.1.2 p j ad c),
+        (σ.1, σ.2 || acdDeliverBad G D ΔFS ΔPCS k σ.1.1.2 σ.1.1.1 σ.1.2 p j ad c))
+  else .ret (.dec none, σ)
+
+/-- The CKA reduction of the forgery event at the epoch `k` as an oracle tree: on the CKA
+challenge epoch `k` and the public value `pub`, it draws the challenge epoch `t` of the
+authenticity adversary from `tStar` and a uniform root key, runs the adversary against the
+simulator `smAuthCKAImpl` and outputs the flag of a forgery. -/
+noncomputable def smAuthCKATree (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
+    (play : ℕ → Msg → OracleAdv (SMAuthQuery W Ct) (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W) Bool)
+    (k : ℕ) (pub : Msg) : OracleAdv CKAQuery (CKAAns Sc Msg Key Rand) Bool :=
+  .rand tStar fun t => .rand (PMF.uniformFintype RK) fun rk =>
+    (OracleAdv.simulate (smAuthCKAImpl R G D ΔFS ΔPCS t k) (play t pub)
+      (((SMLoc.init rk, CKAGameSt.init () () ()), SMAuthAux.init), false)).bind fun r =>
+        .ret r.2.2
+
+/-- **The CKA reduction of the forgery event at the epoch `k`**: the CKA adversary with the
+challenge epoch `k` that plays the tree `smAuthCKATree`. -/
+noncomputable def smAuthCKARed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (ΔFS ΔPCS k : ℕ) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    CKACorruptAdv Sc Msg Key Rand Bool where
+  tStar := PMF.pure k
+  play := smAuthCKATree R G D ΔFS ΔPCS A.tStar A.play
+
+/-- The state of the CKA reduction and of the CKA game that a state of the truncated hybrid
+corresponds to. -/
+def smAuthCKAEmb (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) :
+    (((SMLoc RK Sa × CKAGameSt Unit Unit) × SMAuthAux W Ct) × Bool) × CKAGameSt Sc Msg :=
+  ((((s.1.1.loc, ckaShadow s.1.1.ck), s.1.2), s.2), s.1.1.ck)
+
+omit [DecidableEq W] [DecidableEq Ct] [Fintype RK] [Nonempty RK] in
+/-- At the real root step, the root epoch of `smOracleOfAt` is immaterial. -/
+theorem smOracleOfAt_realRoot (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t k : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (q : SMQuery W) :
+    smOracleOfAt C R G D ΔFS ΔPCS t k ideal (realRoot R) s q =
+      smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R) s q := by
+  cases q <;> simp [smOracleOfAt, smOracleOf, realRoot]
+
+variable [Fintype Key] [Nonempty Key]
+
+omit [DecidableEq W] [DecidableEq Ct] [Fintype RK] [Nonempty RK] in
+/-- **The two-epoch CKA simulator is the two-epoch oracle**, at every query other than a
+corruption answered at the challenge epoch `t` with the epoch `k` in its window. -/
+theorem smCKAImplAt_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t k : ℕ) (ideal idealK : Bool) (s : SMSt Sc Msg RK Sa) (q : SMQuery W)
+    (hq : ∀ p, q = .corrupt p → ckaAllowCorr ΔFS ΔPCS t s.ck p = true →
+      ckaAllowCorr ΔFS ΔPCS k s.ck p = true) :
+    (smOracleOfAt C R G D ΔFS ΔPCS t k ideal (ckaHopRoot R idealK) s q).map
+        (Prod.map id smCKAEmb) =
+      OracleAdv.simOracle (smCKAImplAt R G D ΔFS ΔPCS t k ideal)
+        (ckaOracleP C ΔFS ΔPCS k idealK) (smCKAEmb s) q := by
+  cases q with
+  | ratchet p => exact smCKA_step C R G D ΔFS ΔPCS k ideal idealK s (.ratchet p)
+  | recv p => exact smCKA_step C R G D ΔFS ΔPCS k ideal idealK s (.recv p)
+  | send p m => exact smCKA_step C R G D ΔFS ΔPCS k ideal idealK s (.send p m)
+  | chall p m =>
+    simp only [smOracleOfAt, smOracleOf, OracleAdv.simOracle, smCKAEmb, smCKAImplAt,
+      smCKAImplOf, smCKAChallT]
+    cases h : s.loc.snd p
+    · simp [PMF.pure_map, smCKAEmb]
+    · by_cases hc : challOk s.loc t (s.ck.t p) p = true <;>
+        simp [hc, PMF.pure_map, PMF.map_bind, smCKAEmb]
+  | corrupt p =>
+    simp only [smOracleOfAt, smOracleOf, OracleAdv.simOracle, smCKAEmb, smCKAImplAt,
+      smCKAImplOf, smCKACorrT]
+    have hs : ∀ e, ckaAllowCorr ΔFS ΔPCS e (ckaShadow s.ck) p = ckaAllowCorr ΔFS ΔPCS e s.ck p :=
+      fun _ => rfl
+    simp only [hs]
+    by_cases h1 : ckaAllowCorr ΔFS ΔPCS t s.ck p = true
+    · have h2 := hq p rfl h1
+      simp [h1, h2, ckaOracleP, PMF.pure_map, smCKAEmb]
+    · simp [h1, PMF.pure_map, smCKAEmb]
+
+omit [SampleableType W] [SampleableType Ct] [Fintype Rand] [Nonempty Rand] [Fintype RK]
+  [Nonempty RK] [Fintype Key] [Nonempty Key] [DecidableEq W] [DecidableEq Ct] in
+/-- An epoch among the safe epochs stays among them after a query that is not an answered
+corruption with the epoch in its window. -/
+theorem SMAuthAux.safe_upd_of_true {Pub Leak : Type} (ΔFS ΔPCS k : ℕ) (x : SMAuthAux W Ct)
+    (sh : CKAGameSt Unit Unit) (q : SMQuery W) (a : SMSchemeAns Pub Ct Leak)
+    (h : x.safe ΔFS ΔPCS k = true)
+    (hq : ∀ p l, q = .corrupt p → a = .state l → ckaAllowCorr ΔFS ΔPCS k sh p = true) :
+    (x.upd sh q a).safe ΔFS ΔPCS k = true := by
+  cases q <;> cases a <;> simp_all [SMAuthAux.upd, SMAuthAux.record, SMAuthAux.safe]
+
+omit [Fintype RK] [Nonempty RK] in
+/-- A forwarded query of the truncated hybrid with the root step `ckaHopRoot R idealK` at the
+epoch `k`, from a state with the epoch `k` safe and other than a corruption with the epoch `k`
+in its window, is the forwarding simulator `smAuthCKAFwd` against the CKA oracle. -/
+theorem smAuthHop_fwd (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t k : ℕ) (idealK : Bool) (σ : SMSt Sc Msg RK Sa) (x : SMAuthAux W Ct) (b : Bool)
+    (q : SMQuery W) (hx : x.safe ΔFS ΔPCS k = true)
+    (hq : ∀ p, q = .corrupt p → ckaAllowCorr ΔFS ΔPCS t σ.ck p = true →
+      ckaAllowCorr ΔFS ΔPCS k σ.ck p = true) :
+    (smAuthHopOracle C R G D ΔFS ΔPCS t k (ckaHopRoot R idealK) ((σ, x), b) (.sm q)).map
+        (Prod.map id smAuthCKAEmb) =
+      OracleAdv.simOracle (smAuthCKAFwd R G D ΔFS ΔPCS t k) (ckaOracleP C ΔFS ΔPCS k idealK)
+        (smAuthCKAEmb ((σ, x), b)) q := by
+  have hsafe : ∀ y ∈ (smOracleOfAt C R G D ΔFS ΔPCS t k false (ckaHopRoot R idealK) σ q).support,
+      (x.upd (ckaShadow σ.ck) q y.1.toScheme).safe ΔFS ΔPCS k = true := by
+    intro y hy
+    refine SMAuthAux.safe_upd_of_true ΔFS ΔPCS k x _ q _ hx fun p l hqp hl => ?_
+    subst hqp
+    simp only [smOracleOfAt, smOracleOf, PMF.support_pure, Set.mem_singleton_iff] at hy
+    subst hy
+    refine hq p rfl ?_
+    by_contra h
+    simp [h, SMAns.toScheme] at hl
+  have hR : OracleAdv.simOracle (smAuthCKAFwd R G D ΔFS ΔPCS t k)
+      (ckaOracleP C ΔFS ΔPCS k idealK) (smAuthCKAEmb ((σ, x), b)) q =
+      (OracleAdv.simOracle (smCKAImplAt R G D ΔFS ΔPCS t k false)
+        (ckaOracleP C ΔFS ΔPCS k idealK) (smCKAEmb σ) q).map fun z =>
+          (SMAuthAns.sm z.1.toScheme,
+            (((z.2.1, x.upd (ckaShadow σ.ck) q z.1.toScheme), b), z.2.2)) := by
+    simp only [OracleAdv.simOracle, smAuthCKAFwd, smAuthCKAEmb, smCKAEmb, OracleAdv.run_bind,
+      OracleAdv.run_ret, PMF.map]
+    simp only [PMF.bind_bind, PMF.pure_bind, Function.comp_apply]
+  rw [hR, ← smCKAImplAt_step C R G D ΔFS ΔPCS t k false idealK σ q hq, PMF.map_comp,
+    smAuthHopOracle, ite_eq_left_of_eq_true _ _ (eq_true hx), smAuthHopStep, PMF.map_comp,
+    PMF.map_comp]
+  simp only [PMF.map]
+  refine PMF.bind_congr_support _ _ _ fun y hy => ?_
+  simp only [Function.comp_apply, smAuthCut, hsafe y hy, Bool.true_eq_false, ite_false]
+  rfl
+
+omit [Fintype RK] [Nonempty RK] in
+/-- **The CKA simulator of the forgery event is the truncated hybrid.** Each call of the
+truncated hybrid with the root step `ckaHopRoot R idealK` at the epoch `k`, mapped to the states
+of the reduction and of the CKA game, is the call of `smAuthCKAImpl` against the CKA oracle
+with the challenge epoch `k` and the challenge mode `idealK`. -/
+theorem smAuthHop_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t k : ℕ) (idealK : Bool) (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool)
+    (d : SMAuthQuery W Ct) :
+    (smAuthHopOracle C R G D ΔFS ΔPCS t k (ckaHopRoot R idealK) s d).map
+        (Prod.map id smAuthCKAEmb) =
+      OracleAdv.simOracle (smAuthCKAImpl R G D ΔFS ΔPCS t k) (ckaOracleP C ΔFS ΔPCS k idealK)
+        (smAuthCKAEmb s) d := by
+  obtain ⟨⟨σ, x⟩, b⟩ := s
+  by_cases hx : x.safe ΔFS ΔPCS k = true
+  · cases d with
+    | sm q =>
+      cases q with
+      | ratchet p =>
+        rw [smAuthHop_fwd C R G D ΔFS ΔPCS t k idealK σ x b _ hx (by simp)]
+        simp only [OracleAdv.simOracle, smAuthCKAImpl, smAuthCKAEmb, hx, ite_true]
+      | recv p =>
+        rw [smAuthHop_fwd C R G D ΔFS ΔPCS t k idealK σ x b _ hx (by simp)]
+        simp only [OracleAdv.simOracle, smAuthCKAImpl, smAuthCKAEmb, hx, ite_true]
+      | send p m =>
+        rw [smAuthHop_fwd C R G D ΔFS ΔPCS t k idealK σ x b _ hx (by simp)]
+        simp only [OracleAdv.simOracle, smAuthCKAImpl, smAuthCKAEmb, hx, ite_true]
+      | chall p m =>
+        rw [smAuthHop_fwd C R G D ΔFS ΔPCS t k idealK σ x b _ hx (by simp)]
+        simp only [OracleAdv.simOracle, smAuthCKAImpl, smAuthCKAEmb, hx, ite_true]
+      | corrupt p =>
+        have hsh : ∀ e, ckaAllowCorr ΔFS ΔPCS e (ckaShadow σ.ck) p =
+            ckaAllowCorr ΔFS ΔPCS e σ.ck p := fun _ => rfl
+        by_cases hs : ckaAllowCorr ΔFS ΔPCS t σ.ck p = true ∧
+            ckaAllowCorr ΔFS ΔPCS k σ.ck p = false
+        · have hx' : (x.corrs.all fun c => ckaAllowCorr ΔFS ΔPCS k c.2 c.1) = true := hx
+          simp [smAuthHopOracle, smAuthHopStep, smOracleOfAt, smOracleOf, smAuthCut,
+            smAuthCKAImpl, smAuthCKAEmb, OracleAdv.simOracle, hx', hs, hsh, SMAns.toScheme,
+            SMAuthAux.upd, SMAuthAux.safe, PMF.pure_map]
+        · rw [smAuthHop_fwd C R G D ΔFS ΔPCS t k idealK σ x b _ hx
+            (fun p' h h1 => by cases h; grind)]
+          simp only [not_and, Bool.not_eq_false] at hs
+          simp [OracleAdv.simOracle, smAuthCKAImpl, smAuthCKAEmb, hx, hsh]
+          grind
+    | deliver p j ad c =>
+      simp [smAuthHopOracle, smAuthHopStep, smAuthCut, smAuthCKAImpl, smAuthCKAEmb,
+        OracleAdv.simOracle, hx, PMF.pure_map]
+  · simp [smAuthHopOracle, smAuthCut, smAuthCKAImpl, smAuthCKAEmb, OracleAdv.simOracle, hx,
+      PMF.pure_map]
+
+/-- **The CKA hop of the forgery event.** The CKA game with challenge mode `idealK` of the
+reduction `smAuthCKARed` at the epoch `k` is the truncated forgery game with the root step
+`ckaHopRoot R idealK` at the epoch `k`. -/
+theorem smAuthHopGame_eq_cka (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.Sound C)
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS k : ℕ) (idealK : Bool) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    cka_corrupt_game C ΔFS ΔPCS idealK (smAuthCKARed R G D ΔFS ΔPCS k A) =
+      smAuthHopGame C R G D ΔFS ΔPCS k (ckaHopRoot R idealK) A := by
+  rw [cka_corrupt_game_eq_liftPMF C hS initP hinit]
+  simp only [smAuthHopGame, hinit, sample_eq_liftPMF, liftPMF_bind_liftPMF]
+  congr 1
+  simp only [smAuthCKARed, PMF.pure_bind, smAuthCKATree, OracleAdv.run_rand, PMF.map_bind]
+  rw [PMF.bind_comm]
+  refine congrArg _ (funext fun t => congrArg _ (funext fun i =>
+    congrArg _ (funext fun rk => ?_)))
+  rw [OracleAdv.run_bind, OracleAdv.run_simulate]
+  have he : smAuthCKAEmb ((smInit (Sa := Sa) i rk, (SMAuthAux.init : SMAuthAux W Ct)), false) =
+      ((((SMLoc.init rk, CKAGameSt.init () () ()), SMAuthAux.init), false),
+        CKAGameSt.init i.1 i.2.1 i.2.2) := by
+    simp only [smAuthCKAEmb, smInit, ckaShadow_init]
+  rw [← he, ← OracleAdv.run_map_state _ _ smAuthCKAEmb
+    (smAuthHop_step C R G D ΔFS ΔPCS t k idealK)]
+  simp [PMF.map_bind, PMF.bind_map, PMF.map_comp, Function.comp_def, PMF.pure_map]
+  rfl
+
+/-- The state of the truncated forgery game over `acdAuthSM` that a state of the truncated
+hybrid corresponds to: the root output in transit is forgotten. -/
+def smAuthAcdEmb (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) :
+    (SMSchemeSt (SMPartySt Sc RK Sa) Msg × SMAuthAux W Ct) × Bool :=
+  ((s.1.1.toScheme, s.1.2), s.2)
+
+omit [Fintype Key] [Nonempty Key] in
+/-- **The truncated hybrid at the real root step is the truncated forgery game over
+`acdAuthSM`.** Under the invariant `ACDInv`, each call of `smAuthHopOracle` at the real root
+step, carried to the states of the game over `acdAuthSM`, is the call of `smAuthTruncOracle`
+with the transitions into a corruption of the epoch `k` answered by a rejection. -/
+theorem smAuthHop_acd_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (J : Sc → Sc → Prop) (ΔFS ΔPCS t k : ℕ) (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool)
+    (hs : ACDInv C R J s.1.1) (d : SMAuthQuery W Ct) :
+    (smAuthHopOracle C R G D ΔFS ΔPCS t k (realRoot R) s d).map (Prod.map id smAuthAcdEmb) =
+      (smAuthTruncOracle (acdAuthSM C R G D) ΔFS ΔPCS t false (fun e => decide (e < k + 1)) k
+        (smAuthAcdEmb s) d).map (smAuthCut ΔFS ΔPCS k) := by
+  obtain ⟨⟨σ, x⟩, b⟩ := s
+  have hc : (Prod.map id smAuthAcdEmb ∘ smAuthCut ΔFS ΔPCS k) =
+      (smAuthCut ΔFS ΔPCS k ∘ Prod.map id smAuthAcdEmb :
+        SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W × ((SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) →
+          SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W ×
+            ((SMSchemeSt (SMPartySt Sc RK Sa) Msg × SMAuthAux W Ct) × Bool)) := by
+    funext y
+    obtain ⟨a, ⟨⟨σ', x'⟩, b'⟩⟩ := y
+    by_cases h : x'.safe ΔFS ΔPCS k = false <;>
+      simp [Function.comp_apply, smAuthCut, smAuthAcdEmb, h]
+  rw [smAuthHopOracle, PMF.map_comp, hc, ← PMF.map_comp]
+  congr 1
+  simp only [smAuthTruncOracle, smAuthAcdEmb]
+  by_cases hx : x.safe ΔFS ΔPCS k = true
+  · simp only [hx, ite_true]
+    cases d with
+    | sm q =>
+      simp only [smAuthHopStep, smAuthFlagOracle, smAuthOracleAt, smOracleOfAt_realRoot,
+        PMF.map_comp, smAuthBadAt, Bool.or_false]
+      rw [show (acdAuthSM C R G D).toSMScheme = acdSM C R G D from rfl,
+        ← acd_step C R G D J ΔFS ΔPCS t false σ hs q, PMF.map_comp]
+      rfl
+    | deliver p j ad c =>
+      simp [smAuthHopStep, smAuthFlagOracle, smAuthOracleAt, smAuthBadAt, acdDeliverAns,
+        acdDeliverBad, acdRecvDec, acdAuthSM, PMF.pure_map, smAuthAcdEmb, SMSt.toScheme_ck_t,
+        SMSt.toScheme_ck_st, ckaShadow]
+      rfl
+  · simp [hx, PMF.pure_map, smAuthAcdEmb]
+
+omit [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key] in
+/-- The truncated hybrid at the real root step keeps the invariant `ACDInv`, when the CKA is
+correct along `J`. -/
+theorem smAuthHop_acdInv (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    {J : Sc → Sc → Prop} (hJ : CKACorrect C J) (ΔFS ΔPCS t k : ℕ)
+    (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) (hs : ACDInv C R J s.1.1)
+    (d : SMAuthQuery W Ct) :
+    ∀ y ∈ (smAuthHopOracle C R G D ΔFS ΔPCS t k (realRoot R) s d).support,
+      ACDInv C R J y.2.1.1 := by
+  intro y hy
+  simp only [smAuthHopOracle, PMF.support_map, Set.mem_image] at hy
+  obtain ⟨z, hz, rfl⟩ := hy
+  have hz2 : (smAuthCut ΔFS ΔPCS k z).2 = z.2 := by
+    unfold smAuthCut
+    split <;> rfl
+  rw [hz2]
+  split at hz
+  · cases d with
+    | sm q =>
+      simp only [smAuthHopStep, PMF.support_map, Set.mem_image] at hz
+      obtain ⟨w, hw, rfl⟩ := hz
+      rw [smOracleOfAt_realRoot] at hw
+      exact acdInv_step C R G D hJ ΔFS ΔPCS t false _ hs q w hw
+    | deliver p j ad c =>
+      simp only [smAuthHopStep, PMF.support_pure, Set.mem_singleton_iff] at hz
+      subst hz
+      exact hs
+  · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+    subst hz
+    exact hs
+
+omit [Fintype Key] [Nonempty Key] in
+/-- **The truncated forgery game over `acdAuthSM` is the truncated hybrid at the real root
+step.** For a CKA correct along `J`, with an initialisation that is the lift of `initP` and
+initial states related by `J`. -/
+theorem acdAuthSM_truncGame_eq_hop (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    {J : Sc → Sc → Prop} (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc))
+    (hinit : C.init = liftPMF initP) (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS k : ℕ) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    smAuthTruncGame (acdAuthSM C R G D) ΔFS ΔPCS k A =
+      smAuthHopGame C R G D ΔFS ΔPCS k (realRoot R) A := by
+  have hI : (acdAuthSM C R G D).init = (acdSM C R G D).init := rfl
+  simp only [smAuthTruncGame, smAuthHopGame, hI, acdSM, hinit, sample_eq_liftPMF,
+    SPComp.bind_assoc, SPComp.pure_bind, liftPMF_bind_liftPMF]
+  refine congrArg _ (congrArg _ (funext fun t => ?_))
+  refine PMF.bind_congr_support _ _ _ fun i hi => congrArg _ (funext fun rk => ?_)
+  have hfr : ∀ (s : (SMSchemeSt (SMPartySt Sc RK Sa) Msg × SMAuthAux W Ct) × Bool) d,
+      s.1.2.safe ΔFS ΔPCS k = false → ∀ x ∈ (smAuthTruncOracle (acdAuthSM C R G D) ΔFS ΔPCS t
+        false (fun e => decide (e < k + 1)) k s d).support,
+        x.2.1.2.safe ΔFS ΔPCS k = false ∧ x.2.2 = s.2 := by
+    intro s d hs x hx
+    simp only [smAuthTruncOracle, hs, Bool.false_eq_true, ite_false, PMF.support_pure,
+      Set.mem_singleton_iff] at hx
+    subst hx
+    exact ⟨hs, rfl⟩
+  refine Eq.trans (OracleAdv.run_map_eq_of_cut _
+    (fun s : (SMSchemeSt (SMPartySt Sc RK Sa) Msg × SMAuthAux W Ct) × Bool =>
+      s.1.2.safe ΔFS ΔPCS k = false)
+    (fun s => s.2) (SMAuthAns.dec none) hfr _ _).symm ?_
+  rw [← SMSt.toScheme_smInit]
+  have h := OracleAdv.run_map_state_inv _
+    (fun s d => (smAuthTruncOracle (acdAuthSM C R G D) ΔFS ΔPCS t false
+      (fun e => decide (e < k + 1)) k s d).map (smAuthCut ΔFS ΔPCS k))
+    smAuthAcdEmb (fun s => ACDInv C R J s.1.1)
+    (fun s d hs => smAuthHop_acdInv C R G D hJ ΔFS ΔPCS t k s hs d)
+    (fun s d hs => smAuthHop_acd_step C R G D J ΔFS ΔPCS t k s hs d) (A.play t i.1)
+    ((smInit i rk, SMAuthAux.init), false) (acdInv_smInit C R i (hJi i hi) rk)
+  refine Eq.trans (congrArg (PMF.map fun x => x.2.2) h.symm) ?_
+  rw [PMF.map_comp]
+  rfl
+
+/-- **The CKA hop of the forgery event at the epoch `k`.** For a CKA correct along `J` with a
+sound explicit-randomness sending algorithm, an initialisation that is the lift of `initP` and
+initial states related by `J`, the probability of a forgery at the epoch `k` in the truncated
+game over `acdAuthSM C R G D` is at most the CKA corruption advantage of the reduction
+`smAuthCKARed R G D ΔFS ΔPCS k A`, with the CKA challenge at the epoch `k`, plus the probability
+of a forgery at the epoch `k` in the truncated game whose root step at the epoch `k` takes a
+uniform key in place of the CKA key. -/
+theorem acdAuthSM_truncGame_le_cka (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS k : ℕ)
+    (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    prTrue (smAuthTruncGame (acdAuthSM C R G D) ΔFS ΔPCS k A) Heap.empty ≤
+      CKA_Corrupt_Advantage C ΔFS ΔPCS (smAuthCKARed R G D ΔFS ΔPCS k A) +
+        prTrue (smAuthHopGame C R G D ΔFS ΔPCS k (unifKeyRoot R) A) Heap.empty := by
+  have h0 : smAuthTruncGame (acdAuthSM C R G D) ΔFS ΔPCS k A =
+      cka_corrupt_game C ΔFS ΔPCS false (smAuthCKARed R G D ΔFS ΔPCS k A) := by
+    rw [acdAuthSM_truncGame_eq_hop C hJ initP hinit hJi, smAuthHopGame_eq_cka C hS initP hinit]
+    simp only [ckaHopRoot, Bool.false_eq_true, ite_false]
+  have h1 : smAuthHopGame C R G D ΔFS ΔPCS k (unifKeyRoot R) A =
+      cka_corrupt_game C ΔFS ΔPCS true (smAuthCKARed R G D ΔFS ΔPCS k A) := by
+    rw [smAuthHopGame_eq_cka C hS initP hinit]
+    simp only [ckaHopRoot, ite_true]
+  rw [h0, h1]
+  unfold CKA_Corrupt_Advantage Advantage
+  exact le_tsub_add.trans (add_le_add le_sup_left le_rfl)
+
+end AuthCKA
 
 /-! ## Forward-secure AEAD integrity -/
 
