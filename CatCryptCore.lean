@@ -233,6 +233,7 @@ public import CatCryptCore.Crypto.FiatShamirROM.EagerMarker
 public import CatCryptCore.Crypto.FiatShamirROM.Game
 public import CatCryptCore.Crypto.FiatShamirROM.Reduction
 public import CatCryptCore.Crypto.FiatShamirROM.Schnorr
+public import CatCryptCore.Crypto.FiatShamirROM.DHGroupParam
 public import CatCryptCore.Crypto.FiatShamirROM.SignerHybrid
 public import CatCryptCore.Crypto.FiatShamirROM.StraightLine
 public import CatCryptCore.Crypto.FiatShamirROM.StraightLineCls
@@ -319,6 +320,7 @@ public import CatCryptCore.Crypto.AKE.X3DHSquareHops
 public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
 public import CatCryptCore.Crypto.AKE.X3DHSquareSigned
 public import CatCryptCore.Crypto.AKE.X3DHSquareSignedTimed
+public import CatCryptCore.Crypto.AKE.X3DHSquareJoint
 public import CatCryptCore.Crypto.AKE.X3DHPassive
 public import CatCryptCore.Crypto.AKE.X3DHPassiveHops
 public import CatCryptCore.Crypto.AKE.X3DHPassiveKeygen
