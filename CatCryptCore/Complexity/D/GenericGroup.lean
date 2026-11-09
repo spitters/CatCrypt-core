@@ -13,8 +13,8 @@ public import CatCryptCore.Complexity.D.FreeNI
 # Generic group algorithms in D as a free theorem with cost
 
 A term of D whose group is a finite ground type `g` and whose group operations are variables of
-its context is a generic algorithm in the sense of Shoup and Maurer: its results on two
-representations of the group correspond under the isomorphism, at equal cost. This module derives
+its context is a generic algorithm in the sense of Maurer (the type-safe model of Zhandry): its
+results on two representations of the group correspond under the isomorphism, at equal cost. This module derives
 the statement from the abstraction theorem of D with cost (`Tm.abstraction_cost`).
 
 The operations are a record `GrpOps` (multiplication, inverse, unit) on the carrier `g.den`; the
@@ -63,7 +63,8 @@ cost (`powT_commute`).
 
 * J. C. Reynolds, *Types, abstraction and parametric polymorphism*, IFIP Congress 1983;
 * V. Shoup, *Lower bounds for discrete logarithms and related problems*, EUROCRYPT 1997;
-* U. Maurer, *Abstract models of computation in cryptography*, IMA Cryptography and Coding 2005.
+* U. Maurer, *Abstract models of computation in cryptography*, IMA Cryptography and Coding 2005;
+* M. Zhandry, *To label, or not to label (in generic groups)*, CRYPTO 2022.
 
 Search words: generic group model, generic algorithm, representation independence, free theorem,
 abstraction theorem, group operation count, square-and-multiply.
