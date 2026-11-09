@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Pre-commit gates. Activate once per clone:
+#
+#   git config core.hooksPath .githooks
+
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)" || exit 0
+
+# A removed theorem, lemma, def, abbrev, structure, inductive, class or named instance
+# is declared elsewhere in the workspace after the commit, or has a row in
+# scripts/deletion-ledger.tsv naming a successor declaration or a decision file.
+bash scripts/deletion-gate.sh staged || exit 1
+
+exit 0
