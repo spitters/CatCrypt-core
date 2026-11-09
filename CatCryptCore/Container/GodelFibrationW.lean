@@ -601,6 +601,7 @@ def Form.wdn : {I : Type u} → Form I → DPred I
   | _, .atom p => DPred.ofProp p
   | _, .top => DPred.top
   | _, .and φ ψ => DPred.and φ.wdn ψ.wdn
+  | _, .or φ ψ => DPred.or φ.wdn ψ.wdn
   | _, .imp φ ψ => DPred.wimp φ.wdn ψ.wdn
   | _, .all φ => DPred.pi φ.wdn
   | _, .ex φ => DPred.sigma φ.wdn

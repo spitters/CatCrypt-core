@@ -12,13 +12,13 @@ public import Mathlib.Data.ENat.Monoid
 # Soundness of positive many-sorted logic in the Gödel fibration, with use counts
 
 The formulas (`Form`) of positive many-sorted intuitionistic logic over Lean sorts have atoms
-`I → Prop`, `⊤`, `∧`, `→`, the quantifiers `∀`, `∃` over a family of sorts `K : I → Type u`, and
+`I → Prop`, `⊤`, `∧`, `→`, `∨`, the quantifiers `∀`, `∃` over a family of sorts `K : I → Type u`, and
 an explicit substitution `Form.sub` along a map of sort contexts. A formula is interpreted twice:
 by its truth value `Form.eval`, and by a Dialectica predicate `Form.dn` of the Gödel fibration of
 the Diller–Nahm category, through the connectives of `Container/GodelFibration.lean`.
 
 Derivations (`Deriv`) are natural deduction derivations with hypotheses, as data: the rules of
-`⊤`, `∧`, `→`, `∀`, `∃`, and the axioms of choice, independence of a universal premise and the
+`⊤`, `∧`, `→`, `∨`, `∀`, `∃`, and the axioms of choice, independence of a universal premise and the
 Diller–Nahm form of Markov's principle. A context of `n` hypotheses is a function `Fin n → Form I`,
 interpreted as the predicate `ctx Γ` whose witnesses are witnesses of every hypothesis and whose
 counter-witnesses are counter-witnesses of one of them.
@@ -54,7 +54,10 @@ program is its own time plus this price, as in `DNLens.price_comp`.
 * `Deriv.eval` — soundness for truth;
 * `Deriv.holds_dn` — soundness for the Dialectica meaning;
 * `Deriv.card_back_le` — quantitative soundness: the demand on a hypothesis is at most its uses;
-* `Deriv.queries_card_le`, `Deriv.query_sound`, `Deriv.queryPrice_le` — the query bound.
+* `Deriv.queries_card_le`, `Deriv.query_sound`, `Deriv.queryPrice_le` — the query bound;
+* `Deriv.useCount_orE`, `Deriv.useCount_efq`, `Deriv.useCount_orComm` — use counts of
+  `∨`-elimination, of ex falso (`Deriv.efq`, for a conclusion with a witness) and of the
+  commutation of a disjunction.
 
 ## References
 
@@ -76,6 +79,21 @@ set_option autoImplicit false
 
 universe u
 
+namespace CatCrypt.Container.DPred
+
+variable {I : Type u}
+
+/-- Disjunction of Dialectica predicates: a witness of one of the two disjuncts, and a
+counter-witness of the disjunct it witnesses. -/
+def or (φ ψ : DPred I) : DPred I where
+  W i := φ.W i ⊕ ψ.W i
+  C i := Sum.elim (φ.C i) (ψ.C i)
+  mat i w c := match w, c with
+    | .inl a, c => φ.mat i a c
+    | .inr b, c => ψ.mat i b c
+
+end CatCrypt.Container.DPred
+
 namespace CatCrypt.Container.DNLogic
 
 open DPred
@@ -90,6 +108,8 @@ inductive Form : Type u → Type (u + 1)
   | and {I : Type u} (φ ψ : Form I) : Form I
   /-- Implication. -/
   | imp {I : Type u} (φ ψ : Form I) : Form I
+  /-- Disjunction. -/
+  | or {I : Type u} (φ ψ : Form I) : Form I
   /-- Universal quantification over a family of sorts. -/
   | all {I : Type u} {K : I → Type u} (φ : Form (Σ i, K i)) : Form I
   /-- Existential quantification over a family of sorts. -/
@@ -105,6 +125,7 @@ def eval : {I : Type u} → Form I → I → Prop
   | _, .top, _ => True
   | _, .and φ ψ, i => φ.eval i ∧ ψ.eval i
   | _, .imp φ ψ, i => φ.eval i → ψ.eval i
+  | _, .or φ ψ, i => φ.eval i ∨ ψ.eval i
   | _, .all (K := K) φ, i => ∀ k : K i, φ.eval ⟨i, k⟩
   | _, .ex (K := K) φ, i => ∃ k : K i, φ.eval ⟨i, k⟩
   | _, .sub h φ, j => φ.eval (h j)
@@ -115,9 +136,28 @@ def dn : {I : Type u} → Form I → DPred I
   | _, .top => DPred.top
   | _, .and φ ψ => DPred.and φ.dn ψ.dn
   | _, .imp φ ψ => DPred.imp φ.dn ψ.dn
+  | _, .or φ ψ => DPred.or φ.dn ψ.dn
   | _, .all φ => DPred.pi φ.dn
   | _, .ex φ => DPred.sigma φ.dn
   | _, .sub h φ => φ.dn.reindex h
+
+/-- Falsity: the atom `False`. -/
+abbrev bot {I : Type u} : Form I := .atom fun _ => False
+
+/-- Negation: implication of falsity. -/
+abbrev not {I : Type u} (φ : Form I) : Form I := .imp φ bot
+
+/-- Unfolding equation of `eval` at a disjunction. -/
+@[simp] theorem eval_or {I : Type u} (φ ψ : Form I) (i : I) :
+    (Form.or φ ψ).eval i = (φ.eval i ∨ ψ.eval i) := rfl
+
+/-- Unfolding equation of `eval` at falsity. -/
+@[simp] theorem eval_bot {I : Type u} (i : I) : (bot : Form I).eval i = False := rfl
+
+/-- The witness of a negation that answers every witness of the premise with the unit witness of
+falsity and demands no counter-witness. -/
+def notW {I : Type u} (φ : Form I) (i : I) : (not φ).dn.W i :=
+  ⟨fun _ => PUnit.unit, fun _ _ => 0⟩
 
 end Form
 
@@ -208,6 +248,51 @@ counter-witness of the context at `i`. -/
 def ctxSubC {K : I → Type u} (Γ : Fin n → Form I) (i : I) (x : K i) (w : (ctx Γ).W i)
     (c : (ctx fun k => (Γ k).sub Sigma.fst).C ⟨i, x⟩ w) : (ctx Γ).C i w := c
 
+section OrCase
+
+variable {φ ψ χ : Form I} {Γ : Fin n → Form I}
+
+/-- The witness of a case analysis on a witness of `φ ∨ ψ`: the realizer of the branch it
+selects. -/
+def orCaseFwd (E₁ : (ctx (consF φ Γ)).Hom χ.dn) (E₂ : (ctx (consF ψ Γ)).Hom χ.dn) (i : I)
+    (w : (ctx Γ).W i) : (DPred.or φ.dn ψ.dn).W i → χ.dn.W i
+  | .inl a => E₁.fwd i (consW i a w)
+  | .inr b => E₂.fwd i (consW i b w)
+
+/-- The demand of a case analysis on a witness `x` of `φ ∨ ψ` whose counter-witnesses demand
+`g`: the demand of the selected branch on the old hypotheses, and `g` at its demand on the new
+one. -/
+def orCaseBack (E₁ : (ctx (consF φ Γ)).Hom χ.dn) (E₂ : (ctx (consF ψ Γ)).Hom χ.dn) (i : I)
+    (w : (ctx Γ).W i) : (x : (DPred.or φ.dn ψ.dn).W i) →
+    ((DPred.or φ.dn ψ.dn).C i x → Multiset ((ctx Γ).C i w)) →
+    χ.dn.C i (orCaseFwd E₁ E₂ i w x) → Multiset ((ctx Γ).C i w)
+  | .inl a, g, c => ((E₁.back i (consW i a w) c).filterMap tailC?) +
+      ((E₁.back i (consW i a w) c).filterMap headC?).bind g
+  | .inr b, g, c => ((E₂.back i (consW i b w) c).filterMap tailC?) +
+      ((E₂.back i (consW i b w) c).filterMap headC?).bind g
+
+/-- Soundness of the case analysis. -/
+theorem orCase_sound (E₁ : (ctx (consF φ Γ)).Hom χ.dn) (E₂ : (ctx (consF ψ Γ)).Hom χ.dn)
+    (i : I) (w : (ctx Γ).W i) (x : (DPred.or φ.dn ψ.dn).W i)
+    (g : (DPred.or φ.dn ψ.dn).C i x → Multiset ((ctx Γ).C i w))
+    (hg : ∀ c, (∀ y ∈ g c, (ctx Γ).mat i w y) → (DPred.or φ.dn ψ.dn).mat i x c)
+    (c : χ.dn.C i (orCaseFwd E₁ E₂ i w x))
+    (h : ∀ y ∈ orCaseBack E₁ E₂ i w x g c, (ctx Γ).mat i w y) :
+    χ.dn.mat i (orCaseFwd E₁ E₂ i w x) c := by
+  cases x with
+  | inl a =>
+    exact E₁.sound i _ c fun y hy => ctx_cons_mat y
+      (fun z hz => hg z fun v hv => h v (Multiset.mem_add.2 (.inr
+        (Multiset.mem_bind.2 ⟨z, (Multiset.mem_filterMap _ _).2 ⟨y, hy, hz⟩, hv⟩))))
+      (fun z hz => h z (Multiset.mem_add.2 (.inl ((Multiset.mem_filterMap _ _).2 ⟨y, hy, hz⟩))))
+  | inr b =>
+    exact E₂.sound i _ c fun y hy => ctx_cons_mat y
+      (fun z hz => hg z fun v hv => h v (Multiset.mem_add.2 (.inr
+        (Multiset.mem_bind.2 ⟨z, (Multiset.mem_filterMap _ _).2 ⟨y, hy, hz⟩, hv⟩))))
+      (fun z hz => h z (Multiset.mem_add.2 (.inl ((Multiset.mem_filterMap _ _).2 ⟨y, hy, hz⟩))))
+
+end OrCase
+
 /-- Natural deduction derivations of positive many-sorted logic, as data. -/
 inductive Deriv : {I : Type u} → {n : ℕ} → (Fin n → Form I) → Form I → Type (u + 1)
   /-- A hypothesis. -/
@@ -229,6 +314,15 @@ inductive Deriv : {I : Type u} → {n : ℕ} → (Fin n → Form I) → Form I �
   /-- `→`-elimination. -/
   | impE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {φ ψ : Form I} (d : Deriv Γ (.imp φ ψ))
       (e : Deriv Γ φ) : Deriv Γ ψ
+  /-- `∨`-introduction, left. -/
+  | orI₁ {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {φ ψ : Form I} (d : Deriv Γ φ) :
+      Deriv Γ (.or φ ψ)
+  /-- `∨`-introduction, right. -/
+  | orI₂ {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {φ ψ : Form I} (d : Deriv Γ ψ) :
+      Deriv Γ (.or φ ψ)
+  /-- `∨`-elimination: each disjunct becomes the hypothesis at position `0` of its branch. -/
+  | orE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {φ ψ χ : Form I} (d : Deriv Γ (.or φ ψ))
+      (e₁ : Deriv (consF φ Γ) χ) (e₂ : Deriv (consF ψ Γ) χ) : Deriv Γ χ
   /-- `∀`-introduction: a derivation over the extended sort context. -/
   | allI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
       (d : Deriv (fun k => (Γ k).sub Sigma.fst) φ) : Deriv Γ (.all φ)
@@ -281,6 +375,12 @@ theorem eval {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) (i : I)
   | andE₂ d ih => exact (ih i h).2
   | impI d ih => exact fun ha => ih i (consF_forall (fun ψ => ψ.eval i) ha h)
   | impE d e ihd ihe => exact ihd i h (ihe i h)
+  | orI₁ d ih => exact .inl (ih i h)
+  | orI₂ d ih => exact .inr (ih i h)
+  | orE d e₁ e₂ ihd ih₁ ih₂ =>
+    rcases ihd i h with ha | hb
+    · exact ih₁ i (consF_forall (fun ψ => ψ.eval i) ha h)
+    · exact ih₂ i (consF_forall (fun ψ => ψ.eval i) hb h)
   | allI d ih => exact fun x => ih ⟨i, x⟩ h
   | allE t d ih => exact ih i h (t i)
   | exI t d ih => exact ⟨t i, ih i h⟩
@@ -347,6 +447,19 @@ def realize : {I : Type u} → {n : ℕ} → {Γ : Fin n → Form I} → {φ : F
         (fun x hx => h x (Multiset.mem_add.2 (.inl hx)))
         (fun x hx => e.realize.sound i w x fun y hy =>
           h y (Multiset.mem_add.2 (.inr (Multiset.mem_bind.2 ⟨x, hx, hy⟩)))) }
+  | _, _, _, _, .orI₁ d =>
+    { fwd := fun i w => .inl (d.realize.fwd i w)
+      back := fun i w c => d.realize.back i w c
+      sound := fun i w c h => d.realize.sound i w c h }
+  | _, _, _, _, .orI₂ d =>
+    { fwd := fun i w => .inr (d.realize.fwd i w)
+      back := fun i w c => d.realize.back i w c
+      sound := fun i w c h => d.realize.sound i w c h }
+  | _, _, _, _, .orE d e₁ e₂ =>
+    { fwd := fun i w => orCaseFwd e₁.realize e₂.realize i w (d.realize.fwd i w)
+      back := fun i w c => orCaseBack e₁.realize e₂.realize i w _ (d.realize.back i w) c
+      sound := fun i w c h => orCase_sound e₁.realize e₂.realize i w _ _ (d.realize.sound i w)
+        c h }
   | _, _, _, _, .allI d =>
     { fwd := fun i w x => d.realize.fwd ⟨i, x⟩ w
       back := fun i w c => d.realize.back ⟨i, c.1⟩ w c.2
@@ -398,6 +511,10 @@ def uses : {I : Type u} → {n : ℕ} → {Γ : Fin n → Form I} → {φ : Form
   | _, _, _, _, .andE₂ d => (d.uses.1, ⊤)
   | _, _, _, _, .impI d => (fun j => d.uses.1 j.succ, d.uses.1 0)
   | _, _, _, _, .impE d e => (fun j => d.uses.1 j + d.uses.2 * e.uses.1 j, ⊤)
+  | _, _, _, _, .orI₁ d => (d.uses.1, ⊤)
+  | _, _, _, _, .orI₂ d => (d.uses.1, ⊤)
+  | _, _, _, _, .orE d e₁ e₂ => (fun j => max (e₁.uses.1 j.succ + e₁.uses.1 0 * d.uses.1 j)
+      (e₂.uses.1 j.succ + e₂.uses.1 0 * d.uses.1 j), ⊤)
   | _, _, _, _, .allI d => (d.uses.1, ⊤)
   | _, _, _, _, .allE _ d => (d.uses.1, ⊤)
   | _, _, _, _, .exI _ d => (d.uses.1, ⊤)
@@ -461,6 +578,39 @@ theorem countP_bind_le {α β : Type*} (m : Multiset α) (f : α → Multiset β
     exact add_le_add (ih fun x hx => h x (Multiset.mem_cons_of_mem hx))
       (h y (Multiset.mem_cons_self y m))
 
+/-- The demand of a case analysis on hypothesis `k`: in the selected branch, its uses of `k`
+plus its uses of the disjunct times the bound `b` on the demand of the disjunction. -/
+theorem orCaseBack_countP_le {φ ψ χ : Form I} {Γ : Fin n → Form I}
+    (E₁ : (ctx (consF φ Γ)).Hom χ.dn) (E₂ : (ctx (consF ψ Γ)).Hom χ.dn)
+    (u₁ u₂ : Fin (n + 1) → ℕ∞)
+    (h₁ : ∀ k i w c, (((E₁.back i w c).countP fun x => x.1 = k : ℕ) : ℕ∞) ≤ u₁ k)
+    (h₂ : ∀ k i w c, (((E₂.back i w c).countP fun x => x.1 = k : ℕ) : ℕ∞) ≤ u₂ k)
+    (k : Fin n) (i : I) (w : (ctx Γ).W i) (x : (DPred.or φ.dn ψ.dn).W i)
+    (g : (DPred.or φ.dn ψ.dn).C i x → Multiset ((ctx Γ).C i w)) (b : ℕ∞)
+    (hg : ∀ c, (((g c).countP fun y => y.1 = k : ℕ) : ℕ∞) ≤ b)
+    (c : χ.dn.C i (orCaseFwd E₁ E₂ i w x)) :
+    (((orCaseBack E₁ E₂ i w x g c).countP fun y => y.1 = k : ℕ) : ℕ∞) ≤
+      max (u₁ k.succ + u₁ 0 * b) (u₂ k.succ + u₂ 0 * b) := by
+  cases x with
+  | inl a =>
+    refine le_max_of_le_left ?_
+    simp only [orCaseBack, Multiset.countP_add, Nat.cast_add]
+    exact add_le_add (le_trans (Nat.cast_le.2 (countP_filterMap_le
+        (m := E₁.back i (consW i a w) c) _ _ (fun y => y.1 = k.succ)
+        (fun y x hx hp => by rw [tailC?_fst y x hx, hp]))) (h₁ k.succ i _ c))
+      ((countP_bind_le _ _ _ _ fun x _ => hg x).trans (mul_le_mul_of_nonneg_right
+        (le_trans (Nat.cast_le.2 (card_filterMap_le _ _ (fun y x hx => headC?_fst y x hx) _))
+          (h₁ 0 i _ c)) (by simp)))
+  | inr b' =>
+    refine le_max_of_le_right ?_
+    simp only [orCaseBack, Multiset.countP_add, Nat.cast_add]
+    exact add_le_add (le_trans (Nat.cast_le.2 (countP_filterMap_le
+        (m := E₂.back i (consW i b' w) c) _ _ (fun y => y.1 = k.succ)
+        (fun y x hx hp => by rw [tailC?_fst y x hx, hp]))) (h₂ k.succ i _ c))
+      ((countP_bind_le _ _ _ _ fun x _ => hg x).trans (mul_le_mul_of_nonneg_right
+        (le_trans (Nat.cast_le.2 (card_filterMap_le _ _ (fun y x hx => headC?_fst y x hx) _))
+          (h₂ 0 i _ c)) (by simp)))
+
 namespace Deriv
 
 /-- The demand bounds of a derivation: on each hypothesis by its use count, and on the premise
@@ -500,6 +650,11 @@ theorem bounds {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) :
     simp only [realize, useCount, uses, Multiset.countP_add, Nat.cast_add]
     exact add_le_add (ihd.1 k i w _) ((countP_bind_le _ _ _ _ fun x _ => ihe.1 k i w x).trans
       (mul_le_mul_of_nonneg_right (ihd.2 i w _ c) (by simp)))
+  | orI₁ d ih => exact ⟨fun k i w c => ih.1 k i w _, argBound_top _⟩
+  | orI₂ d ih => exact ⟨fun k i w c => ih.1 k i w _, argBound_top _⟩
+  | orE d e₁ e₂ ihd ih₁ ih₂ =>
+    exact ⟨fun k i w c => orCaseBack_countP_le _ _ _ _ ih₁.1 ih₂.1 k i w _ _ _ (ihd.1 k i w) c,
+      argBound_top _⟩
   | allI d ih => exact ⟨fun k i w c => ih.1 k ⟨i, c.1⟩ w c.2, argBound_top _⟩
   | allE t d ih => exact ⟨fun k i w c => ih.1 k i w _, argBound_top _⟩
   | exI t d ih => exact ⟨fun k i w c => ih.1 k i w _, argBound_top _⟩
@@ -705,6 +860,64 @@ unfolding equation of `useCount` at `atom₂`). -/
     (atom₂ h d e).useCount k = d.useCount k + e.useCount k := rfl
 
 end Conv
+
+/-! ## Disjunction and falsity
+
+`∨`-introduction keeps the use counts; `∨`-elimination uses hypothesis `j` as often as the
+branch that uses it more, with the uses of the disjunct in that branch multiplied by the uses
+of `j` in the derivation of the disjunction. Ex falso is a realized axiom demanding the one
+counter-witness of falsity; its forward map needs a witness `w₀` of the conclusion, which
+`Form.notW` gives for a negation and `PUnit.unit` for an atom. -/
+
+section Disj
+
+variable {Γ : Fin n → Form I}
+
+/-- The morphism of ex falso: the witness `w₀` of `φ`, demanding the counter-witness of
+falsity. -/
+def efqHom (φ : Form I) (w₀ : ∀ i, φ.dn.W i) : (Form.bot : Form I).dn.Hom φ.dn where
+  fwd i _ := w₀ i
+  back _ _ _ := {PUnit.unit}
+  sound _ _ _ h := (h PUnit.unit (Multiset.mem_singleton_self _)).elim
+
+/-- **Ex falso quodlibet**, for a conclusion `φ` with a witness `w₀` of its Diller–Nahm
+meaning. -/
+def efq {φ : Form I} (w₀ : ∀ i, φ.dn.W i) (d : Deriv Γ .bot) : Deriv Γ φ :=
+  hom (efqHom φ w₀) 1 (fun _ _ _ => (Multiset.card_singleton _).le) (fun _ h => h.elim) d
+
+/-- Ex falso keeps the use counts. -/
+@[simp] theorem useCount_efq {φ : Form I} (w₀ : ∀ i, φ.dn.W i) (d : Deriv Γ .bot)
+    (k : Fin n) : (efq w₀ d).useCount k = d.useCount k := by
+  change ((1 : ℕ) : ℕ∞) * d.useCount k = d.useCount k
+  rw [Nat.cast_one, one_mul]
+
+/-- Unfolding equation of `useCount` at `∨`-introduction, left. -/
+@[simp] theorem useCount_orI₁ {φ ψ : Form I} (d : Deriv Γ φ) (k : Fin n) :
+    (orI₁ (ψ := ψ) d).useCount k = d.useCount k := rfl
+
+/-- Unfolding equation of `useCount` at `∨`-introduction, right. -/
+@[simp] theorem useCount_orI₂ {φ ψ : Form I} (d : Deriv Γ ψ) (k : Fin n) :
+    (orI₂ (φ := φ) d).useCount k = d.useCount k := rfl
+
+/-- Unfolding equation of `useCount` at `∨`-elimination: the larger of the two branches, each
+counting its uses of `k` plus its uses of the disjunct times the uses of `k` in the derivation
+of the disjunction. -/
+@[simp] theorem useCount_orE {φ ψ χ : Form I} (d : Deriv Γ (.or φ ψ))
+    (e₁ : Deriv (consF φ Γ) χ) (e₂ : Deriv (consF ψ Γ) χ) (k : Fin n) :
+    (orE d e₁ e₂).useCount k = max (e₁.useCount k.succ + e₁.useCount 0 * d.useCount k)
+      (e₂.useCount k.succ + e₂.useCount 0 * d.useCount k) := rfl
+
+/-- Commutativity of disjunction, as a derivation from the hypothesis `φ ∨ ψ`. -/
+def orComm (φ ψ : Form I) : Deriv (fun _ : Fin 1 => Form.or φ ψ) (.or ψ φ) :=
+  orE (hyp 0) (orI₂ (hyp (Γ := consF φ fun _ => Form.or φ ψ) 0))
+    (orI₁ (hyp (Γ := consF ψ fun _ => Form.or φ ψ) 0))
+
+/-- The commutation of a disjunction uses its hypothesis once. -/
+theorem useCount_orComm (φ ψ : Form I) : (orComm φ ψ).useCount 0 = 1 := by
+  change max ((0 : ℕ∞) + 1 * 1) (0 + 1 * 1) = 1
+  simp
+
+end Disj
 
 end Deriv
 
