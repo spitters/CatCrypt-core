@@ -101,7 +101,8 @@ theorem act_body (keySample : SPComp K) (unlinked : Bool) (t : St K) (e : HEv �
       SPComp.map (fun q => (Prog.ret q.1, q.2)) ((F_AKE keySample unlinked).step t e) := by
   rcases e with h | (_ | _ | pid | ⟨sid, pid⟩ | ⟨sid, pid, k⟩ | ⟨sid, pid, k⟩)
   all_goals simp [body, act_def, stepWith_def, ProgE.recvE, sampleE, ProgE.sendE, ProgE.bind,
-    emitK_bind, emitK_sample, F_AKE, honSys, advSys, SPComp.map, SPComp.bind_assoc]
+    emitK_bind, emitK_sample, F_AKE, F_AKEK, honSys, advSys, advSysK, SPComp.map,
+    SPComp.bind_assoc]
 
 /-- **The program is step-equivalent to `F_AKE`.** -/
 theorem sys_stepEq (keySample : SPComp K) (unlinked : Bool) :

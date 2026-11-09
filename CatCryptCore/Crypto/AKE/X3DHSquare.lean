@@ -704,9 +704,9 @@ end SimOpaque
 theorem F_AKE_pureNF {K : Type} [Fintype K] [Nonempty K] {unlinked : Bool} (t : St K)
     (e : FEv K) : PureNF ((F_AKE (SPComp.sample K) unlinked).step t e) := by
   rcases e with h | a
-  · simp only [F_AKE, Sys.ofPorts_step_inl, honSys]
+  · simp only [F_AKE, F_AKEK, Sys.ofPorts_step_inl, honSys]
     exact (pureNF_pure _).map _
-  · simp only [F_AKE, Sys.ofPorts_step_inr, advSys]
+  · simp only [F_AKE, F_AKEK, Sys.ofPorts_step_inr, advSysK]
     refine PureNF.map _ ?_
     cases a <;> first | exact pureNF_pure _ | exact (pureNF_sample K).map _
 

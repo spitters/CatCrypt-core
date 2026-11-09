@@ -586,9 +586,9 @@ theorem fStep_eq (t : St K) (g : FEv K) :
       liftPMF ((PMF.uniformFintype K).map (fStepD t g)) := by
   change _ = liftPMF ((PMF.uniformFintype K).map fun kf => fStepD t g kf)
   rcases g with h | a
-  · simp only [F_AKE, Sys.ofPorts_step_inl, honSys, liftPMF_pure, map_liftPMF, PMF.pure_map]
+  · simp only [F_AKE, F_AKEK, Sys.ofPorts_step_inl, honSys, liftPMF_pure, map_liftPMF, PMF.pure_map]
     exact congrArg liftPMF (PMF.map_const _ _).symm
-  · simp only [F_AKE, Sys.ofPorts_step_inr, advSys]
+  · simp only [F_AKE, F_AKEK, Sys.ofPorts_step_inr, advSys, advSysK]
     cases a <;>
       simp only [liftPMF_pure, sample_eq_liftPMF, map_liftPMF, PMF.pure_map, PMF.map_comp,
         ↓reduceIte] <;>

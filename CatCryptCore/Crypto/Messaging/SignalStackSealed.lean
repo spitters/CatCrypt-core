@@ -387,22 +387,22 @@ theorem F_AKE_step_keyPerm (unlinked : Bool) (t : St K) (e : HEv ⊕ AEv K)
     SPComp.map (fun p => (keyPerm sid₀ π p.1, p.2)) ((F_AKE (SPComp.sample K) unlinked).step t e) =
       (F_AKE (SPComp.sample K) unlinked).step (keyPerm sid₀ π t) e := by
   rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | a
-  · simp [F_AKE, honSys, FAKE.honStep, keyPerm_addSession]
+  · simp [F_AKE, F_AKEK, honSys, FAKE.honStep, keyPerm_addSession]
   · simp only [SealedF] at he
-    simp [F_AKE, honSys, FAKE.honStep, keyOf_keyPerm_of_ne _ _ _ (sid, pid) he]
+    simp [F_AKE, F_AKEK, honSys, FAKE.honStep, keyOf_keyPerm_of_ne _ _ _ (sid, pid) he]
   · cases a with
-    | idle => simp [F_AKE, advSys]
-    | poll => simp [F_AKE, advSys, pollStep_keyPerm]
-    | corrupt pid => simp [F_AKE, advSys, keyPerm_corruptStep]
-    | impersonate sid pid => simp [F_AKE, advSys]
+    | idle => simp [F_AKE, F_AKEK, advSys, advSysK]
+    | poll => simp [F_AKE, F_AKEK, advSys, advSysK, pollStep_keyPerm]
+    | corrupt pid => simp [F_AKE, F_AKEK, advSys, advSysK, keyPerm_corruptStep]
+    | impersonate sid pid => simp [F_AKE, F_AKEK, advSys, advSysK]
     | newKey sid pid k =>
-      simp only [F_AKE, Sys.ofPorts_step_inr, advSys, SPComp.map_comp]
+      simp only [F_AKE, F_AKEK, Sys.ofPorts_step_inr, advSys, advSysK, SPComp.map_comp]
       refine Eq.trans ?_ (map_kfPerm_sample sid₀ π (sid, pid) _)
       congr 1
       funext kf
       simp [keyPerm_newKeyStep]
     | newKeyUnlinked sid pid k =>
-      simp only [F_AKE, Sys.ofPorts_step_inr, advSys, SPComp.map_comp]
+      simp only [F_AKE, F_AKEK, Sys.ofPorts_step_inr, advSys, advSysK, SPComp.map_comp]
       refine Eq.trans ?_ (map_kfPerm_sample sid₀ π (sid, pid) _)
       congr 1
       funext kf
@@ -746,7 +746,7 @@ theorem x3dhIdeal_step_getKey (s : SimSt S W K) (t : St K) (sid : SessionId) (pi
     (x3dhIdeal G).step (s, t) (.inl (.getKey sid pid)) =
       SPComp.pure (((s.1, s.2.1, .fwd), t), .inl (.key (keyOf t (sid, pid)))) := by
   show ((simProt (K := K) G).withSub (F_AKE (SPComp.sample K) true)).step _ _ = _
-  simp [MultiHybrid.withSub, simProt, simStart, MultiHybrid.drive, F_AKE, honSys, FAKE.honStep,
+  simp [MultiHybrid.withSub, simProt, simStart, MultiHybrid.drive, F_AKE, F_AKEK, honSys, FAKE.honStep,
     simOut, SPComp.map, SPComp.pure_bind]
 
 /-- The view of `readKey Z x₀` against the world of `F_AKE`: the final state of `Z` and the key

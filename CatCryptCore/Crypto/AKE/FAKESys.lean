@@ -294,10 +294,11 @@ noncomputable def honSysW : Sys (St K) (HEv ⊕ Inst) (HOut K) where
     | .inl e => SPComp.pure (honStep t e)
     | .inr x => SPComp.pure (t, .key (keyOf t x))
 
-/-- The adversary port as a system: `newKey` and `newKeyUnlinked` draw a fresh sample of
-`keySample`; every other event is deterministic; `auth` disables `impersonate`; `unlinked`
-makes `newKeyUnlinked` ignore the partner, and without it `newKeyUnlinked` is `newKey`. -/
-noncomputable def advSys (auth unlinked : Bool) (keySample : SPComp K) :
+/-- The adversary port as a system with a fresh-key kernel: `newKey` and `newKeyUnlinked` with
+proposal `k` draw a fresh key from `fresh k`; every other event is deterministic; `auth` disables
+`impersonate`; `unlinked` makes `newKeyUnlinked` ignore the partner, and without it
+`newKeyUnlinked` is `newKey`. -/
+noncomputable def advSysK (auth unlinked : Bool) (fresh : K → SPComp K) :
     Sys (St K) (AEv K) AOut where
   init := initSt
   step t e := match e with
@@ -305,10 +306,16 @@ noncomputable def advSys (auth unlinked : Bool) (keySample : SPComp K) :
     | .poll => SPComp.pure ((pollStep t).1, .notice (pollStep t).2)
     | .corrupt pid => SPComp.pure (corruptStep t pid, .ack)
     | .impersonate sid pid => SPComp.pure (if auth then t else impStep t (sid, pid), .ack)
-    | .newKey sid pid k => SPComp.map (fun kf => (newKeyStep t (sid, pid) k kf, .ack)) keySample
+    | .newKey sid pid k => SPComp.map (fun kf => (newKeyStep t (sid, pid) k kf, .ack)) (fresh k)
     | .newKeyUnlinked sid pid k =>
       SPComp.map (fun kf => ((if unlinked then newKeyFreshStep else newKeyStep) t (sid, pid) k kf,
-        .ack)) keySample
+        .ack)) (fresh k)
+
+/-- The adversary port as a system: `newKey` and `newKeyUnlinked` draw a fresh sample of
+`keySample`, whatever key the adversary proposes. -/
+noncomputable def advSys (auth unlinked : Bool) (keySample : SPComp K) :
+    Sys (St K) (AEv K) AOut :=
+  advSysK auth unlinked (fun _ => keySample)
 
 /-- The recipient woken by an adversary event: the session of `newKey`. -/
 def keyDlv : AEv K → Option Inst
@@ -318,6 +325,144 @@ def keyDlv : AEv K → Option Inst
 
 /-- The cut-off answer of the wake closure. -/
 def keyCut (_ : Inst) : HOut K ⊕ AOut := .inr .ack
+
+/-! ## Relabelling keys -/
+
+variable {K' : Type}
+
+/-- The record with its key relabelled by `f`. -/
+def Rec.mapKey (f : K → K') (r : Rec K) : Rec K' := ⟨r.peer, r.role, r.status, r.key.map f⟩
+
+/-- The state with every key relabelled by `f`. -/
+def St.mapKey (f : K → K') (t : St K) : St K' :=
+  ⟨fun x => (t.recs x).map (Rec.mapKey f), t.corrupt, t.notices, t.cursor⟩
+
+/-- The adversary event with its key relabelled by `f`. -/
+def AEv.mapKey (f : K → K') : AEv K → AEv K'
+  | .idle => .idle
+  | .poll => .poll
+  | .corrupt pid => .corrupt pid
+  | .impersonate sid pid => .impersonate sid pid
+  | .newKey sid pid k => .newKey sid pid (f k)
+  | .newKeyUnlinked sid pid k => .newKeyUnlinked sid pid (f k)
+
+/-- The honest output with its key relabelled by `f`. -/
+def HOut.mapKey (f : K → K') : HOut K → HOut K'
+  | .ok => .ok
+  | .key o => .key (o.map f)
+
+/-- The key of a session after relabelling is the relabelled key. -/
+theorem keyOf_mapKey (f : K → K') (t : St K) (x : Inst) :
+    keyOf (St.mapKey f t) x = (keyOf t x).map f := by
+  grind [keyOf, St.mapKey, Rec.mapKey]
+
+/-- Relabelling commutes with `setRec`. -/
+theorem setRec_mapKey (f : K → K') (t : St K) (x : Inst) (r : Rec K) :
+    St.mapKey f (setRec t x r) = setRec (St.mapKey f t) x (Rec.mapKey f r) := by
+  unfold setRec St.mapKey
+  congr 1
+  funext y
+  by_cases hy : y = x <;> simp [Function.update, hy]
+
+/-- Relabelling commutes with `addSession`. -/
+theorem addSession_mapKey (f : K → K') (t : St K) (x : Inst) (peer : PartyId) (role : Role) :
+    addSession (St.mapKey f t) x peer role = St.mapKey f (addSession t x peer role) := by
+  unfold addSession St.mapKey
+  by_cases h : (t.recs x).isSome = true
+  · simp [h]
+  · have h' : ¬ (Option.map (Rec.mapKey f) (t.recs x)).isSome = true := by simpa using h
+    simp only [h, h', Bool.false_eq_true, ↓reduceIte]
+    congr 1
+    funext y
+    by_cases hy : y = x <;> simp [Function.update, hy, Rec.mapKey]
+
+/-- Relabelling commutes with `pollStep`. -/
+theorem pollStep_mapKey (f : K → K') (t : St K) :
+    pollStep (St.mapKey f t) = ((pollStep t).1.mapKey f, (pollStep t).2) := by
+  unfold pollStep
+  split <;> simp_all [St.mapKey]
+
+/-- Relabelling commutes with `corruptStep`: the keys are not read by corruption. -/
+theorem corruptStep_mapKey (f : K → K') (t : St K) (pid : PartyId) :
+    corruptStep (St.mapKey f t) pid = (corruptStep t pid).mapKey f := by
+  rfl
+
+/-- Exposure does not depend on the keys. -/
+theorem exposed_mapKey (f : K → K') (t : St K) (x : Inst) (r : Rec K) :
+    Exposed (St.mapKey f t) x (Rec.mapKey f r) ↔ Exposed t x r := by
+  grind [Exposed, St.mapKey, Rec.mapKey]
+
+/-- Relabelling commutes with `newKeyVal`. -/
+theorem newKeyVal_mapKey (f : K → K') (t : St K) (x : Inst) (r : Rec K) (k kf : K) :
+    newKeyVal (St.mapKey f t) x (Rec.mapKey f r) (f k) (f kf) = f (newKeyVal t x r k kf) := by
+  unfold newKeyVal
+  by_cases he : Exposed t x r
+  · simp [(exposed_mapKey f t x r).2 he, he]
+  · have he' : ¬ Exposed (St.mapKey f t) x (Rec.mapKey f r) :=
+      fun h => he ((exposed_mapKey f t x r).1 h)
+    simp only [he, he', ↓reduceIte]
+    have hm : (St.mapKey f t).recs (x.1, (Rec.mapKey f r).peer)
+        = (t.recs (x.1, r.peer)).map (Rec.mapKey f) := rfl
+    cases hp : t.recs (x.1, r.peer) with
+    | none => simp [hm, hp]
+    | some p =>
+      by_cases hP : Partner x r p
+      · have hP' : Partner x (Rec.mapKey f r) (Rec.mapKey f p) := by
+          simpa [Partner, Rec.mapKey] using hP
+        simp [hP, Rec.mapKey]
+        grind [Rec.mapKey, Option.getD_map]
+      · have hP' : ¬ Partner x (Rec.mapKey f r) (Rec.mapKey f p) := by
+          simpa [Partner, Rec.mapKey] using hP
+        simp [hm, hp, hP, hP']
+
+/-- Relabelling commutes with `newKeyStep`. -/
+theorem newKeyStep_mapKey (f : K → K') (t : St K) (x : Inst) (k kf : K) :
+    newKeyStep (St.mapKey f t) x (f k) (f kf) = (newKeyStep t x k kf).mapKey f := by
+  unfold newKeyStep
+  cases h : t.recs x with
+  | none => simp [St.mapKey, h]
+  | some r =>
+    have hm : (St.mapKey f t).recs x = some (Rec.mapKey f r) := by simp [St.mapKey, h]
+    have he := exposed_mapKey f t x r
+    by_cases hk : r.key.isNone = true
+    · have hk' : (Rec.mapKey f r).key.isNone = true := by simpa [Rec.mapKey] using hk
+      simp only [hm, hk, hk', ↓reduceIte, setRec_mapKey, newKeyVal_mapKey, he]
+      rfl
+    · have hk' : ¬ (Rec.mapKey f r).key.isNone = true := by simpa [Rec.mapKey] using hk
+      simp [hm, hk, hk']
+
+/-- Relabelling commutes with `newKeyFreshStep`. -/
+theorem newKeyFreshStep_mapKey (f : K → K') (t : St K) (x : Inst) (k kf : K) :
+    newKeyFreshStep (St.mapKey f t) x (f k) (f kf) = (newKeyFreshStep t x k kf).mapKey f := by
+  unfold newKeyFreshStep
+  cases h : t.recs x with
+  | none => simp [St.mapKey, h]
+  | some r =>
+    have hm : (St.mapKey f t).recs x = some (Rec.mapKey f r) := by simp [St.mapKey, h]
+    have he := exposed_mapKey f t x r
+    by_cases hk : r.key.isNone = true
+    · have hk' : (Rec.mapKey f r).key.isNone = true := by simpa [Rec.mapKey] using hk
+      simp only [hm, hk, hk', ↓reduceIte, setRec_mapKey, he]
+      by_cases hE : Exposed t x r <;> simp [hE, Rec.mapKey]
+    · have hk' : ¬ (Rec.mapKey f r).key.isNone = true := by simpa [Rec.mapKey] using hk
+      simp [hm, hk, hk']
+
+/-- Relabelling commutes with `impStep`. -/
+theorem impStep_mapKey (f : K → K') (t : St K) (x : Inst) :
+    impStep (St.mapKey f t) x = (impStep t x).mapKey f := by
+  unfold impStep
+  cases h : t.recs x with
+  | none => simp [St.mapKey, h]
+  | some r =>
+    have hm : (St.mapKey f t).recs x = some (Rec.mapKey f r) := by simp [St.mapKey, h]
+    by_cases hc : r.status = .fresh ∧ r.key.isNone = true
+    · have hc' : (Rec.mapKey f r).status = .fresh ∧ (Rec.mapKey f r).key.isNone = true := by
+        simpa [Rec.mapKey] using hc
+      simp only [hm, hc, hc']
+      grind only [Rec.mapKey.eq_def, St.mapKey.eq_def, setRec_mapKey, setRec.eq_def, St.mk.injEq]
+    · have hc' : ¬ ((Rec.mapKey f r).status = .fresh ∧ (Rec.mapKey f r).key.isNone = true) := by
+        simpa [Rec.mapKey] using hc
+      simp only [hm, hc, hc', ↓reduceIte]
 
 end FAKE
 
@@ -332,12 +477,23 @@ def keHonView {K : Type} : PubView HEv (HOut K) where
 
 /-! ## The functionalities -/
 
-/-- **The ideal authenticated key exchange** with the key distribution `keySample`: the honest
-port on the left, the adversary port on the right, one shared state. With `unlinked = true` it
-is the ideal implicitly authenticated key exchange without key confirmation. -/
+/-- **The ideal authenticated key exchange with a fresh-key kernel**: a fresh session receives
+a key drawn from `fresh k`, where `k` is the key the adversary proposes. The honest port is on
+the left, the adversary port on the right, one shared state. With `unlinked = true` it is the
+ideal implicitly authenticated key exchange without key confirmation. -/
+noncomputable def F_AKEK {K : Type} (fresh : K → SPComp K) (unlinked : Bool := false) :
+    Sys (St K) (HEv ⊕ AEv K) (HOut K ⊕ AOut) :=
+  Sys.ofPorts honSys (advSysK true unlinked fresh)
+
+/-- **The ideal authenticated key exchange** with the key distribution `keySample`:
+`F_AKEK` with the kernel that ignores the proposal. -/
 noncomputable def F_AKE {K : Type} (keySample : SPComp K) (unlinked : Bool := false) :
     Sys (St K) (HEv ⊕ AEv K) (HOut K ⊕ AOut) :=
-  Sys.ofPorts honSys (advSys true unlinked keySample)
+  F_AKEK (fun _ => keySample) unlinked
+
+/-- The fresh-key kernel that samples the key uniformly and keeps the datum of the proposal. -/
+noncomputable def prekeyFresh (K D : Type) [Fintype K] [Nonempty K] : K × D → SPComp (K × D) :=
+  fun p => SPComp.map (·, p.2) (SPComp.sample K)
 
 /-- **The ideal unauthenticated key exchange** with the key distribution `keySample`: as
 `F_AKE`, with `impersonate` enabled. -/
@@ -362,25 +518,35 @@ variable {K : Type}
 
 /-! ## Ports, idling and opacity -/
 
+/-- `F_AKEK` answers every event on the port of the event. -/
+theorem F_AKEK_portTyped (fresh : K → SPComp K) (unlinked : Bool) :
+    (F_AKEK fresh unlinked).PortTyped :=
+  Sys.ofPorts_portTyped _ _
+
 /-- `F_AKE` answers every event on the port of the event. -/
 theorem F_AKE_portTyped (keySample : SPComp K) (unlinked : Bool) :
     (F_AKE keySample unlinked).PortTyped :=
-  Sys.ofPorts_portTyped _ _
+  F_AKEK_portTyped _ _
 
 /-- `F_KE` answers every event on the port of the event. -/
 theorem F_KE_portTyped (keySample : SPComp K) (unlinked : Bool) :
     (F_KE keySample unlinked).PortTyped :=
   Sys.ofPorts_portTyped _ _
 
+/-- `F_AKEK` is idle at the adversary event `idle`. -/
+theorem F_AKEK_idleAt (fresh : K → SPComp K) (unlinked : Bool) :
+    MultiHybrid.IdleAt (F_AKEK fresh unlinked) (.inr .idle) (.inr .ack) := fun t => by
+  simp [F_AKEK, advSysK]
+
 /-- `F_AKE` is idle at the adversary event `idle`. -/
 theorem F_AKE_idleAt (keySample : SPComp K) (unlinked : Bool) :
-    MultiHybrid.IdleAt (F_AKE keySample unlinked) (.inr .idle) (.inr .ack) := fun t => by
-  simp [F_AKE, advSys]
+    MultiHybrid.IdleAt (F_AKE keySample unlinked) (.inr .idle) (.inr .ack) :=
+  F_AKEK_idleAt _ _
 
 /-- `F_KE` is idle at the adversary event `idle`. -/
 theorem F_KE_idleAt (keySample : SPComp K) (unlinked : Bool) :
     MultiHybrid.IdleAt (F_KE keySample unlinked) (.inr .idle) (.inr .ack) := fun t => by
-  simp [F_KE, advSys]
+  simp [F_KE, advSys, advSysK]
 
 /-- A system on the key-exchange interface is opaque for `keHonView.sum eqView`: the view is
 the equality on events and relates more outputs than the equality. -/
@@ -397,11 +563,16 @@ theorem opaque_keView {τ : Type} (X : Sys τ (HEv ⊕ AEv K) (HOut K ⊕ AOut))
       · exact Sum.LiftRel.inl trivial
       · exact Sum.LiftRel.inr rfl)
 
-/-- **Opacity of `F_AKE`**: equal events give equal adversary outputs; the keys reach only the
+/-- **Opacity of `F_AKEK`**: equal events give equal adversary outputs; the keys reach only the
 honest port. -/
+theorem F_AKEK_opaque (fresh : K → SPComp K) (unlinked : Bool) :
+    (F_AKEK fresh unlinked).Opaque (keHonView.sum eqView) :=
+  opaque_keView _
+
+/-- **Opacity of `F_AKE`**. -/
 theorem F_AKE_opaque (keySample : SPComp K) (unlinked : Bool) :
     (F_AKE keySample unlinked).Opaque (keHonView.sum eqView) :=
-  opaque_keView _
+  F_AKEK_opaque _ _
 
 /-- **Opacity of `F_KE`**. -/
 theorem F_KE_opaque (keySample : SPComp K) (unlinked : Bool) :
@@ -448,6 +619,26 @@ theorem newKeyStep_key_fresh {t : St K} {x : Inst} {r : Rec K} (k kf : K)
     · rfl
   simp [newKeyStep, hr, hk, setRec, keyOf, hv]
 
+/-- **The fresh key of `F_AKEK`.** At a session without a key that is not exposed and has no
+completed partner, the step of `newKey` with the proposal `k` stores a key drawn from `fresh k`
+and marks the session completed. -/
+theorem F_AKEK_step_newKey_fresh (fresh : K → SPComp K) (unlinked : Bool) {t : St K}
+    {sid : SessionId} {pid : PartyId} {r : Rec K} (k : K) (hr : t.recs (sid, pid) = some r)
+    (hk : r.key = none) (he : ¬ Exposed t (sid, pid) r)
+    (hp : ∀ p, t.recs (sid, r.peer) = some p → ¬ Partner (sid, pid) r p) :
+    (F_AKEK fresh unlinked).step t (.inr (.newKey sid pid k)) =
+      SPComp.map (fun kf => (setRec t (sid, pid) { r with key := some kf, status := .completed },
+        .inr .ack)) (fresh k) := by
+  have hv : ∀ kf, newKeyVal t (sid, pid) r k kf = kf := by
+    intro kf
+    unfold newKeyVal
+    simp only [he, ↓reduceIte]
+    split
+    · next p hp' => simp only [hp p hp', ↓reduceIte]
+    · rfl
+  simp [F_AKEK, advSysK, newKeyStep, hr, hk, hv, he, SPComp.map, SPComp.bind_assoc,
+    SPComp.pure_bind]
+
 /-- **The fresh key of `F_AKE`.** At a session without a key that is not exposed and has no
 completed partner, the step of `newKey` stores a fresh sample of `keySample` and marks the
 session completed, whatever key `k` the adversary proposes. -/
@@ -457,16 +648,8 @@ theorem F_AKE_step_newKey_fresh (keySample : SPComp K) (unlinked : Bool) {t : St
     (hp : ∀ p, t.recs (sid, r.peer) = some p → ¬ Partner (sid, pid) r p) :
     (F_AKE keySample unlinked).step t (.inr (.newKey sid pid k)) =
       SPComp.map (fun kf => (setRec t (sid, pid) { r with key := some kf, status := .completed },
-        .inr .ack)) keySample := by
-  have hv : ∀ kf, newKeyVal t (sid, pid) r k kf = kf := by
-    intro kf
-    unfold newKeyVal
-    simp only [he, ↓reduceIte]
-    split
-    · next p hp' => simp only [hp p hp', ↓reduceIte]
-    · rfl
-  simp [F_AKE, advSys, newKeyStep, hr, hk, hv, he, SPComp.map, SPComp.bind_assoc,
-    SPComp.pure_bind]
+        .inr .ack)) keySample :=
+  F_AKEK_step_newKey_fresh (fun _ => keySample) unlinked k hr hk he hp
 
 /-- A session without a key that `newKeyUnlinked` reaches receives the adversary key when it is
 exposed and the fresh sample otherwise. -/
@@ -480,14 +663,14 @@ theorem F_AKE_step_impersonate (keySample : SPComp K) (unlinked : Bool) (t : St 
     (sid : SessionId) (pid : PartyId) :
     (F_AKE keySample unlinked).step t (.inr (.impersonate sid pid)) =
       SPComp.pure (t, .inr .ack) := by
-  simp [F_AKE, advSys]
+  simp [F_AKE, F_AKEK, advSysK]
 
 /-- In `F_AKE` without `unlinked`, `newKeyUnlinked` steps as `newKey`. -/
 theorem F_AKE_step_newKeyUnlinked_linked (keySample : SPComp K) (t : St K) (sid : SessionId)
     (pid : PartyId) (k : K) :
     (F_AKE keySample false).step t (.inr (.newKeyUnlinked sid pid k)) =
       (F_AKE keySample false).step t (.inr (.newKey sid pid k)) := by
-  simp [F_AKE, advSys]
+  simp [F_AKE, F_AKEK, advSysK]
 
 /-- In `F_AKE` with `unlinked`, `newKeyUnlinked` stores the key of `newKeyFreshStep`, which
 ignores the partner. -/
@@ -495,7 +678,32 @@ theorem F_AKE_step_newKeyUnlinked_unlinked (keySample : SPComp K) (t : St K) (si
     (pid : PartyId) (k : K) :
     (F_AKE keySample true).step t (.inr (.newKeyUnlinked sid pid k)) =
       SPComp.map (fun kf => (newKeyFreshStep t (sid, pid) k kf, .inr .ack)) keySample := by
-  simp [F_AKE, advSys, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+  simp [F_AKE, F_AKEK, advSysK, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+
+/-! ## Relabelling the keys of `F_AKEK` -/
+
+/-- Relabelling the keys of the initial state gives the initial state. -/
+theorem St.mapKey_initSt {K' : Type} (f : K → K') : St.mapKey f (initSt : St K) = initSt := by
+  simp [St.mapKey, initSt]
+
+/-- **A step map between key-exchange functionalities.** If the fresh-key kernel `fresh'` at
+`f p` is the image under `f` of the kernel `fresh` at `p`, then relabelling the keys of the state,
+of the event and of the output by `f` maps each step of `F_AKEK fresh` to the step of
+`F_AKEK fresh'`. -/
+theorem F_AKEK_stepMap_mapKey {K' : Type} (f : K → K') {fresh : K → SPComp K}
+    {fresh' : K' → SPComp K'} (hκ : ∀ p, fresh' (f p) = SPComp.map f (fresh p))
+    (unlinked : Bool) (t : St K) (e : HEv ⊕ AEv K) :
+    SPComp.map (fun q => (St.mapKey f q.1, Sum.map (HOut.mapKey f) id q.2))
+        ((F_AKEK fresh unlinked).step t e) =
+      (F_AKEK fresh' unlinked).step (St.mapKey f t) (Sum.map id (AEv.mapKey f) e) := by
+  rcases e with e | e
+  · cases e <;>
+      simp [F_AKEK, honSys, honStep, SPComp.map, SPComp.pure_bind,
+        addSession_mapKey, keyOf_mapKey, HOut.mapKey]
+  · cases e <;>
+      simp [F_AKEK, advSysK, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, hκ, AEv.mapKey,
+        pollStep_mapKey, corruptStep_mapKey, newKeyStep_mapKey]
+    cases unlinked <;> simp [newKeyStep_mapKey, newKeyFreshStep_mapKey]
 
 /-! ## Correctness -/
 

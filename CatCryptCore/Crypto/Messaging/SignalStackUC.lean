@@ -914,7 +914,7 @@ theorem F_SC_step (t : St K) (e : HEv ⊕ AEv K) :
       SPComp.map (fun o => (stNext t e, o)) (scOut realV idealV t e) := by
   rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) |
     (_ | _ | pid | ⟨sid, pid⟩ | ⟨sid, pid, k⟩ | ⟨sid, pid, k⟩) <;>
-    simp [F_SC, chanHon, advSys, stNext, scOut, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+    simp [F_SC, chanHon, advSys, advSysK, stNext, scOut, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
 
 omit [Fintype K] [Nonempty K] [Inhabited K] in
 /-- Two view functions that agree at the record and the key of the session give the same
@@ -1345,11 +1345,11 @@ theorem world_zero_stepMap :
       rfl
     · simp only [world, wDraw, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOut,
         SPComp.map]
-      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.pure_bind]
+      simp only [FR, Sys.ofPorts_step_inr, advSys, advSysK, SPComp.map, SPComp.pure_bind]
       rfl
     · simp only [world, wDraw, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOut,
         SPComp.map]
-      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.pure_bind]
+      simp only [FR, Sys.ofPorts_step_inr, advSys, advSysK, SPComp.map, SPComp.pure_bind]
       congr 2
       · refine St.ext' ?_
           (by show (pollStep w.st).1.corrupt = _; rw [pollStep_eq, pollStep_eq]; rfl)
@@ -1361,19 +1361,19 @@ theorem world_zero_stepMap :
       · rw [pollStep_eq, pollStep_eq]; rfl
     · simp only [world, wDraw, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOut,
         SPComp.map]
-      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.pure_bind]
+      simp only [FR, Sys.ofPorts_step_inr, advSys, advSysK, SPComp.map, SPComp.pure_bind]
       rfl
     · simp only [world, wDraw, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOut,
         SPComp.map]
-      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.pure_bind, ite_true]
+      simp only [FR, Sys.ofPorts_step_inr, advSys, advSysK, SPComp.map, SPComp.pure_bind, ite_true]
       rfl
     · simp only [world, wDraw, isNewKey, ite_true, ite_self, wOut, SPComp.map, SPComp.bind_assoc,
         SPComp.pure_bind]
-      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.bind_assoc,
+      simp only [FR, Sys.ofPorts_step_inr, advSys, advSysK, SPComp.map, SPComp.bind_assoc,
         SPComp.pure_bind, fill_newKey hw]
     · simp only [world, wDraw, isNewKey, ite_true, ite_self, wOut, SPComp.map, SPComp.bind_assoc,
         SPComp.pure_bind]
-      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.bind_assoc,
+      simp only [FR, Sys.ofPorts_step_inr, advSys, advSysK, SPComp.map, SPComp.bind_assoc,
         SPComp.pure_bind, fill_newKeyFresh hw, ite_true]
 
 /-! ## One step of the hybrid argument -/
@@ -1726,22 +1726,22 @@ theorem stack_ideal_stepMap_of [Fintype K] [Nonempty K]
     rcases r with ⟨s', (ev | (h | ro))⟩
     · simp only [MultiHybrid.drive, decK, hF.finish_eq, SPComp.bind_assoc, SPComp.pure_bind]
       rcases ev with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | ev
-      · cases F.phase s' <;> simp [FR, chanHon, F_AKE, honSys, honStep, keyLayer, fwdOut,
+      · cases F.phase s' <;> simp [FR, chanHon, F_AKE, F_AKEK, honSys, honStep, keyLayer, fwdOut,
           SPComp.map, SPComp.pure_bind]
       · have hc := chanOut_pureNF (fun _ k => hR k) t (sid, pid)
         cases F.phase s' with
         | none =>
-          simp only [FR, F_AKE, Sys.ofPorts_step_inl, chanHon, honSys, honStep, SPComp.map,
+          simp only [FR, F_AKE, F_AKEK, Sys.ofPorts_step_inl, chanHon, honSys, honStep, SPComp.map,
             SPComp.bind_assoc, SPComp.pure_bind, fwdOut]
           have hk := keyLayer_key (R := R) realV t (sid, pid)
           simp only [SPComp.map] at hk
           rw [hk]
           simp only [SPComp.bind_assoc, SPComp.pure_bind]
         | some r =>
-          simp only [FR, F_AKE, Sys.ofPorts_step_inl, chanHon, honSys, honStep, SPComp.map,
+          simp only [FR, F_AKE, F_AKEK, Sys.ofPorts_step_inl, chanHon, honSys, honStep, SPComp.map,
             SPComp.bind_assoc, SPComp.pure_bind, fwdOut, keyLayer]
           exact bind_const_of_isPure hc.1 hc.2 _
-      · simp only [FR, F_AKE, Sys.ofPorts_step_inr, SPComp.map, SPComp.bind_assoc,
+      · simp only [FR, F_AKE, F_AKEK, Sys.ofPorts_step_inr, SPComp.map, SPComp.bind_assoc,
           SPComp.pure_bind]
         congr 1; funext q
         rw [keyLayer_fwdOut_inr]
@@ -1904,13 +1904,13 @@ omit [Inhabited K] in
 /-- `FR` is idle at the idle event of the adversary. -/
 theorem FR_idleAt {V : Type} (realV : K → SPComp V) :
     MultiHybrid.IdleAt (FR realV) (.inr .idle) (.inr .ack) := fun t => by
-  simp [FR, advSys, SPComp.map]
+  simp [FR, advSys, advSysK, SPComp.map]
 
 omit [Fintype K] [Nonempty K] in
 /-- `F_SC` is idle at the idle event of the adversary. -/
 theorem F_SC_idleAt {V : Type} (realV : K → SPComp V) (idealV : SPComp V) :
     MultiHybrid.IdleAt (F_SC realV idealV) (.inr .idle) (.inr .ack) := fun t => by
-  simp [F_SC, advSys, SPComp.map]
+  simp [F_SC, advSys, advSysK, SPComp.map]
 
 omit [Field S] [Fintype S] [SampleableType W] in
 /-- **The wrapper over `FR` realizes the wrapper over `F_SC`**: for views that neither touch the
