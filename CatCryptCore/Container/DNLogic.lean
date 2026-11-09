@@ -258,6 +258,15 @@ inductive Deriv : {I : Type u} → {n : ℕ} → (Fin n → Form I) → Form I �
       (q : I → Prop) (d : Deriv Γ (.imp (.all (.atom p)) (.atom q))) :
       Deriv Γ (.ex (K := fun i => Multiset (K i))
         (.atom fun x => (∀ k ∈ x.2, p ⟨x.1, k⟩) → q x.1))
+  /-- A realized axiom: a true entailment given by a morphism `f` of the Diller–Nahm meanings
+  whose backward map demands at most `N` counter-witnesses of the premise. -/
+  | hom {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {φ ψ : Form I} (f : φ.dn.Hom ψ.dn) (N : ℕ)
+      (hN : ∀ i w c, (f.back i w c).card ≤ N) (hev : ∀ i, φ.eval i → ψ.eval i)
+      (d : Deriv Γ φ) : Deriv Γ ψ
+  /-- An atom entailed by two atoms: its counter-witness demands one of each premise. -/
+  | atom₂ {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {p q s : I → Prop}
+      (h : ∀ i, p i → q i → s i) (d : Deriv Γ (.atom p)) (e : Deriv Γ (.atom q)) :
+      Deriv Γ (.atom s)
 
 namespace Deriv
 
@@ -293,6 +302,8 @@ theorem eval {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) (i : I)
       push Not at this
       obtain ⟨k, hk⟩ := this
       exact ⟨{k}, fun hk' => absurd (hk' k (Multiset.mem_singleton_self k)) hk⟩
+  | hom f N hN hev d ih => exact hev i (ih i h)
+  | atom₂ hs d e ihd ihe => exact hs i (ihd i h) (ihe i h)
 
 /-- **Soundness.** A derivation gives a morphism of the fibre from the context to the conclusion:
 the forward map is the realizer, the backward map the demand on the hypotheses. -/
@@ -366,6 +377,13 @@ def realize : {I : Type u} → {n : ℕ} → {Γ : Fin n → Form I} → {φ : F
   | _, _, _, _, .ac (φ := φ) d => Hom.comp d.realize (DPred.choice φ.dn).hom
   | _, _, _, _, .ip p (ψ := ψ) _ d => Hom.comp d.realize (DPred.ip p ψ.dn)
   | _, _, _, _, .markov p q d => Hom.comp d.realize (DPred.markovDN p q)
+  | _, _, _, _, .hom f _ _ _ d => Hom.comp d.realize f
+  | _, _, _, _, .atom₂ h d e =>
+    { fwd := fun _ _ => PUnit.unit
+      back := fun i w _ => d.realize.back i w PUnit.unit + e.realize.back i w PUnit.unit
+      sound := fun i w _ hw => h i
+        (d.realize.sound i w PUnit.unit fun x hx => hw x (Multiset.mem_add.2 (.inl hx)))
+        (e.realize.sound i w PUnit.unit fun x hx => hw x (Multiset.mem_add.2 (.inr hx))) }
 
 /-- The use counts of a derivation: the uses of each hypothesis (one at a leaf, the maximum at
 `∧`-introduction, and at a cut the product of the uses of the cut formula with the uses in the
@@ -387,6 +405,8 @@ def uses : {I : Type u} → {n : ℕ} → {Γ : Fin n → Form I} → {φ : Form
   | _, _, _, _, .ac d => (d.uses.1, ⊤)
   | _, _, _, _, .ip _ _ d => (d.uses.1, ⊤)
   | _, _, _, _, .markov _ _ d => (d.uses.1, ⊤)
+  | _, _, _, _, .hom _ N _ _ d => (fun j => (N : ℕ∞) * d.uses.1 j, ⊤)
+  | _, _, _, _, .atom₂ _ d e => (fun j => d.uses.1 j + e.uses.1 j, ⊤)
 
 /-- The number of uses of hypothesis `k` in a derivation. -/
 def useCount {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) (k : Fin n) : ℕ∞ := d.uses.1 k
@@ -512,6 +532,14 @@ theorem bounds {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) :
     change ((Multiset.countP _ (({_} : Multiset _).bind (d.realize.back i w)) : ℕ) : ℕ∞) ≤ _
     exact (congrArg (fun m => ((Multiset.countP (fun x => x.1 = k) m : ℕ) : ℕ∞))
       (Multiset.singleton_bind _ (d.realize.back i w))).trans_le (ih.1 k i w _)
+  | hom f N hN hev d ih =>
+    refine ⟨fun k i w c => ?_, argBound_top _⟩
+    exact (countP_bind_le _ _ _ _ fun x _ => ih.1 k i w x).trans
+      (mul_le_mul_of_nonneg_right (by exact_mod_cast hN i _ c) (by simp))
+  | atom₂ h d e ihd ihe =>
+    refine ⟨fun k i w c => ?_, argBound_top _⟩
+    simp only [realize, useCount, uses, Multiset.countP_add, Nat.cast_add]
+    exact add_le_add (ihd.1 k i w _) (ihe.1 k i w _)
 
 /-- **Quantitative soundness.** The realizer of a derivation demands at most `useCount d k`
 counter-witnesses of hypothesis `k`. -/
@@ -593,6 +621,90 @@ theorem queryPrice_le (d : Deriv (fun _ : Fin 1 => allEx a) (allEx r))
     _ ≤ d.useCount 0 * T := mul_le_mul_of_nonneg_right (d.queries_card_le g i x') (by simp)
 
 end Oracle
+
+end Deriv
+
+/-! ## Use counts of realized axioms, choice and `∃`-elimination
+
+A realized axiom `Deriv.hom f N` multiplies the uses of its premise by the bound `N` on the
+counter-witnesses that `f` demands; a finite conjunction over `N` instances is one such axiom.
+The equations below compute use counts of derivations built from hypotheses, choice,
+`∃`-elimination and realized axioms. -/
+
+namespace Deriv
+
+section UseCountEquations
+
+variable {Γ : Fin n → Form I}
+
+/-- Unfolding equation of `useCount` at a hypothesis: it is used once. -/
+@[simp] theorem useCount_hyp (k j : Fin n) :
+    (hyp (Γ := Γ) k).useCount j = if j = k then 1 else 0 := rfl
+
+/-- Unfolding equation of `useCount` at a realized axiom: the uses of its premise times its
+demand bound. -/
+@[simp] theorem useCount_hom {φ ψ : Form I} (f : φ.dn.Hom ψ.dn) (N : ℕ)
+    (hN : ∀ i w c, (f.back i w c).card ≤ N) (hev : ∀ i, φ.eval i → ψ.eval i) (d : Deriv Γ φ)
+    (k : Fin n) : (hom f N hN hev d).useCount k = N * d.useCount k := rfl
+
+/-- Unfolding equation of `useCount` at the axiom of choice: the use counts of its premise. -/
+@[simp] theorem useCount_ac {K : I → Type u} {L : (Σ i, K i) → Type u}
+    {φ : Form (Σ x : Σ i, K i, L x)} (d : Deriv Γ (.all (.ex φ))) (k : Fin n) :
+    (ac d).useCount k = d.useCount k := rfl
+
+/-- Unfolding equation of `useCount` at `∃`-elimination: the uses in the body, plus the uses of
+the eliminated witness times its uses in the derivation of the existential. -/
+@[simp] theorem useCount_exE {K : I → Type u} {φ : Form (Σ i, K i)} {ψ : Form I}
+    (d : Deriv Γ (.ex φ)) (e : Deriv (consF φ fun k => (Γ k).sub Sigma.fst) (ψ.sub Sigma.fst))
+    (k : Fin n) : (exE d e).useCount k = e.useCount k.succ + e.useCount 0 * d.useCount k := rfl
+
+end UseCountEquations
+
+end Deriv
+
+/-! ## Conversion between formulas of equal meaning, and atoms from two atoms
+
+A formula and its substitution pushed through the connectives have the same Diller–Nahm
+meaning; `Deriv.conv` passes between them along the identity of that meaning, as a realized
+axiom demanding one counter-witness, so that a hypothesis reindexed by `∀`- or
+`∃`-introduction can be eliminated. `Deriv.atom₂` concludes an atom from two atoms, demanding
+one counter-witness of each: its use counts are the sums of those of its premises. -/
+
+/-- The morphism of the fibre along an equality of Dialectica predicates. -/
+def homOfEq {P Q : DPred I} (h : P = Q) : P.Hom Q := h ▸ Hom.id P
+
+/-- The morphism along an equality demands at most one counter-witness. -/
+theorem homOfEq_back_card {P Q : DPred I} (h : P = Q) (i : I) (w : P.W i)
+    (c : Q.C i ((homOfEq h).fwd i w)) : ((homOfEq h).back i w c).card ≤ 1 := by
+  subst h
+  exact (Multiset.card_singleton _).le
+
+namespace Deriv
+
+section Conv
+
+variable {Γ : Fin n → Form I}
+
+/-- Conversion to a formula of the same Diller–Nahm meaning and weaker truth value; both side
+conditions hold by `rfl` when the two formulas are definitionally equal after unfolding the
+interpretations. -/
+def conv {φ ψ : Form I} (d : Deriv Γ φ) (h : φ.dn = ψ.dn := by rfl)
+    (hev : ∀ i, φ.eval i → ψ.eval i := by exact fun _ h => h) : Deriv Γ ψ :=
+  hom (homOfEq h) 1 (homOfEq_back_card h) hev d
+
+/-- Conversion keeps the use counts. -/
+@[simp] theorem useCount_conv {φ ψ : Form I} (d : Deriv Γ φ) (h : φ.dn = ψ.dn)
+    (hev : ∀ i, φ.eval i → ψ.eval i) (k : Fin n) :
+    (conv d h hev).useCount k = d.useCount k := by
+  simp [conv]
+
+/-- An atom from two atoms uses each hypothesis as often as both premises together (the
+unfolding equation of `useCount` at `atom₂`). -/
+@[simp] theorem useCount_atom₂ {p q s : I → Prop} (h : ∀ i, p i → q i → s i)
+    (d : Deriv Γ (.atom p)) (e : Deriv Γ (.atom q)) (k : Fin n) :
+    (atom₂ h d e).useCount k = d.useCount k + e.useCount k := rfl
+
+end Conv
 
 end Deriv
 

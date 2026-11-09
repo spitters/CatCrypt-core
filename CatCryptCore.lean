@@ -723,6 +723,8 @@ public import CatCryptCore.Container.RGraphCwF
 public import CatCryptCore.Container.PolyRGraph
 public import CatCryptCore.Container.RGraphUniverse
 public import CatCryptCore.Container.DNLogic
+public import CatCryptCore.Container.DNLogicShares
+public import CatCryptCore.Container.DNLogicSigma
 public import CatCryptCore.Crypto.Party.ProgECost
 public import CatCryptCore.Crypto.Party.ViewRelCode
 public import CatCryptCore.Container.PolyPiSigma
