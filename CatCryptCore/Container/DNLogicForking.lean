@@ -30,12 +30,24 @@ probability that the simulated EUF-CMA game is won on `x`. The extractor that re
 until it succeeds has expected cost at most `price / forkBound A x`, which is the price times the
 use count of `retryCollect` with one success at `p = forkBound A x`.
 
+The price of an attempt is read from the costed tree: `timedCost` reads a query-free costed
+adversary as a `CostComp` that charges one unit per sampling node and the step cost of each
+continuation, so that its expected cost is at most the tree's time bound and its erasure is the
+tree's output distribution. The attempt `forkAttemptTimed` is this reading of the costed
+rewinding reduction `extractReduction.timed`; it erases to `forkAttempt`, and the extractor that
+retries it has expected cost at most `B / forkBound A x` for the time bound `B` of
+`extractReduction.timeBound_timed`.
+
 ## Main definitions
 
 * `FiatShamirROM.forkAcc`, `FiatShamirROM.forkBound` — the winning probability of the simulated
   game and the forking lemma's lower bound on the success of one fork;
 * `FiatShamirROM.checkW`, `FiatShamirROM.forkAttempt`, `FiatShamirROM.forkExtractor` — one
-  priced fork that keeps a valid witness, and the retry loop over it.
+  priced fork that keeps a valid witness, and the retry loop over it;
+* `FiatShamirROM.timedCost`, `FiatShamirROM.stepTimedCost` — the costed reading of a
+  query-free costed adversary;
+* `FiatShamirROM.forkAttemptTimed`, `FiatShamirROM.forkExtractorTimed` — the attempt read from
+  the costed rewinding reduction, and the retry loop over it.
 
 ## Main results
 
@@ -50,7 +62,13 @@ use count of `retryCollect` with one success at `p = forkBound A x`.
 * `FiatShamirROM.forkExtractor_sound` — every witness the extractor returns satisfies the
   relation;
 * `FiatShamirROM.forkExtractor_timed` — at the price of the time certificate of
-  `extractReduction.timed`, the expected cost is at most that time divided by `forkBound A x`.
+  `extractReduction.timed`, the expected cost is at most that time divided by `forkBound A x`;
+* `FiatShamirROM.ecost_timedCost_le`, `FiatShamirROM.erase_timedCost` — the costed reading
+  costs at most the time bound and erases to the output distribution;
+* `FiatShamirROM.erase_forkAttemptTimed` — the attempt read from the costed tree erases to
+  `forkAttempt`;
+* `FiatShamirROM.ecost_forkExtractorTimed_le_timeBound` — the extractor over the attempt read
+  from the costed tree has expected cost at most `B / forkBound A x`.
 
 ## References
 
@@ -278,5 +296,164 @@ theorem forkExtractor_timed (hSS : P.SpecialSound) (A : Adversary P M qH qS)
   ⟨fun O' u => extractReduction.run_erase_timed A A' hA vkeyCost tH tS tF tExt O' u x,
     extractReduction.timeBound_timed A hA vkeyCost tV hV tH tS tF tExt hT x,
     fun N h => ecost_forkExtractor_le hSS A _ x N h⟩
+
+/-! ## The attempt read from the costed tree -/
+
+/-- The costed reading of a query-free costed adversary: a `rand` node samples at one unit and
+charges the step cost of the continuation taken. -/
+noncomputable def timedCost {R α : Type} : OracleAdv.Timed Empty R α → CostComp α
+  | .ret a => CostComp.pure a
+  | .rand p c k => CostComp.bind (CostComp.lift (liftPMF p) 1) fun b =>
+      CostComp.bind (CostComp.charge (c b)) fun _ => timedCost (k b)
+  | .query d _ _ => d.elim
+
+/-- The costed reading of a step-prefixed query-free costed adversary: the step cost, then the
+costed reading of the tree. -/
+noncomputable def stepTimedCost {R α : Type} (x : ℕ × OracleAdv.Timed Empty R α) :
+    CostComp α :=
+  CostComp.bind (CostComp.charge x.1) fun _ => timedCost x.2
+
+/-- The expected cost of the costed reading is at most a time bound of the tree. -/
+theorem ecost_timedCost_le {R α : Type} (A : OracleAdv.Timed Empty R α) {n : ℕ}
+    (hA : A.TimeBound n) (h : Heap) : ecost (timedCost A) h ≤ n := by
+  induction A generalizing n h with
+  | ret a => simp [timedCost]
+  | rand p c k ih =>
+    have h1 := hA.1
+    rw [timedCost]
+    refine (ecost_bind_le_add (C₁ := ((1 : ℕ) : ℝ≥0∞)) (C₂ := ((n - 1 : ℕ) : ℝ≥0∞))
+      (fun h' => ecost_lift_le _ 1 h') (fun b h' => ?_) h).trans ?_
+    · have hb := hA.2 b
+      refine (ecost_bind_le_add (C₁ := ((c b : ℕ) : ℝ≥0∞))
+        (C₂ := ((n - 1 - c b : ℕ) : ℝ≥0∞)) (fun h'' => (ecost_charge _ _).le)
+        (fun _ h'' => ih b hb.2 h'') h').trans ?_
+      rw [← Nat.cast_add]
+      exact_mod_cast (by omega : c b + (n - 1 - c b) ≤ n - 1)
+    · rw [← Nat.cast_add]
+      exact_mod_cast (by omega : 1 + (n - 1) ≤ n)
+  | query d c k ih => exact d.elim
+
+/-- The expected cost of the costed reading of a step-prefixed tree is at most its step-time
+bound. -/
+theorem ecost_stepTimedCost_le {R α : Type} (x : ℕ × OracleAdv.Timed Empty R α) {n : ℕ}
+    (hx : OracleAdv.Timed.StepTimeBound x n) (h : Heap) : ecost (stepTimedCost x) h ≤ n := by
+  have h1 := hx.1
+  refine (ecost_bind_le_add (C₁ := ((x.1 : ℕ) : ℝ≥0∞)) (C₂ := ((n - x.1 : ℕ) : ℝ≥0∞))
+    (fun h' => (ecost_charge _ _).le) (fun _ h' => ecost_timedCost_le x.2 hx.2 h') h).trans ?_
+  rw [← Nat.cast_add]
+  exact_mod_cast (by omega : x.1 + (n - x.1) ≤ n)
+
+/-- Erasing the charges of the costed reading gives the output distribution of the erased tree,
+lifted to a computation that leaves the heap unchanged. -/
+theorem erase_timedCost {R α U : Type} (O' : U → Empty → PMF (R × U)) (u : U)
+    (A : OracleAdv.Timed Empty R α) :
+    (timedCost A).erase = liftPMF ((OracleAdv.run O' A.erase u).map Prod.fst) := by
+  induction A with
+  | ret a =>
+    rw [timedCost, erase_pure, OracleAdv.Timed.erase, OracleAdv.run_ret, PMF.pure_map,
+      liftPMF_pure]
+  | rand p c k ih =>
+    rw [timedCost, erase_bind_lift, OracleAdv.Timed.erase, OracleAdv.run_rand, PMF.map_bind,
+      ← liftPMF_bind_liftPMF]
+    congr 1
+    funext b
+    rw [erase_bind, ← ih b]
+    unfold CostComp.charge
+    rw [SPComp.pure_bind]
+  | query d c k ih => exact d.elim
+
+/-- Erasing the charges of the costed reading of a step-prefixed tree is erasing those of the
+tree. -/
+theorem erase_stepTimedCost {R α : Type} (x : ℕ × OracleAdv.Timed Empty R α) :
+    (stepTimedCost x).erase = (timedCost x.2).erase := by
+  unfold stepTimedCost CostComp.charge
+  rw [erase_bind, SPComp.pure_bind]
+
+/-- The failure probability of a body depends only on its erasure. -/
+theorem failProb_eq_wpE_erase {β : Type} (body : CostComp (Option β)) (h : Heap) :
+    failProb body h = wpE body.erase (fun r _ => r.elim 1 fun _ => 0) h := by
+  unfold failProb CostComp.erase
+  rw [wpE_bind]
+  simp only [wpE_pure]
+
+/-- One attempt of the rewinding extractor read from the costed tree: the costed reading of
+the costed rewinding reduction `extractReduction.timed`, keeping its output when it is a witness
+for `x`. -/
+noncomputable def forkAttemptTimed (vkeyCost : (P.toProtocol M).VkeyCost) (tH tS tF tExt : ℕ)
+    (A' : P.Stmt → OracleAdv.Timed (Query P M) (Answer P) (Forgery P M)) (x : P.Stmt) :
+    CostComp (Option P.Wit) :=
+  CostComp.bind (stepTimedCost (extractReduction.timed vkeyCost tH tS tF tExt A' x)) fun w =>
+    CostComp.pure (checkW x w)
+
+/-- The rewinding extractor whose attempt is read from the costed tree: the attempt
+`forkAttemptTimed` retried at most `N` times, until it returns a witness. -/
+noncomputable def forkExtractorTimed (vkeyCost : (P.toProtocol M).VkeyCost) (tH tS tF tExt : ℕ)
+    (A' : P.Stmt → OracleAdv.Timed (Query P M) (Answer P) (Forgery P M)) (x : P.Stmt) (N : ℕ) :
+    CostComp (Option P.Wit) :=
+  retryN (forkAttemptTimed vkeyCost tH tS tF tExt A' x) N
+
+/-- The attempt read from the costed tree computes the attempt `forkAttempt A price x`: both
+erase to the rewinding reduction followed by the witness check. -/
+theorem erase_forkAttemptTimed (A : Adversary P M qH qS)
+    {A' : P.Stmt → OracleAdv.Timed (Query P M) (Answer P) (Forgery P M)}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : (P.toProtocol M).VkeyCost)
+    (tH tS tF tExt price : ℕ) (x : P.Stmt) :
+    (forkAttemptTimed vkeyCost tH tS tF tExt A' x).erase = (forkAttempt A price x).erase := by
+  have e : ∀ (c : CostComp P.Wit),
+      SPComp.bind c (fun p => (CostComp.pure (checkW x p.1)).erase) =
+        SPComp.bind c.erase fun a => SPComp.pure (checkW x a) := by
+    intro c
+    unfold CostComp.erase
+    rw [SPComp.bind_assoc]
+    simp only [CostComp.pure, SPComp.pure_bind]
+  rw [forkAttemptTimed, erase_bind, e, erase_stepTimedCost,
+    erase_timedCost (fun (_ : Unit) d => d.elim) (),
+    extractReduction.run_erase_timed A A' hA vkeyCost tH tS tF tExt, liftPMF_bind_pure,
+    forkAttempt, erase_lift]
+
+/-- One attempt read from the costed tree fails with probability at most `1 − forkBound A x`. -/
+theorem failProb_forkAttemptTimed_le (hSS : P.SpecialSound) (A : Adversary P M qH qS)
+    {A' : P.Stmt → OracleAdv.Timed (Query P M) (Answer P) (Forgery P M)}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : (P.toProtocol M).VkeyCost)
+    (tH tS tF tExt : ℕ) (x : P.Stmt) (h : Heap) :
+    failProb (forkAttemptTimed vkeyCost tH tS tF tExt A' x) h ≤ 1 - forkBound A x := by
+  rw [failProb_eq_wpE_erase, erase_forkAttemptTimed A hA vkeyCost tH tS tF tExt 0,
+    ← failProb_eq_wpE_erase]
+  exact failProb_forkAttempt_le hSS A 0 x h
+
+/-- **Expected cost of one attempt read from the costed tree.** With `A'` a costed form of `A`
+of time `T`, the attempt costs at most the time bound `B` of `extractReduction.timeBound_timed`
+in expectation. -/
+theorem ecost_forkAttemptTimed_le (A : Adversary P M qH qS)
+    {A' : P.Stmt → OracleAdv.Timed (Query P M) (Answer P) (Forgery P M)}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : (P.toProtocol M).VkeyCost)
+    (tV : ℕ) (hV : (P.toProtocol M).VerifyCostLe vkeyCost tV) (tH tS tF tExt : ℕ) {T : ℕ}
+    (hT : ∀ x, (A' x).TimeBound T) (x : P.Stmt) (h : Heap) :
+    ecost (forkAttemptTimed vkeyCost tH tS tF tExt A' x) h ≤
+      ((2 * (T + (tV + (P.toProtocol M).V * (tV + 1)) +
+        ((tH + tF + 1) * (qH + (P.toProtocol M).V) + (tS + 1) * qS)) + tExt : ℕ) : ℝ≥0∞) := by
+  refine (ecost_bind_le_add (C₂ := 0)
+    (fun h' => ecost_stepTimedCost_le _
+      (extractReduction.timeBound_timed A hA vkeyCost tV hV tH tS tF tExt hT x) h')
+    (fun _ h' => (ecost_pure _ h').le) h).trans ?_
+  rw [add_zero]
+
+/-- **Expected cost of the rewinding extractor from the costed tree.** With `A'` a costed form
+of `A` of time `T`, the extractor whose attempt is read from the costed rewinding reduction
+`extractReduction.timed` has expected cost at most `B / forkBound A x`, where
+`B = 2 * (T + (tV + V * (tV + 1)) + ((tH + tF + 1) * (qH + V) + (tS + 1) * qS)) + tExt` is the
+time bound of `extractReduction.timeBound_timed`, uniformly in the retry budget. -/
+theorem ecost_forkExtractorTimed_le_timeBound (hSS : P.SpecialSound) (A : Adversary P M qH qS)
+    {A' : P.Stmt → OracleAdv.Timed (Query P M) (Answer P) (Forgery P M)}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : (P.toProtocol M).VkeyCost)
+    (tV : ℕ) (hV : (P.toProtocol M).VerifyCostLe vkeyCost tV) (tH tS tF tExt : ℕ) {T : ℕ}
+    (hT : ∀ x, (A' x).TimeBound T) (x : P.Stmt) (N : ℕ) (h : Heap) :
+    ecost (forkExtractorTimed vkeyCost tH tS tF tExt A' x N) h ≤
+      ((2 * (T + (tV + (P.toProtocol M).V * (tV + 1)) +
+        ((tH + tF + 1) * (qH + (P.toProtocol M).V) + (tS + 1) * qS)) + tExt : ℕ) : ℝ≥0∞) /
+        forkBound A x :=
+  ecost_retryN_le_div _ (forkBound_le_one hSS A x)
+    (ecost_forkAttemptTimed_le A hA vkeyCost tV hV tH tS tF tExt hT x)
+    (failProb_forkAttemptTimed_le hSS A hA vkeyCost tH tS tF tExt x) N h
 
 end CatCrypt.Crypto.FiatShamirROM
