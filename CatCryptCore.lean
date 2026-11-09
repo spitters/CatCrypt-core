@@ -410,6 +410,7 @@ public import CatCryptCore.Crypto.Messaging.SignalStackSMTimed
 public import CatCryptCore.Crypto.Messaging.SignalStackPQXDH
 public import CatCryptCore.Crypto.Messaging.SignalStackPQXDHTimed
 public import CatCryptCore.Crypto.Messaging.FSAEAD
+public import CatCryptCore.Crypto.Messaging.FSAEADInt
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.Signal.FSAEAD
 public import CatCryptCore.Crypto.Signal.DoubleRatchet_CKA
