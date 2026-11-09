@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Messaging.SMScheme
+public import CatCryptCore.Crypto.Messaging.SMAuth
 import CatCryptCore.Tactics.AutoDispatchExt
 
 /-!
@@ -73,12 +74,46 @@ ciphertexts of deliveries; the encoding of public values commutes with the ratch
 header. `smIDGameAt_sim` proves that the game of `M'` against `A` is the game of `M` against
 `A.comap`, which decodes the deliveries and encodes the answers.
 
+## The reduction to the corruption game of a base scheme
+
+`SMIDScheme.Over M M₀ π ι V Inv` states that `M` is the base scheme `M₀ : SMScheme` with public
+bookkeeping: the projection `π` of party states maps the algorithms of `M` to those of `M₀`
+(the message of the base scheme is `V.msg` of the message and the header), the key lookup keeps
+the projection, and on the states of an invariant `Inv` of the game with decryption from the
+log the header, the success of the key lookup at a matching log entry and, under the restricted
+gate, the corruption answer are computed by `V : SMIDView` from the bookkeeping and the epoch
+counters. The reduction `smIDRed M V ΔFS ΔPCS A` keeps the log, the public values of the opened
+epochs and the recorded positions, forwards the queries of the corruption game to the game over
+`M₀`, completes their answers by `V`, and answers deliveries from the log. Its corruption game
+is the game with decryption from the log (`smIDGame_logDec_eq`), so
+(`SMIDScheme.idAdvantage_le`)
+
+  `Adv_id(A) ≤ Adv_int(A) + Adv_corrupt,M₀(smIDRed A)`.
+
+## The hybrid over the epochs and the forgery event
+
+The hybrid `k` answers the deliveries whose header names an epoch below `k` from the log; for an
+adversary asking at most `N` queries (`SMIDScheme.intAdvantage_le_sum`)
+
+  `Adv_int(A) ≤ ∑_{k < N} Adv_int,k(A)`.
+
+A forgery at the epoch `k` (`smIDBadAt`) is a safe delivery into the epoch `k` with a successful
+key lookup whose real decryption differs from the plaintext of an undelivered matching entry,
+so in particular an accepted delivery that matches no undelivered entry; then
+(`SMIDScheme.epochIntAdvantage_le_bad`) `Adv_int,k(A) ≤ Pr[smIDBadGame k A]`, and the game
+truncated at the first answered corruption with the epoch `k` in its window has the same output
+(`smIDTruncGame_eq`).
+
 ## Main definitions
 
 * `SMIDScheme`, `SMIDQuery`, `SMIDAns`, `SMIDLogEntry`, `SMIDAux`, `smIDGate`, `smIDDeliver`,
   `smIDOracleAt`, `SMIDAdv`, `smIDGameAt`, `smIDGame`
 * `SMIDScheme.idAdvantage`, `SMIDScheme.intAdvantage`, `SMIDScheme.confAdvantage`
 * `SMIDScheme.Sim`, `SMIDRel`, `SMIDAdv.comap`
+* `SMIDView`, `SMIDScheme.Over`, `smIDLogDeliver`, `smIDImpl`, `smIDRed` — the reduction to the
+  corruption game of a base scheme
+* `SMIDScheme.epochIntAdvantage`, `smIDBadAt`, `smIDFlagOracle`, `smIDBadGame`,
+  `smIDTruncOracle`, `smIDTruncGame` — the hybrid and the forgery event
 
 ## Main results
 
@@ -86,6 +121,9 @@ header. `smIDGameAt_sim` proves that the game of `M'` against `A` is the game of
 * `smIDGameAt_sim`, `smIDGame_sim` — the transfer of the game along a simulation
 * `SMIDScheme.Sim.idAdvantage_eq`, `SMIDScheme.Sim.intAdvantage_eq`,
   `SMIDScheme.Sim.confAdvantage_eq` — the transfer of the advantages
+* `smIDGame_logDec_eq`, `SMIDScheme.idAdvantage_le` — the reduction to the base scheme
+* `SMIDScheme.intAdvantage_le_sum`, `SMIDScheme.epochIntAdvantage_le_bad`, `smIDTruncGame_eq`
+  — the bounds above
 
 ## References
 
@@ -688,5 +726,726 @@ theorem SMIDScheme.Sim.confAdvantage_eq {M' : SMIDScheme St' Pub' Rand W Ct' Lea
   simp only [SMIDScheme.confAdvantage, smIDGame_sim h]
 
 end Sim
+
+/-! ## The reduction to the corruption game of a base scheme -/
+
+section Red
+
+variable {St St₀ Pub Rand W W₀ Ct Leak Leak₀ Hdr K : Type}
+
+/-- The query with the message of a send or a challenge mapped by `f`. -/
+def SMQuery.mapMsg (f : W × W → W₀ × W₀) : SMQuery W → SMQuery W₀
+  | .ratchet p => .ratchet p
+  | .recv p => .recv p
+  | .send p m => .send p (f m)
+  | .chall p m => .chall p (f m)
+  | .corrupt p => .corrupt p
+
+/-- The party of a query with mapped messages is the party of the query. -/
+@[simp] theorem SMQuery.party_mapMsg (f : W × W → W₀ × W₀) (q : SMQuery W) :
+    (q.mapMsg f).party = q.party := by
+  cases q <;> rfl
+
+/-- **The public part of a scheme with headers over a base scheme**, computed from the
+bookkeeping and the epoch counters of the game: the header of the next ciphertext of a party,
+whether the key lookup of a header by a party succeeds, the corruption answer of a party from
+the corruption answer of the base scheme, and the message of the base scheme for a message and
+its header. -/
+structure SMIDView (W Pub Hdr Ct Leak W₀ Leak₀ : Type) where
+  /-- The header of the next ciphertext of a party. -/
+  hdr : SMIDAux W Pub Hdr Ct → CKAGameSt Unit Unit → CKAParty → Hdr
+  /-- Whether the key lookup of a header by a party succeeds. -/
+  rkeyOk : SMIDAux W Pub Hdr Ct → CKAGameSt Unit Unit → CKAParty → Hdr → Bool
+  /-- The corruption answer of a party from the corruption answer of the base scheme. -/
+  leak : SMIDAux W Pub Hdr Ct → CKAGameSt Unit Unit → CKAParty → Leak₀ → Leak
+  /-- The message of the base scheme for a message with a header. -/
+  msg : Hdr → W × W → W₀ × W₀
+
+variable [DecidableEq Pub] [DecidableEq W] [DecidableEq Hdr] [DecidableEq Ct]
+
+/-- The answer of the reduction to the delivery of the header `h`, the associated data `ad` and
+the ciphertext `c` to party `p`, from the epoch counters and the bookkeeping `σ`: the plaintext
+of an undelivered matching log entry when the delivery is safe and the key lookup succeeds, with
+the matching entries marked delivered; a rejection otherwise. -/
+def smIDLogDeliver (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
+    (V : SMIDView W Pub Hdr Ct Leak W₀ Leak₀) (ΔFS ΔPCS : ℕ)
+    (σ : CKAGameSt Unit Unit × SMIDAux W Pub Hdr Ct) (p : CKAParty) (h : Hdr) (ad : W) (c : Ct) :
+    Option W × (CKAGameSt Unit Unit × SMIDAux W Pub Hdr Ct) :=
+  match σ.2.epochOf σ.1 p (M.hdrPub h) with
+  | none => (none, σ)
+  | some e =>
+    if σ.2.safe ΔFS ΔPCS p e (M.hdrPos h) && V.rkeyOk σ.2 σ.1 p h then
+      match σ.2.findEntry e h ad c with
+      | some l => (some l.pt, (σ.1, σ.2.mark e h ad c))
+      | none => (none, σ)
+    else (none, σ)
+
+/-- The simulator of the reduction to the corruption game of a base scheme. Its state is the
+epoch counters and the bookkeeping of the game with immediate decryption: a query of the
+corruption game that passes `smIDGate` is forwarded with the message of the base scheme, its
+answer is completed by the header and the corruption answer of `V`, and it is logged; a
+delivery is answered from the log by `smIDLogDeliver`. -/
+def smIDImpl (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
+    (V : SMIDView W Pub Hdr Ct Leak W₀ Leak₀) (ΔFS ΔPCS : ℕ)
+    (σ : CKAGameSt Unit Unit × SMIDAux W Pub Hdr Ct) :
+    SMIDQuery W Hdr Ct → OracleAdv (SMQuery W₀) (SMSchemeAns Pub Ct Leak₀)
+      (SMIDAns Pub Hdr Ct Leak W × (CKAGameSt Unit Unit × SMIDAux W Pub Hdr Ct))
+  | .sm q =>
+    if smIDGate σ.2 σ.1 q then
+      .query (q.mapMsg (V.msg (V.hdr σ.2 σ.1 q.party))) fun a =>
+        .ret (.sm ((a.map id id (V.leak σ.2 σ.1 q.party)).withHdr (V.hdr σ.2 σ.1 q.party)),
+          (ckaShadowStep σ.1 q, σ.2.upd M.hdrPos σ.1 q
+            ((a.map id id (V.leak σ.2 σ.1 q.party)).withHdr (V.hdr σ.2 σ.1 q.party))))
+    else .ret (.sm .none, σ)
+  | .deliver p h ad c => .ret (Prod.map SMIDAns.dec id (smIDLogDeliver M V ΔFS ΔPCS σ p h ad c))
+
+/-- **The reduction to the corruption game of a base scheme**: the adversary of
+`smCorruptGame` that keeps the challenge epoch of `A` and runs `A` against the simulator
+`smIDImpl`. -/
+def smIDRed (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (V : SMIDView W Pub Hdr Ct Leak W₀ Leak₀)
+    (ΔFS ΔPCS : ℕ) (A : SMIDAdv Pub W Hdr Ct Leak) : SMSchemeAdv Pub W₀ Ct Leak₀ where
+  tStar := A.tStar
+  play t pub := (OracleAdv.simulate (smIDImpl M V ΔFS ΔPCS) (A.play t pub)
+    (CKAGameSt.init () () (), SMIDAux.init pub)).bind fun r => .ret r.1
+
+/-- The state of the simulator and of the corruption game of the base scheme that a state of the
+game with immediate decryption corresponds to, with the party states projected by `π`. -/
+def smIDEmb (π : St → St₀) (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) :
+    (CKAGameSt Unit Unit × SMIDAux W Pub Hdr Ct) × SMSchemeSt St₀ Pub :=
+  ((ckaShadow s.1.ck, s.2), ⟨⟨fun p => π (s.1.ck.st p), s.1.ck.t, s.1.ck.msg⟩, s.1.done⟩)
+
+variable [Fintype Rand] [Nonempty Rand]
+
+/-- **A scheme with headers over a base scheme.** The projection `π` of party states maps the
+algorithms of `M` to those of `M₀`, with the message of the base scheme given by `V.msg` at the
+header of the sender; the initial states of `M` are the embeddings `ι` of the initial states of
+`M₀`; the key lookup keeps the projection. On the states of the invariant `Inv`, which holds
+initially and which every call of the oracle with decryption from the log keeps, the header,
+the success of the key lookup at a matching log entry and, when `SMIDAux.storeClear` allows the
+corruption, the corruption answer are those that `V` computes from the bookkeeping. -/
+structure SMIDScheme.Over (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
+    (M₀ : SMScheme St₀ Pub Rand W₀ Ct Leak₀) (π : St → St₀) (ι : St₀ → St)
+    (V : SMIDView W Pub Hdr Ct Leak W₀ Leak₀)
+    (Inv : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct → Prop) : Prop where
+  /-- The initialisation. -/
+  init : M.init = SPComp.bind M₀.init fun i => SPComp.pure (i.1, ι i.2.1, ι i.2.2)
+  /-- The projection of the embedding. -/
+  proj_emb : ∀ x, π (ι x) = x
+  /-- Opening an epoch. -/
+  ratchet : ∀ x r, Prod.map π id (M.ratchet x r) = M₀.ratchet (π x) r
+  /-- Receiving. -/
+  recv : ∀ x T, π (M.recv x T) = M₀.recv (π x) T
+  /-- Sending. -/
+  send : ∀ x m, (M.send x m).map (Prod.map π id) = M₀.send (π x) (V.msg (M.hdr x) m)
+  /-- The ideal ciphertexts. -/
+  idealCt : M.idealCt = M₀.idealCt
+  /-- The key lookup keeps the projection. -/
+  rkey : ∀ x h y, M.rkey x h = some y → π y.1 = π x
+  /-- The invariant holds initially. -/
+  inv_init : ∀ i : Pub × St₀ × St₀,
+    Inv (SMSchemeSt.init (i.1, ι i.2.1, ι i.2.2), SMIDAux.init i.1)
+  /-- The oracle with decryption from the log keeps the invariant. -/
+  inv_step : ∀ ΔFS ΔPCS t idealC s d, Inv s →
+    ∀ z ∈ (smIDOracleAt M ΔFS ΔPCS t idealC (fun _ => true) s d).support, Inv z.2
+  /-- The headers. -/
+  hdr_eq : ∀ s p, Inv s → M.hdr (s.1.ck.st p) = V.hdr s.2 (ckaShadow s.1.ck) p
+  /-- The success of the key lookup at a matching log entry. -/
+  rkeyOk_eq : ∀ s p h e ad c, Inv s → s.2.epochOf (ckaShadow s.1.ck) p (M.hdrPub h) = some e →
+    (s.2.findEntry e h ad c).isSome →
+      (M.rkey (s.1.ck.st p) h).isSome = V.rkeyOk s.2 (ckaShadow s.1.ck) p h
+  /-- The corruption answers under the restricted gate. -/
+  expose : ∀ s p, Inv s → s.2.storeClear (ckaShadow s.1.ck) p = true →
+    M.expose (s.1.ck.st p) = V.leak s.2 (ckaShadow s.1.ck) p (M₀.expose (π (s.1.ck.st p)))
+
+omit [DecidableEq Pub] [DecidableEq W] [DecidableEq Hdr] [DecidableEq Ct] in
+/-- **The oracle of the corruption game along a projection.** If the projection `π` maps the
+algorithms of `M` to those of `M₀`, with the message of the base scheme given by `msg` at the
+header of the sender, and the corruption answer of the query is `L` of the base answer, the
+call of the oracle over `M` with the party states projected is the call over `M₀` at the
+projected state with the answer mapped by `L`. -/
+theorem smSchemeOracle_proj (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
+    (M₀ : SMScheme St₀ Pub Rand W₀ Ct Leak₀) (π : St → St₀) (msg : Hdr → W × W → W₀ × W₀)
+    (hrat : ∀ x r, Prod.map π id (M.ratchet x r) = M₀.ratchet (π x) r)
+    (hrecv : ∀ x T, π (M.recv x T) = M₀.recv (π x) T)
+    (hsend : ∀ x m, (M.send x m).map (Prod.map π id) = M₀.send (π x) (msg (M.hdr x) m))
+    (hideal : M.idealCt = M₀.idealCt) (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSchemeSt St Pub)
+    (q : SMQuery W) (L : Leak₀ → Leak)
+    (hexp : ∀ p, q = .corrupt p → M.expose (s.ck.st p) = L (M₀.expose (π (s.ck.st p)))) :
+    (smSchemeOracle M.toSMScheme ΔFS ΔPCS t ideal s q).map
+        (fun y => (y.1, (⟨⟨fun p => π (y.2.ck.st p), y.2.ck.t, y.2.ck.msg⟩, y.2.done⟩ :
+          SMSchemeSt St₀ Pub))) =
+      (smSchemeOracle M₀ ΔFS ΔPCS t ideal ⟨⟨fun p => π (s.ck.st p), s.ck.t, s.ck.msg⟩, s.done⟩
+        (q.mapMsg (msg (M.hdr (s.ck.st q.party))))).map fun y => (y.1.map id id L, y.2) := by
+  have hupd : ∀ (f : CKAParty → St) (p : CKAParty) (x : St),
+      (fun q => π (Function.update f p x q)) = Function.update (fun q => π (f q)) p (π x) := by
+    intro f p x
+    funext q
+    by_cases hq : q = p
+    · subst hq; simp
+    · simp [Function.update_of_ne hq]
+  cases q with
+  | ratchet p =>
+    have hc : (⟨fun p => π (s.ck.st p), s.ck.t, s.ck.msg⟩ : CKAGameSt St₀ Pub).canSend p =
+        s.ck.canSend p := rfl
+    simp only [smSchemeOracle, SMQuery.mapMsg, hc]
+    split
+    · simp only [PMF.map_bind, PMF.pure_map]
+      refine congrArg _ (funext fun r => ?_)
+      rw [← hrat]
+      simp [SMSchemeAns.map, CKAGameSt.sent, hupd]
+    · simp [PMF.pure_map, SMSchemeAns.map]
+  | recv p =>
+    have hc : (⟨fun p => π (s.ck.st p), s.ck.t, s.ck.msg⟩ : CKAGameSt St₀ Pub).canRecv p =
+        s.ck.canRecv p := rfl
+    simp only [smSchemeOracle, SMQuery.mapMsg, hc]
+    split
+    · simp [PMF.pure_map, SMSchemeAns.map, CKAGameSt.recvd, hupd, hrecv]
+    · simp [PMF.pure_map, SMSchemeAns.map]
+  | send p m =>
+    simp only [smSchemeOracle, SMQuery.mapMsg, SMQuery.party]
+    split_ifs with hc
+    · rw [← hsend]
+      cases M.send (s.ck.st p) m <;> simp [PMF.pure_map, SMSchemeAns.map, SMSchemeSt.upd, hupd]
+    · simp [PMF.pure_map, SMSchemeAns.map]
+  | chall p m =>
+    simp only [smSchemeOracle, SMQuery.mapMsg, SMQuery.party]
+    by_cases hc : (!s.done && ckaSender (s.ck.t p) == p && s.ck.t p == t) = true
+    · rw [ite_eq_left hc, ite_eq_left (show _ from hc), ← hsend, ← hideal]
+      cases M.send (s.ck.st p) m <;> cases ideal <;>
+        simp [PMF.pure_map, PMF.map_bind, SMSchemeAns.map, SMSchemeSt.upd, hupd]
+    · rw [ite_eq_right hc, ite_eq_right (show ¬ _ from hc)]
+      simp [PMF.pure_map, SMSchemeAns.map]
+  | corrupt p =>
+    have hc : ckaAllowCorr ΔFS ΔPCS t
+        (⟨fun p => π (s.ck.st p), s.ck.t, s.ck.msg⟩ : CKAGameSt St₀ Pub) p =
+        ckaAllowCorr ΔFS ΔPCS t s.ck p := rfl
+    simp only [smSchemeOracle, SMQuery.mapMsg, PMF.pure_map, hc]
+    cases ckaAllowCorr ΔFS ΔPCS t s.ck p <;> simp [SMSchemeAns.map, hexp p rfl]
+
+/-- **The delivery from the log is the delivery of the reduction.** On a state of the
+invariant, the delivery with decryption from the log, mapped to the states of the reduction and
+of the base game, is the delivery of `smIDLogDeliver`, which keeps the base state. -/
+theorem smIDDeliver_emb {M : SMIDScheme St Pub Rand W Ct Leak Hdr K}
+    {M₀ : SMScheme St₀ Pub Rand W₀ Ct Leak₀} {π : St → St₀} {ι : St₀ → St}
+    {V : SMIDView W Pub Hdr Ct Leak W₀ Leak₀}
+    {Inv : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct → Prop} (hM : M.Over M₀ π ι V Inv)
+    (ΔFS ΔPCS : ℕ) (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) (hs : Inv s) (p : CKAParty)
+    (h : Hdr) (ad : W) (c : Ct) :
+    Prod.map id (smIDEmb π) (smIDDeliver M ΔFS ΔPCS (fun _ => true) s p h ad c) =
+      ((smIDLogDeliver M V ΔFS ΔPCS (ckaShadow s.1.ck, s.2) p h ad c).1,
+        ((smIDLogDeliver M V ΔFS ΔPCS (ckaShadow s.1.ck, s.2) p h ad c).2,
+          (smIDEmb π s).2)) := by
+  rcases s with ⟨s1, x⟩
+  dsimp only at hs ⊢
+  simp only [smIDDeliver, smIDLogDeliver]
+  cases he : x.epochOf (ckaShadow s1.ck) p (M.hdrPub h) with
+  | none => rfl
+  | some e =>
+    dsimp only
+    by_cases hsafe : x.safe ΔFS ΔPCS p e (M.hdrPos h) = true
+    · cases hf : x.findEntry e h ad c with
+      | none =>
+        simp only [hsafe, ite_true, Option.map_none]
+        cases M.rkey (s1.ck.st p) h <;> simp [smIDEmb]
+      | some l =>
+        have hk := hM.rkeyOk_eq (s1, x) p h e ad c hs he (by simp [hf])
+        dsimp only at hk
+        cases hr : M.rkey (s1.ck.st p) h with
+        | none =>
+          rw [hr] at hk
+          have hk' : V.rkeyOk x (ckaShadow s1.ck) p h = false := by simpa using hk.symm
+          simp [hsafe, hk', smIDEmb]
+        | some y =>
+          rw [hr] at hk
+          have hk' : V.rkeyOk x (ckaShadow s1.ck) p h = true := by simpa using hk.symm
+          have hy := hM.rkey _ _ _ hr
+          have hproj : (fun q => π (Function.update s1.ck.st p y.1 q)) =
+              fun q => π (s1.ck.st q) := by
+            funext q
+            by_cases hq : q = p
+            · subst hq; simp [hy]
+            · simp [Function.update_of_ne hq]
+          simp only [hsafe, hk', Bool.and_true, ite_true, Option.map_some, smIDEmb,
+            SMSchemeSt.upd, hproj, Prod.map]
+          rfl
+    · simp [hsafe, smIDEmb]
+
+/-- **The simulator is the oracle with decryption from the log.** On a state of the invariant,
+each call of the oracle of the game with decryption from the log, mapped to the states of the
+reduction and of the base game, is the call of `smIDImpl` against the oracle of the corruption
+game over the base scheme. -/
+theorem smID_step {M : SMIDScheme St Pub Rand W Ct Leak Hdr K}
+    {M₀ : SMScheme St₀ Pub Rand W₀ Ct Leak₀} {π : St → St₀} {ι : St₀ → St}
+    {V : SMIDView W Pub Hdr Ct Leak W₀ Leak₀}
+    {Inv : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct → Prop} (hM : M.Over M₀ π ι V Inv)
+    (ΔFS ΔPCS t : ℕ) (idealC : Bool) (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) (hs : Inv s)
+    (d : SMIDQuery W Hdr Ct) :
+    (smIDOracleAt M ΔFS ΔPCS t idealC (fun _ => true) s d).map (Prod.map id (smIDEmb π)) =
+      OracleAdv.simOracle (smIDImpl M V ΔFS ΔPCS) (smSchemeOracle M₀ ΔFS ΔPCS t idealC)
+        (smIDEmb π s) d := by
+  cases d with
+  | sm q =>
+    by_cases hg : smIDGate s.2 (ckaShadow s.1.ck) q = true
+    · have hL := smSchemeOracle_proj M M₀ π V.msg hM.ratchet hM.recv hM.send hM.idealCt ΔFS ΔPCS
+        t idealC s.1 q (V.leak s.2 (ckaShadow s.1.ck) q.party)
+        (fun p hq => by subst hq; exact hM.expose s p hs hg)
+      have hH := hM.hdr_eq s q.party hs
+      simp only [smIDOracleAt, hg, ite_true, OracleAdv.simOracle, smIDEmb, smIDImpl,
+        OracleAdv.run_query, OracleAdv.run_ret, ← hH]
+      let G : SMSchemeAns Pub Ct Leak × SMSchemeSt St₀ Pub → SMIDAns Pub Hdr Ct Leak W ×
+          ((CKAGameSt Unit Unit × SMIDAux W Pub Hdr Ct) × SMSchemeSt St₀ Pub) :=
+        fun z => (.sm (z.1.withHdr (M.hdr (s.1.ck.st q.party))),
+          ((ckaShadowStep (ckaShadow s.1.ck) q, s.2.upd M.hdrPos (ckaShadow s.1.ck) q
+            (z.1.withHdr (M.hdr (s.1.ck.st q.party)))), z.2))
+      refine (?_ : _ = ((smSchemeOracle M.toSMScheme ΔFS ΔPCS t idealC s.1 q).map
+          (fun y => (y.1, (⟨⟨fun p => π (y.2.ck.st p), y.2.ck.t, y.2.ck.msg⟩, y.2.done⟩ :
+            SMSchemeSt St₀ Pub)))).map G).trans ?_
+      · rw [PMF.map_comp, PMF.map_comp, ← PMF.bind_pure_comp, ← PMF.bind_pure_comp]
+        refine PMF.bind_congr_support _ _ _ fun y hy => ?_
+        have hsh := smSchemeOracle_shadow M.toSMScheme ΔFS ΔPCS t idealC s.1 q y hy
+        simp only [Function.comp_apply, Prod.map, id_eq, smIDEmb, G, hsh]
+      · rw [hL, PMF.map_comp, PMF.map_bind, ← PMF.bind_pure_comp]
+        simp only [PMF.pure_map]
+        rfl
+    · simp [smIDOracleAt, hg, OracleAdv.simOracle, smIDEmb, smIDImpl, PMF.pure_map]
+  | deliver p h ad c =>
+    simp only [smIDOracleAt, OracleAdv.simOracle, smIDImpl, OracleAdv.run_ret, PMF.pure_map]
+    congr 1
+    have := smIDDeliver_emb hM ΔFS ΔPCS s hs p h ad c
+    simp only [Prod.map, smIDEmb] at this ⊢
+    grind
+
+/-- **The game with decryption from the log is the corruption game of the reduction.** Over a
+scheme `M` over the base scheme `M₀`, the game with immediate decryption and decryption from the
+log is the corruption game over `M₀` of the reduction `smIDRed M V ΔFS ΔPCS A`. -/
+theorem smIDGame_logDec_eq {M : SMIDScheme St Pub Rand W Ct Leak Hdr K}
+    {M₀ : SMScheme St₀ Pub Rand W₀ Ct Leak₀} {π : St → St₀} {ι : St₀ → St}
+    {V : SMIDView W Pub Hdr Ct Leak W₀ Leak₀}
+    {Inv : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct → Prop} (hM : M.Over M₀ π ι V Inv)
+    (ΔFS ΔPCS : ℕ) (idealC : Bool) (A : SMIDAdv Pub W Hdr Ct Leak) :
+    smIDGame M ΔFS ΔPCS idealC true A =
+      smCorruptGame M₀ ΔFS ΔPCS idealC (smIDRed M V ΔFS ΔPCS A) := by
+  simp only [smIDGame, smIDGameAt, smCorruptGame, hM.init, SPComp.bind_assoc, SPComp.pure_bind]
+  refine congrArg _ (funext fun t => congrArg _ (funext fun i => congrArg _ ?_))
+  simp only [smIDRed]
+  rw [OracleAdv.run_simulate_fst]
+  have he : smIDEmb π ((SMSchemeSt.init (i.1, ι i.2.1, ι i.2.2) : SMSchemeSt St Pub),
+      (SMIDAux.init i.1 : SMIDAux W Pub Hdr Ct)) =
+      ((CKAGameSt.init () () (), SMIDAux.init i.1), SMSchemeSt.init i) := by
+    simp only [smIDEmb, SMSchemeSt.init, ckaShadow_init, Prod.mk.injEq, true_and]
+    simp only [CKAGameSt.init, SMSchemeSt.mk.injEq, CKAGameSt.mk.injEq, and_true]
+    funext p
+    cases p <;> simp [hM.proj_emb]
+  rw [← he]
+  exact OracleAdv.run_map_fst_of_map_state_inv _ _ (smIDEmb π) Inv
+    (fun s d hs => hM.inv_step ΔFS ΔPCS t idealC s d hs)
+    (fun s d hs => smID_step hM ΔFS ΔPCS t idealC s hs d) _ _ (hM.inv_init i)
+
+/-- **Immediate decryption from integrity and the corruption game of the base scheme.** For a
+scheme `M` over the base scheme `M₀` and every adversary `A`, the advantage of `A` in the game
+with immediate decryption over `M` is at most its integrity advantage plus the corruption
+advantage over `M₀` of the reduction `smIDRed M V ΔFS ΔPCS A`. -/
+theorem SMIDScheme.idAdvantage_le {M : SMIDScheme St Pub Rand W Ct Leak Hdr K}
+    {M₀ : SMScheme St₀ Pub Rand W₀ Ct Leak₀} {π : St → St₀} {ι : St₀ → St}
+    {V : SMIDView W Pub Hdr Ct Leak W₀ Leak₀}
+    {Inv : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct → Prop} (hM : M.Over M₀ π ι V Inv)
+    (ΔFS ΔPCS : ℕ) (A : SMIDAdv Pub W Hdr Ct Leak) :
+    M.idAdvantage ΔFS ΔPCS A ≤
+      M.intAdvantage ΔFS ΔPCS A + M₀.corruptAdvantage ΔFS ΔPCS (smIDRed M V ΔFS ΔPCS A) := by
+  unfold SMIDScheme.idAdvantage SMIDScheme.intAdvantage SMScheme.corruptAdvantage
+  rw [← smIDGame_logDec_eq hM, ← smIDGame_logDec_eq hM]
+  exact advantage_triangle _ _ _
+
+end Red
+
+/-! ## The hybrid over the epochs -/
+
+section Hybrid
+
+variable {St Pub Rand W Ct Leak Hdr K : Type} [Fintype Rand] [Nonempty Rand] [DecidableEq Pub]
+  [DecidableEq W] [DecidableEq Hdr] [DecidableEq Ct]
+
+/-- The epoch counters of the state `s` of the game with immediate decryption are at most
+`c`. -/
+def smIDLevel (c : ℕ) (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) : Prop :=
+  ∀ p, s.1.ck.t p ≤ c
+
+omit [DecidableEq W] [DecidableEq Hdr] [DecidableEq Ct] in
+/-- The epoch of a public value among the epochs a party has received is at most its epoch
+counter. -/
+theorem SMIDAux.epochOf_le (x : SMIDAux W Pub Hdr Ct) (sh : CKAGameSt Unit Unit)
+    (p : CKAParty) (T : Pub) (e : ℕ) (h : x.epochOf sh p T = some e) : e ≤ sh.t p := by
+  simp only [SMIDAux.epochOf, Option.map_eq_some_iff] at h
+  obtain ⟨q, hq, rfl⟩ := h
+  have := List.find?_some hq
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at this
+  exact this.1.2
+
+omit [Fintype Rand] [Nonempty Rand] in
+/-- A delivery keeps the epoch counters. -/
+theorem smIDDeliver_t (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS : ℕ)
+    (idealD : ℕ → Bool) (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) (p : CKAParty) (h : Hdr)
+    (ad : W) (c : Ct) : (smIDDeliver M ΔFS ΔPCS idealD s p h ad c).2.1.ck.t = s.1.ck.t := by
+  unfold smIDDeliver
+  repeat' split
+  all_goals rfl
+
+omit [Fintype Rand] [Nonempty Rand] in
+/-- Two decryption modes that agree at the epoch of the header give the same delivery. -/
+theorem smIDDeliver_congr (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS : ℕ)
+    {idealD idealD' : ℕ → Bool} (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) (p : CKAParty)
+    (h : Hdr) (ad : W) (c : Ct)
+    (hD : ∀ e, s.2.epochOf (ckaShadow s.1.ck) p (M.hdrPub h) = some e → idealD e = idealD' e) :
+    smIDDeliver M ΔFS ΔPCS idealD s p h ad c = smIDDeliver M ΔFS ΔPCS idealD' s p h ad c := by
+  unfold smIDDeliver
+  cases he : s.2.epochOf (ckaShadow s.1.ck) p (M.hdrPub h) with
+  | none => rfl
+  | some e => simp only [hD e he]
+
+/-- A call of the oracle of the game with immediate decryption raises each epoch counter by at
+most one. -/
+theorem smIDOracleAt_level (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (c : ℕ) (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct)
+    (d : SMIDQuery W Hdr Ct) (hs : smIDLevel c s) :
+    ∀ x ∈ (smIDOracleAt M ΔFS ΔPCS t idealC idealD s d).support, smIDLevel (c + 1) x.2 := by
+  intro x hx p
+  cases d with
+  | sm q =>
+    simp only [smIDOracleAt] at hx
+    split at hx
+    · simp only [PMF.support_map, Set.mem_image] at hx
+      obtain ⟨y, hy, rfl⟩ := hx
+      have h := congrArg (fun z => z.t p)
+        (smSchemeOracle_shadow M.toSMScheme ΔFS ΔPCS t idealC s.1 q y hy)
+      have h' := ckaShadowStep_t_le (ckaShadow s.1.ck) q p
+      have h'' := hs p
+      simp only [ckaShadow] at h h'
+      grind
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
+      subst hx
+      exact (hs p).trans (Nat.le_succ _)
+  | deliver p' h ad c' =>
+    simp only [smIDOracleAt, PMF.support_pure, Set.mem_singleton_iff] at hx
+    subst hx
+    have := smIDDeliver_t M ΔFS ΔPCS idealD s p' h ad c'
+    simp only [Prod.map, id_eq, this]
+    exact (hs p).trans (Nat.le_succ _)
+
+/-- **Decryption modes that agree below the horizon.** For an adversary asking at most `N`
+queries, every delivery is into an epoch below `N`, so two decryption modes that agree on the
+epochs below `N` give the same game. -/
+theorem smIDGameAt_congr_of_isQueryBound (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
+    (ΔFS ΔPCS : ℕ) (idealC : Bool) {idealD idealD' : ℕ → Bool} {N : ℕ}
+    (h : ∀ e < N, idealD e = idealD' e) (A : SMIDAdv Pub W Hdr Ct Leak)
+    (hA : ∀ t pub, (A.play t pub).IsQueryBound N) :
+    smIDGameAt M ΔFS ΔPCS idealC idealD A = smIDGameAt M ΔFS ΔPCS idealC idealD' A := by
+  unfold smIDGameAt
+  refine congrArg _ (funext fun t => congrArg _ (funext fun i => congrArg _ ?_))
+  rw [OracleAdv.run_eq_of_agree_level _ (smIDOracleAt M ΔFS ΔPCS t idealC idealD')
+    smIDLevel N (smIDOracleAt_level M ΔFS ΔPCS t idealC idealD) ?_ (hA t i.1) 0 _ ?_
+    (by omega)]
+  · intro c s d hc hs
+    cases d with
+    | sm q => rfl
+    | deliver p h' ad c' =>
+      simp only [smIDOracleAt]
+      rw [smIDDeliver_congr M ΔFS ΔPCS s p h' ad c' fun e he => h e (by
+        have h1 := SMIDAux.epochOf_le _ _ _ _ _ he
+        have h2 := hs p
+        simp only [ckaShadow_t] at h1
+        omega)]
+  · intro p
+    simp [SMSchemeSt.init, CKAGameSt.init]
+
+/-- **The integrity advantage at the epoch `k`**: the game with decryption from the log in the
+epochs below `k` and real decryption from the epoch `k` on, against the game with decryption
+from the log in the epochs up to `k`. The epoch of a delivery is the epoch of its header. -/
+noncomputable def SMIDScheme.epochIntAdvantage (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
+    (ΔFS ΔPCS k : ℕ) (A : SMIDAdv Pub W Hdr Ct Leak) : ℝ≥0∞ :=
+  Advantage (smIDGameAt M ΔFS ΔPCS false (fun e => decide (e < k)) A)
+    (smIDGameAt M ΔFS ΔPCS false (fun e => decide (e < k + 1)) A)
+
+/-- **Integrity as a sum over the epochs.** For an adversary asking at most `N` queries, the
+integrity advantage is at most the sum over the epochs `k < N` of the integrity advantages at
+the epoch `k`. -/
+theorem SMIDScheme.intAdvantage_le_sum (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
+    (ΔFS ΔPCS N : ℕ) (A : SMIDAdv Pub W Hdr Ct Leak)
+    (hA : ∀ t pub, (A.play t pub).IsQueryBound N) :
+    M.intAdvantage ΔFS ΔPCS A ≤
+      ∑ k ∈ Finset.range N, M.epochIntAdvantage ΔFS ΔPCS k A := by
+  have h0 : smIDGame M ΔFS ΔPCS false false A =
+      smIDGameAt M ΔFS ΔPCS false (fun e => decide (e < 0)) A := by
+    simp only [smIDGame, Nat.not_lt_zero, decide_false]
+  have hN : smIDGame M ΔFS ΔPCS false true A =
+      smIDGameAt M ΔFS ΔPCS false (fun e => decide (e < N)) A :=
+    smIDGameAt_congr_of_isQueryBound M ΔFS ΔPCS false (fun e he => by simp [he]) A hA
+  unfold SMIDScheme.intAdvantage SMIDScheme.epochIntAdvantage
+  rw [h0, hN]
+  exact HybridArgument.advantage_hybrid_dep_bool
+    (fun k => smIDGameAt M ΔFS ΔPCS false (fun e => decide (e < k)) A) N
+
+end Hybrid
+
+/-! ## Identical until a forgery at the epoch `k` -/
+
+section UntilBad
+
+variable {St Pub Rand W Ct Leak Hdr K : Type} [Fintype Rand] [Nonempty Rand] [DecidableEq Pub]
+  [DecidableEq W] [DecidableEq Hdr] [DecidableEq Ct]
+
+omit [Fintype Rand] [Nonempty Rand] in
+/-- **A forgery at the epoch `k`**: the query `d` from the state `s` is a delivery whose header
+names the epoch `k`, which is safe, whose key lookup succeeds, and whose real decryption differs
+from the plaintext of an undelivered matching log entry; in particular an accepted delivery
+into the epoch `k` that matches no undelivered entry. -/
+def smIDBadAt (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS k : ℕ)
+    (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) : SMIDQuery W Hdr Ct → Bool
+  | .sm _ => false
+  | .deliver p h ad c =>
+    match s.2.epochOf (ckaShadow s.1.ck) p (M.hdrPub h) with
+    | none => false
+    | some e => decide (e = k) && s.2.safe ΔFS ΔPCS p e (M.hdrPos h) &&
+      match M.rkey (s.1.ck.st p) h with
+      | none => false
+      | some y => M.decrypt y.2 h ad c != (s.2.findEntry e h ad c).map SMIDLogEntry.pt
+
+/-- The oracle `smIDOracleAt` with a flag that is set at a forgery at the epoch `k`. -/
+noncomputable def smIDFlagOracle (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ)
+    (s : (SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) × Bool) (d : SMIDQuery W Hdr Ct) :
+    PMF (SMIDAns Pub Hdr Ct Leak W × ((SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) × Bool)) :=
+  (smIDOracleAt M ΔFS ΔPCS t idealC idealD s.1 d).map fun y =>
+    (y.1, (y.2, s.2 || smIDBadAt M ΔFS ΔPCS k s.1 d))
+
+/-- The run of `A` against the flagged oracle `smIDFlagOracle` at the challenge epoch `t` from
+the initial state `i` of the scheme. -/
+noncomputable def smIDFlagRun (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ) (A : SMIDAdv Pub W Hdr Ct Leak) (t : ℕ)
+    (i : Pub × St × St) :
+    PMF (Bool × ((SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) × Bool)) :=
+  OracleAdv.run (smIDFlagOracle M ΔFS ΔPCS t idealC idealD k) (A.play t i.1)
+    ((SMSchemeSt.init i, SMIDAux.init i.1), false)
+
+/-- **The forgery event at the epoch `k`**: the game that runs `A` in the hybrid `k + 1` and
+outputs whether a forgery at the epoch `k` was delivered. -/
+noncomputable def smIDBadGame (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS k : ℕ)
+    (A : SMIDAdv Pub W Hdr Ct Leak) : SPComp Bool :=
+  SPComp.bind (liftPMF A.tStar) fun t => SPComp.bind M.init fun i =>
+    liftPMF ((smIDFlagRun M ΔFS ΔPCS false (fun e => decide (e < k + 1)) k A t i).map
+      fun x => x.2.2)
+
+/-- The output of the flagged run is the output of the run against `smIDOracleAt`. -/
+theorem smIDFlagRun_map_fst (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ) (A : SMIDAdv Pub W Hdr Ct Leak) (t : ℕ)
+    (i : Pub × St × St) :
+    (smIDFlagRun M ΔFS ΔPCS idealC idealD k A t i).map Prod.fst =
+      (OracleAdv.run (smIDOracleAt M ΔFS ΔPCS t idealC idealD) (A.play t i.1)
+        (SMSchemeSt.init i, SMIDAux.init i.1)).map Prod.fst := by
+  have hstep : ∀ s d, (smIDFlagOracle M ΔFS ΔPCS t idealC idealD k s d).map
+      (Prod.map id Prod.fst) = smIDOracleAt M ΔFS ΔPCS t idealC idealD s.1 d := by
+    intro s d
+    rw [smIDFlagOracle, PMF.map_comp]
+    exact PMF.map_id _
+  have h := OracleAdv.run_map_state _ _ Prod.fst hstep (A.play t i.1)
+    ((SMSchemeSt.init i, SMIDAux.init i.1), false)
+  dsimp only at h
+  rw [smIDFlagRun, ← h, PMF.map_comp]
+  rfl
+
+omit [Fintype Rand] [Nonempty Rand] in
+/-- Without a forgery at the epoch `k`, the hybrids `k` and `k + 1` answer a delivery alike. -/
+theorem smIDDeliver_agree (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS k : ℕ)
+    (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) (p : CKAParty) (h : Hdr) (ad : W) (c : Ct)
+    (hb : smIDBadAt M ΔFS ΔPCS k s (.deliver p h ad c) = false) :
+    smIDDeliver M ΔFS ΔPCS (fun e => decide (e < k)) s p h ad c =
+      smIDDeliver M ΔFS ΔPCS (fun e => decide (e < k + 1)) s p h ad c := by
+  simp only [smIDBadAt] at hb
+  unfold smIDDeliver
+  cases he : s.2.epochOf (ckaShadow s.1.ck) p (M.hdrPub h) with
+  | none => rfl
+  | some e =>
+    simp only [he] at hb
+    dsimp only
+    by_cases hek : e = k
+    · subst hek
+      by_cases hsafe : s.2.safe ΔFS ΔPCS p e (M.hdrPos h) = true
+      · simp only [hsafe, ite_true]
+        cases hr : M.rkey (s.1.ck.st p) h with
+        | none => rfl
+        | some y =>
+          simp only [hsafe, hr, decide_true, Bool.true_and, bne_eq_false_iff_eq] at hb
+          simp [hb]
+      · simp [hsafe]
+    · have hd : decide (e < k) = decide (e < k + 1) := by grind
+      simp only [hd]
+
+/-- The flag of `smIDFlagOracle` stays set. -/
+theorem smIDFlagOracle_sticky (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ) (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct)
+    (d : SMIDQuery W Hdr Ct) (r : SMIDAns Pub Hdr Ct Leak W)
+    (s' : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) :
+    smIDFlagOracle M ΔFS ΔPCS t idealC idealD k (s, true) d (r, (s', false)) = 0 := by
+  refine (PMF.apply_eq_zero_iff _ _).mpr ?_
+  simp [smIDFlagOracle]
+
+/-- The flagged hybrids `k` and `k + 1` agree on every transition that leaves the flag
+cleared. -/
+theorem smIDFlagOracle_agree (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (k : ℕ) (s : (SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) × Bool)
+    (d : SMIDQuery W Hdr Ct) (r : SMIDAns Pub Hdr Ct Leak W)
+    (s' : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) :
+    smIDFlagOracle M ΔFS ΔPCS t idealC (fun e => decide (e < k)) k s d (r, (s', false)) =
+      smIDFlagOracle M ΔFS ΔPCS t idealC (fun e => decide (e < k + 1)) k s d
+        (r, (s', false)) := by
+  by_cases hb : (s.2 || smIDBadAt M ΔFS ΔPCS k s.1 d) = true
+  · rw [(PMF.apply_eq_zero_iff _ _).mpr, (PMF.apply_eq_zero_iff _ _).mpr] <;>
+      simp [smIDFlagOracle, hb]
+  · cases d with
+    | sm q => rfl
+    | deliver p h ad c =>
+      simp only [Bool.or_eq_true, not_or] at hb
+      simp only [smIDFlagOracle, smIDOracleAt]
+      rw [smIDDeliver_agree M ΔFS ΔPCS k s.1 p h ad c (by simpa using hb.2)]
+
+/-- **Identical until a forgery.** The integrity advantage at the epoch `k` is at most the
+probability of a forgery at the epoch `k` in the hybrid `k + 1`. -/
+theorem SMIDScheme.epochIntAdvantage_le_bad (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
+    (ΔFS ΔPCS k : ℕ) (A : SMIDAdv Pub W Hdr Ct Leak) :
+    M.epochIntAdvantage ΔFS ΔPCS k A ≤ prTrue (smIDBadGame M ΔFS ΔPCS k A) Heap.empty := by
+  have hg : ∀ idealD, smIDGameAt M ΔFS ΔPCS false idealD A =
+      SPComp.bind (liftPMF A.tStar) fun t => SPComp.bind M.init fun i =>
+        liftPMF ((smIDFlagRun M ΔFS ΔPCS false idealD k A t i).map Prod.fst) := by
+    intro idealD
+    simp only [smIDGameAt, smIDFlagRun_map_fst]
+  unfold SMIDScheme.epochIntAdvantage smIDBadGame
+  rw [hg, hg]
+  exact advantage_bind_liftPMF_le_flag _ _
+    (fun t i => smIDFlagRun M ΔFS ΔPCS false (fun e => decide (e < k)) k A t i)
+    (fun t i => smIDFlagRun M ΔFS ΔPCS false (fun e => decide (e < k + 1)) k A t i)
+    fun t i a s => OracleAdv.run_apply_flag_false_eq _ _
+      (smIDFlagOracle_sticky M ΔFS ΔPCS t false _ k)
+      (smIDFlagOracle_sticky M ΔFS ΔPCS t false _ k)
+      (smIDFlagOracle_agree M ΔFS ΔPCS t false k) _ _ a s
+
+/-- The epoch `k` lies outside the corruption window of every answered corruption. -/
+def SMIDAux.epochSafe {Pub' : Type} (ΔFS ΔPCS : ℕ) (x : SMIDAux W Pub' Hdr Ct) (k : ℕ) : Bool :=
+  x.corrs.all fun c => ckaAllowCorr ΔFS ΔPCS k c.2.1 c.1
+
+omit [DecidableEq Pub] [DecidableEq W] [DecidableEq Hdr] [DecidableEq Ct] in
+/-- A safe delivery is into a safe epoch. -/
+theorem SMIDAux.epochSafe_of_safe (ΔFS ΔPCS : ℕ) (x : SMIDAux W Pub Hdr Ct) (p : CKAParty)
+    (e j : ℕ) (h : x.safe ΔFS ΔPCS p e j = true) : x.epochSafe ΔFS ΔPCS e = true := by
+  simp only [SMIDAux.safe, List.all_eq_true, Bool.and_eq_true] at h
+  simp only [SMIDAux.epochSafe, List.all_eq_true]
+  exact fun c hc => (h c hc).1
+
+omit [DecidableEq Pub] [DecidableEq W] [DecidableEq Hdr] [DecidableEq Ct] in
+/-- An epoch outside the safe epochs stays outside them. -/
+theorem SMIDAux.epochSafe_upd_of_false (ΔFS ΔPCS k : ℕ) (pos : Hdr → ℕ)
+    (x : SMIDAux W Pub Hdr Ct) (sh : CKAGameSt Unit Unit) (q : SMQuery W)
+    (a : SMSchemeAns Pub (Hdr × Ct) Leak) (h : x.epochSafe ΔFS ΔPCS k = false) :
+    (x.upd pos sh q a).epochSafe ΔFS ΔPCS k = false := by
+  cases q <;> cases a <;> simp_all [SMIDAux.upd, SMIDAux.record, SMIDAux.epochSafe]
+
+omit [Fintype Rand] [Nonempty Rand] in
+/-- A delivery keeps the answered corruptions. -/
+theorem smIDDeliver_corrs (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS : ℕ)
+    (idealD : ℕ → Bool) (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) (p : CKAParty) (h : Hdr)
+    (ad : W) (c : Ct) : (smIDDeliver M ΔFS ΔPCS idealD s p h ad c).2.2.corrs = s.2.corrs := by
+  unfold smIDDeliver
+  repeat' split
+  all_goals rfl
+
+omit [Fintype Rand] [Nonempty Rand] in
+/-- Outside the safe epochs there is no forgery. -/
+theorem smIDBadAt_of_epochSafe_false (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
+    (ΔFS ΔPCS k : ℕ) (s : SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct)
+    (hs : s.2.epochSafe ΔFS ΔPCS k = false) (d : SMIDQuery W Hdr Ct) :
+    smIDBadAt M ΔFS ΔPCS k s d = false := by
+  cases d with
+  | sm q => rfl
+  | deliver p h ad c =>
+    simp only [smIDBadAt]
+    cases he : s.2.epochOf (ckaShadow s.1.ck) p (M.hdrPub h) with
+    | none => rfl
+    | some e =>
+      by_cases hek : e = k
+      · subst hek
+        have hsafe : s.2.safe ΔFS ΔPCS p e (M.hdrPos h) = false := by
+          cases hc : s.2.safe ΔFS ΔPCS p e (M.hdrPos h)
+          · rfl
+          · rw [SMIDAux.epochSafe_of_safe ΔFS ΔPCS s.2 p e _ hc] at hs
+            exact absurd hs (by decide)
+        simp [hsafe]
+      · simp [hek]
+
+/-- **The oracle truncated at the corruption of the epoch `k`**: the flagged oracle, which from
+the first answered corruption with the epoch `k` in its window on answers every query by a
+rejection and keeps its state. -/
+noncomputable def smIDTruncOracle (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ)
+    (s : (SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) × Bool) (d : SMIDQuery W Hdr Ct) :
+    PMF (SMIDAns Pub Hdr Ct Leak W × ((SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) × Bool)) :=
+  if s.1.2.epochSafe ΔFS ΔPCS k then smIDFlagOracle M ΔFS ΔPCS t idealC idealD k s d
+  else PMF.pure (.dec none, s)
+
+/-- **The truncated forgery game at the epoch `k`**: `smIDBadGame` with the oracle truncated at
+the first corruption that falls in the window of the epoch `k`. -/
+noncomputable def smIDTruncGame (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS k : ℕ)
+    (A : SMIDAdv Pub W Hdr Ct Leak) : SPComp Bool :=
+  SPComp.bind (liftPMF A.tStar) fun t => SPComp.bind M.init fun i =>
+    liftPMF ((OracleAdv.run
+      (smIDTruncOracle M ΔFS ΔPCS t false (fun e => decide (e < k + 1)) k) (A.play t i.1)
+      ((SMSchemeSt.init i, SMIDAux.init i.1), false)).map fun x => x.2.2)
+
+/-- After a corruption in the window of the epoch `k`, the flagged oracle keeps the flag and
+the epoch outside the safe epochs. -/
+theorem smIDFlagOracle_stopped (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS t : ℕ)
+    (idealC : Bool) (idealD : ℕ → Bool) (k : ℕ)
+    (s : (SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) × Bool)
+    (hs : s.1.2.epochSafe ΔFS ΔPCS k = false) (d : SMIDQuery W Hdr Ct) :
+    ∀ x ∈ (smIDFlagOracle M ΔFS ΔPCS t idealC idealD k s d).support,
+      x.2.1.2.epochSafe ΔFS ΔPCS k = false ∧ x.2.2 = s.2 := by
+  intro x hx
+  simp only [smIDFlagOracle, PMF.support_map, Set.mem_image] at hx
+  obtain ⟨y, hy, rfl⟩ := hx
+  refine ⟨?_, by simp [smIDBadAt_of_epochSafe_false M ΔFS ΔPCS k s.1 hs d]⟩
+  cases d with
+  | sm q =>
+    simp only [smIDOracleAt] at hy
+    split at hy
+    · simp only [PMF.support_map, Set.mem_image] at hy
+      obtain ⟨z, -, rfl⟩ := hy
+      exact SMIDAux.epochSafe_upd_of_false _ _ _ _ _ _ _ _ hs
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hy
+      subst hy
+      exact hs
+  | deliver p h ad c =>
+    simp only [smIDOracleAt, PMF.support_pure, Set.mem_singleton_iff] at hy
+    subst hy
+    simp only [Prod.map, id_eq, SMIDAux.epochSafe, smIDDeliver_corrs]
+    exact hs
+
+/-- **Every forgery precedes the corruption of its epoch.** The truncated forgery game at the
+epoch `k` is the forgery game at the epoch `k`: after a corruption in the window of the epoch
+`k`, no delivery into the epoch `k` is answered. -/
+theorem smIDTruncGame_eq (M : SMIDScheme St Pub Rand W Ct Leak Hdr K) (ΔFS ΔPCS k : ℕ)
+    (A : SMIDAdv Pub W Hdr Ct Leak) :
+    smIDTruncGame M ΔFS ΔPCS k A = smIDBadGame M ΔFS ΔPCS k A := by
+  unfold smIDTruncGame smIDBadGame smIDFlagRun
+  refine congrArg _ (funext fun t => congrArg _ (funext fun i => congrArg _ ?_))
+  refine OracleAdv.run_map_eq_of_agree_until_stop _ _
+    (fun s : (SMSchemeSt St Pub × SMIDAux W Pub Hdr Ct) × Bool =>
+      s.1.2.epochSafe ΔFS ΔPCS k = false) (fun s => s.2) ?_ ?_ ?_ _ _
+  · intro s d hs
+    simp [smIDTruncOracle, hs]
+  · intro s d hs x hx
+    simp only [smIDTruncOracle, hs, Bool.false_eq_true, ite_false, PMF.support_pure,
+      Set.mem_singleton_iff] at hx
+    subst hx
+    exact ⟨hs, rfl⟩
+  · exact fun s d hs => smIDFlagOracle_stopped M ΔFS ΔPCS t false _ k s hs d
+
+end UntilBad
 
 end CatCrypt.Crypto.Messaging
