@@ -26,12 +26,31 @@ The shapes:
   equal cost, the statement of `Tm.free_noninterference` at `t`, with the binders
   `(ρ : Env Γ) (k k' : s.den)`. The public context (`∀ σ ∈ Γ, σ.Pub Sec`) is proved from the
   constructors of `Ty.Pub` and the binders.
+* `noninterference a₁ … aₘ`, for `t : Tm (X₁ :: … :: Xₘ :: Γ) τ` and each `aᵢ` either a proof
+  `hsᵢ : Sec sᵢ`, for a secret variable of type `Xᵢ = .base sᵢ`, or `_`, for a public variable:
+  non-interference with equal cost for several secret variables at any positions of the first
+  `m`, the statement of `Tm.noninterference_of_rel` at the two environments, with the binders
+  `(ρ : Env Γ)` (absent when `Γ` is empty), `(kᵢ kᵢ' : sᵢ.den)` per secret position and
+  `(pᵢ : Val Xᵢ)` per public position, in the order of the context. The two runs take `kᵢ` and
+  `kᵢ'` at the secret positions and the same `pᵢ` and `ρ` elsewhere; the conclusion is equal cost,
+  and equal trees when `τ.Pub Sec`. The public positions and `Γ` are proved public as above. With
+  one argument that is a proof this is the shape `noninterference hs`.
+* `noninterference_ops h a₁ … aₘ`, for `h : EnvRelB (BRel.secret Sec) ρ δ` with `ρ δ : Env Γ`,
+  `m ≥ 0`, and `aᵢ` as above: the same statement with the environments `ρ` and `δ` of `h` in
+  place of one public environment `ρ`, for a context `Γ` that is not public, such as an
+  environment of operations whose cost does not depend on their secret arguments; the binders
+  are those of the positions.
 * `hom_commute hφ`, for `hφ : M.IsHom N φ` of group operations at `g`
   (`GenericGroup.GrpOps.IsHom`) and `t : Tm (P₁ :: … :: Pₙ :: el g :: homCtx g) τ`: commutation
   with the homomorphism at equal cost, the statement of `GenericGroup.hom_commute`, with the
   binders `(c : OpCost) (x : g.den)` and one binder `pᵢ : Val Pᵢ` per public input. On the input
   `φ x` over `N` the run gives the image under `φ` of the run on `x` over `M` when `τ` is
   `el g`, and results related by `Ty.relB (homRel g φ) τ` otherwise.
+* `iso_commute hφ hinj hg`, for `hφ` as above, `hinj : Function.Injective φ`,
+  `hg : FTy.bool ≠ g` and `t : Tm (P₁ :: … :: Pₙ :: el g :: isoCtx g) τ`, a term over the group
+  operations and the equality test of group elements: the shape `hom_commute` with the
+  environments `isoEnv₁` and their relation `GenericGroup.isoEnv_rel`, the statement of
+  `GenericGroup.iso_commute`.
 * `rep_independence h`, for `h : EnvRelB (homRel g φ) ρ δ` of two environments of operations
   `ρ δ : Env Δ` and `t : Tm (P₁ :: … :: Pₙ :: el g :: Δ) τ` or `t : Tm Δ τ`: representation
   independence at equal cost, the statement of `rep_independence_input` of the development's
@@ -51,6 +70,8 @@ context or an input it does not prove public.
   equality away from the secret types;
 * `homRel_refl_of_pub` — a value of a type built without the group is related to itself by the
   graph of `φ`;
+* `Tm.noninterference_of_rel` — non-interference with timing in two environments related by the
+  relation of the secret types;
 * `Ty.pub_nil`, `Ty.pub_cons` — public contexts;
 * `free_theorem` — the command.
 -/
@@ -130,6 +151,13 @@ theorem homRel_refl_of_pub {g : FTy} {φ : g.den → g.den} {τ : Ty} (hτ : τ.
     (u : Val τ) : Ty.relB (homRel g φ) τ u u :=
   (Ty.Pub.relB_iff_of (fun _ hf _ _ => GenericGroup.homRel_of_ne hf) hτ u u).2 rfl
 
+/-- Non-interference with timing in two environments related by the relation of the secret
+types: equal cost, and equal trees when the result type is public. -/
+theorem Tm.noninterference_of_rel {Sec : FTy → Prop} {Γ : List Ty} {τ : Ty} (t : Tm Γ τ)
+    (ht : t.RespB (BRel.secret Sec)) {ρ δ : Env Γ} (h : EnvRelB (BRel.secret Sec) ρ δ) :
+    (t.eval ρ).cost = (t.eval δ).cost ∧ (τ.Pub Sec → t.eval ρ = t.eval δ) :=
+  ⟨t.cost_eq_of_secret ht h, fun hτ => t.eval_eq_of_pub hτ ht h⟩
+
 /-- The empty context is public. -/
 theorem Ty.pub_nil {Sec : FTy → Prop} : ∀ σ ∈ ([] : List Ty), σ.Pub Sec := by
   simp
@@ -142,11 +170,14 @@ theorem Ty.pub_cons {Sec : FTy → Prop} {a : Ty} {Γ : List Ty} (ha : a.Pub Sec
 namespace FreeThm
 
 /-- `free_theorem name binders for t at shape arg` adds the theorem `name`, the free theorem of
-the term `t` of D in the shape `noninterference hs`, `hom_commute hφ` or `rep_independence h`,
-with the respect of the base relation proved by `resp_b`. `for reflect_d f` reflects `f` first
-and takes `f.d`; `using [t₁, …, tₙ]` adds lemmas to `resp_b`. -/
+the term `t` of D in the shape `noninterference hs`, `noninterference a₁ … aₘ` (each `aᵢ` a
+proof of secrecy or `_`), `noninterference_ops h a₁ … aₘ`, `hom_commute hφ`,
+`iso_commute hφ hinj hg` or `rep_independence h`, with the respect of the base relation proved
+by `resp_b`. `for reflect_d f` reflects `f` first and takes `f.d`; `using [t₁, …, tₙ]` adds
+lemmas to `resp_b`. -/
 syntax (name := freeTheorem) (docComment)? "free_theorem " ident (ppSpace bracketedBinder)*
-  " for " ("reflect_d ")? term " at " ident term:max (" using " "[" term,* "]")? : command
+  " for " ("reflect_d ")? term " at " ident (ppSpace term:max)+ (" using " "[" term,* "]")? :
+  command
 
 meta section
 
@@ -227,6 +258,123 @@ def shapeNI (t : Expr) (Γ : Expr) (hs : Term) (extra : Array Term) :
         | fail "free_theorem: no constructor of `Ty.Pub` proves that the context is public")
     elabProof (← `($(mkCIdent ``Tm.free_noninterference) $hs $tS $ht $hΓ $ρ $k $k'))
 
+/-- The shape `noninterference a₁ … aₘ` with `m > 1` or a public position: the variable `i` of
+the context is secret when `aᵢ` is a proof `hs : Sec s` and public when `aᵢ` is `_`. With
+`base := some h`, for `h : EnvRelB (BRel.secret Sec) ρ δ`, the shape
+`noninterference_ops h a₁ … aₘ`:
+the rest of the context takes the environments `ρ` and `δ` of `h` instead of one public
+environment. -/
+def shapeNIs (t Γ : Expr) (args : Array Term) (extra : Array Term)
+    (base : Option Term := none) : TermElabM (Expr × Expr) := do
+  let (es, ts) ← listElems Γ
+  let m := args.size
+  if es.size < m then
+    throwError "free_theorem: the context of the term has fewer than {m} variables"
+  let rest := if m = 0 then Γ else ts[m - 1]!
+  -- For each position: `none` when public, `some (proof, s)` when secret.
+  let mut secrets : Array (Option (Term × Expr)) := #[]
+  let mut sec? : Option Expr := none
+  -- The environments of the rest of the context and their relation, from `base`.
+  let mut baseEnvs : Option (Term × Term) := none
+  if let some h := base then
+    let hE ← elabTerm h none
+    synthesizeSyntheticMVarsNoPostponing
+    let hT := (← instantiateMVars (← inferType hE)).consumeMData
+    unless hT.isAppOfArity ``EnvRelB 4 do
+      throwError "free_theorem: noninterference_ops expects related environments, not{
+        indentExpr hT}"
+    let R := (← whnfR (← instantiateMVars (hT.getArg! 0))).consumeMData
+    unless R.isAppOfArity ``BRel.secret 1 do
+      throwError "free_theorem: the relation{indentExpr R}\nis not `BRel.secret Sec`"
+    unless ← isDefEq (hT.getArg! 1) rest do
+      throwError "free_theorem: the environments of{indentExpr hT}\nare not of the context{
+        indentExpr rest}"
+    sec? := some (R.getArg! 0)
+    baseEnvs := some (← exprToSyntax (hT.getArg! 2), ← exprToSyntax (hT.getArg! 3))
+  let restNil := baseEnvs.isSome || (← whnfR rest).isAppOfArity ``List.nil 1
+  for i in [0:m] do
+    let a := args[i]!
+    if a.raw.isOfKind ``Lean.Parser.Term.hole then
+      secrets := secrets.push none
+    else
+      let si ← whnfR es[i]!
+      unless si.isAppOfArity ``Ty.base 1 do
+        throwError "free_theorem: the secret variable {i + 1}{indentExpr si}\nis not of a \
+          finite type"
+      let s := si.getArg! 0
+      let hE ← elabTerm a none
+      synthesizeSyntheticMVarsNoPostponing
+      let hT ← instantiateMVars (← inferType hE)
+      let .app Sec s' := hT.consumeMData | throwError "free_theorem: the proof of secrecy of \
+        variable {i + 1} has type{indentExpr hT}\nnot `Sec s`"
+      unless ← isDefEq s s' do
+        throwError "free_theorem: the proof of secrecy of variable {i + 1} is about{
+          indentExpr s'}\nnot{indentExpr s}"
+      if let some Sec0 := sec? then
+        unless ← isDefEq Sec Sec0 do
+          throwError "free_theorem: the proofs of secrecy name different sets of secret types"
+      else sec? := some Sec
+      secrets := secrets.push (some (a, s))
+  let some Sec := sec? | throwError "free_theorem: noninterference needs a secret variable"
+  let mut decls : Array (Name × Expr) :=
+    if restNil then #[] else #[(`ρ, mkApp (mkConst ``Env) rest)]
+  for i in [0:m] do
+    match secrets[i]! with
+    | none => decls := decls.push (Name.mkSimple s!"p{i + 1}", mkApp (mkConst ``Val) es[i]!)
+    | some (_, s) =>
+      decls := decls.push (Name.mkSimple s!"k{i + 1}", mkApp (mkConst ``FTy.den) s)
+      decls := decls.push (Name.mkSimple s!"k{i + 1}'", mkApp (mkConst ``FTy.den) s)
+  withBinders decls fun ys => do
+    let SecS ← exprToSyntax Sec
+    let restS ← exprToSyntax rest
+    let pubT ← pubTac extra
+    let nil := mkCIdent ``Ty.pub_nil
+    let cons := mkCIdent ``Ty.pub_cons
+    let hΓ ← `((by
+      repeat' (first | exact $nil | refine $cons ?_ ?_)
+      all_goals first
+        | $pubT
+        | fail "free_theorem: no constructor of `Ty.Pub` proves that the context is public" :
+        ∀ σ ∈ $restS, Ty.Pub $SecS σ))
+    let (ρ0 : Term) ← if restNil then `($(mkCIdent ``Env.nil)) else exprToSyntax ys[0]!
+    let (ρ1, δ1) := baseEnvs.getD (ρ0, ρ0)
+    let mut ρ := ρ1
+    let mut δ := δ1
+    let mut rel ← match base with
+      | some h => pure h
+      | none => `($(mkCIdent ``EnvRelB.refl_of_pub) (Sec := $SecS) $hΓ $ρ0)
+    -- The binders of position `i` start at `idx[i]`.
+    let mut idx : Array Nat := #[]
+    let mut n := if restNil then 0 else 1
+    for i in [0:m] do
+      idx := idx.push n
+      n := n + (if secrets[i]!.isSome then 2 else 1)
+    for j in [0:m] do
+      let i := m - 1 - j
+      let X ← exprToSyntax es[i]!
+      match secrets[i]! with
+      | none =>
+        let p ← exprToSyntax ys[idx[i]!]!
+        ρ ← `($(mkCIdent ``Env.cons) (τ := $X) $p $ρ)
+        δ ← `($(mkCIdent ``Env.cons) (τ := $X) $p $δ)
+        let hX ← `((by first
+          | $pubT
+          | fail "free_theorem: no constructor of `Ty.Pub` proves that the input is public" :
+          Ty.Pub $SecS $X))
+        rel ← `($(mkCIdent ``EnvRelB.cons) (τ := $X) (u := $p) (v := $p) $rel
+          (($(mkCIdent ``Ty.Pub.relB_iff) $hX $p $p).2 rfl))
+      | some (hs, _) =>
+        let k ← exprToSyntax ys[idx[i]!]!
+        let k' ← exprToSyntax ys[idx[i]! + 1]!
+        ρ ← `($(mkCIdent ``Env.cons) (τ := $X) $k $ρ)
+        δ ← `($(mkCIdent ``Env.cons) (τ := $X) $k' $δ)
+        rel ← `($(mkCIdent ``EnvRelB.cons) (τ := $X) (u := $k) (v := $k') $rel
+          (Or.inl $hs))
+    let tS ← exprToSyntax t
+    let ht ← respBTac niLemmas extra
+    elabProof (← `($(mkCIdent ``Tm.noninterference_of_rel) (Sec := $SecS) $tS $ht
+      (ρ := $ρ) (δ := $δ) $rel))
+
 /-- The proof that a public input `p : Val P` is related to itself. -/
 def inputRelTac (extra : Array Term) : TermElabM Term := do
   `($(mkCIdent ``homRel_refl_of_pub) (by first
@@ -279,8 +427,10 @@ def shapeGraph (t τ : Expr) (Γ g Δ : Expr) (extra : Array Term) (pre : Array 
     let thm := if ← isDefEq τ gTy then ``Tm.homRel_commute else ``Tm.abstraction_cost
     elabProof (← `($(mkCIdent thm) $tS $ht (ρ := $ρ) (δ := $δ) $rel))
 
-/-- The shape `hom_commute hφ`. -/
-def shapeHom (t τ Γ : Expr) (hφ : Term) (extra : Array Term) : TermElabM (Expr × Expr) := do
+/-- The shape `hom_commute hφ`, and with `iso := some (hinj, hg)` the shape
+`iso_commute hφ hinj hg` over the group operations and the equality test. -/
+def shapeHom (t τ Γ : Expr) (hφ : Term) (extra : Array Term)
+    (iso : Option (Term × Term) := none) : TermElabM (Expr × Expr) := do
   let hE ← elabTerm hφ none
   synthesizeSyntheticMVarsNoPostponing
   let hT ← whnfR (← instantiateMVars (← inferType hE))
@@ -294,18 +444,24 @@ def shapeHom (t τ Γ : Expr) (hφ : Term) (extra : Array Term) : TermElabM (Exp
   let M := hT.getArg! 2
   let N := hT.getArg! 3
   let φ := hT.getArg! 4
-  let Δ := mkApp (mkConst ``GenericGroup.homCtx) g
+  let Δ := mkApp (mkConst (if iso.isSome then ``GenericGroup.isoCtx else ``GenericGroup.homCtx)) g
   shapeGraph t τ Γ g Δ extra #[(`c, mkConst ``GenericGroup.OpCost)] fun pre x? => do
-    let some x := x? | throwError "free_theorem: hom_commute needs an input element"
+    let some x := x? | throwError "free_theorem: {if iso.isSome then "iso_commute" else
+      "hom_commute"} needs an input element"
     let c ← exprToSyntax pre[0]!
     let xS ← exprToSyntax x
     let gS ← exprToSyntax g
     let MS ← exprToSyntax M
     let NS ← exprToSyntax N
     let φS ← exprToSyntax φ
-    let ρ ← `($(mkCIdent ``GenericGroup.homEnv₁) $gS $MS $c $xS)
-    let δ ← `($(mkCIdent ``GenericGroup.homEnv₁) $gS $NS $c ($φS $xS))
-    let rel ← `($(mkCIdent ``EnvRelB.cons) ($(mkCIdent ``GenericGroup.homEnv_rel) $hφ $c)
+    let (envF, relΔ) ← match iso with
+      | none => pure (mkCIdent ``GenericGroup.homEnv₁,
+          ← `($(mkCIdent ``GenericGroup.homEnv_rel) $hφ $c))
+      | some (hinj, hg) => pure (mkCIdent ``GenericGroup.isoEnv₁,
+          ← `($(mkCIdent ``GenericGroup.isoEnv_rel) $hφ $hinj $hg $c))
+    let ρ ← `($envF $gS $MS $c $xS)
+    let δ ← `($envF $gS $NS $c ($φS $xS))
+    let rel ← `($(mkCIdent ``EnvRelB.cons) $relΔ
       (τ := $(mkCIdent ``Ty.base) $gS) (u := $xS) (v := $φS $xS)
       ($(mkCIdent ``GenericGroup.homRel_self).2 rfl))
     return (ρ, δ, rel)
@@ -348,9 +504,17 @@ def shapeRep (t τ Γ : Expr) (h : Term) (extra : Array Term) : TermElabM (Expr 
   let bs : Array Syntax := stx[3].getArgs
   let reflect := !stx[5].isNone
   let shape := stx[8].getId
-  let arg : Term := ⟨stx[9]⟩
+  let args : Array Term := stx[9].getArgs.map (⟨·⟩)
+  let arg : Term := args[0]!
+  let nArgs (k : Nat) : CommandElabM Unit := do
+    unless args.size = k do
+      throwErrorAt stx[8] "free_theorem: the shape `{shape}` takes {k} argument(s)"
   let extra : Array Term :=
     if stx[10].isNone then #[] else stx[10][0][2].getSepArgs.map (⟨·⟩)
+  match shape with
+  | `hom_commute | `rep_independence => nArgs 1
+  | `iso_commute => nArgs 3
+  | _ => pure ()
   let tStx : Term ← if reflect then do
       unless stx[6].isIdent do
         throwErrorAt stx[6] "free_theorem: reflect_d expects the name of a definition"
@@ -370,11 +534,17 @@ def shapeRep (t τ Γ : Expr) (h : Term) (extra : Array Term) : TermElabM (Expr 
       let Γ := tT.getArg! 0
       let τ := tT.getArg! 1
       let (ty, pf) ← match shape with
-        | `noninterference => shapeNI t Γ arg extra
+        | `noninterference =>
+          if args.size = 1 && !arg.raw.isOfKind ``Lean.Parser.Term.hole then
+            shapeNI t Γ arg extra
+          else shapeNIs t Γ args extra
+        | `noninterference_ops => shapeNIs t Γ (args.extract 1 args.size) extra (some arg)
         | `hom_commute => shapeHom t τ Γ arg extra
+        | `iso_commute => shapeHom t τ Γ arg extra (some (args[1]!, args[2]!))
         | `rep_independence => shapeRep t τ Γ arg extra
         | _ => throwErrorAt stx[8] "free_theorem: unknown shape `{shape}`; the shapes are \
-            `noninterference`, `hom_commute` and `rep_independence`"
+            `noninterference`, `noninterference_ops`, `hom_commute`, `iso_commute` and \
+            `rep_independence`"
       let ty ← instantiateMVars (← mkForallFVars xs ty)
       let pf ← instantiateMVars (← mkLambdaFVars xs pf)
       if ty.hasMVar || pf.hasMVar then
