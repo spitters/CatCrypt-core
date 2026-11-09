@@ -325,6 +325,8 @@ public import CatCryptCore.Crypto.HPKE.DHKEM
 public import CatCryptCore.Crypto.HPKE.BaseCCADHKEM
 public import CatCryptCore.Crypto.ECH.Scheme
 public import CatCryptCore.Crypto.PKE.Games
+public import CatCryptCore.Crypto.PKE.OracleCCA
+public import CatCryptCore.Crypto.PKE.OracleCCATimed
 public import CatCryptCore.Crypto.PKE.FOTransformT
 public import CatCryptCore.Crypto.PKE.LWEPKE
 public import CatCryptCore.Crypto.AKE.KeySchedule
