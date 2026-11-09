@@ -35,6 +35,7 @@ public import CatCryptCore.Examples.Commitments.CommitmentScheme
 public import CatCryptCore.Examples.Commitments.PolyCommitScheme
 public import CatCryptCore.Examples.Commitments.KZG.Def
 public import CatCryptCore.Examples.Commitments.KZG.KnowledgeSoundness
+public import CatCryptCore.Examples.Commitments.KZG.KnowledgeSoundnessTimed
 public import CatCryptCore.Examples.Commitments.Pedersen
 public import CatCryptCore.Examples.EncryptThenMAC
 public import CatCryptCore.Examples.BasicHash
