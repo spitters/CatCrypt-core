@@ -122,6 +122,7 @@ public import CatCryptCore.XDijkstra.Rel.XCombinedAutomation
 public import CatCryptCore.XDijkstra.Rel.XCoreProtocolReduction
 public import CatCryptCore.XDijkstra.Rel.XProbUCBaseline
 public import CatCryptCore.Category.XCategoricalModelRel
+public import CatCryptCore.Category.XCategoricalModelExt
 public import CatCryptCore.Relational.Approx
 public import CatCryptCore.Relational.RelationalQ0
 public import CatCryptCore.Crypto.UCMonad.SDistrInstance
@@ -718,6 +719,7 @@ public import CatCryptCore.Container.CwF
 public import CatCryptCore.Container.CwFPi
 public import CatCryptCore.Container.GodelFibration
 public import CatCryptCore.Container.GodelFibrationW
+public import CatCryptCore.Container.GodelFibrationWIter
 public import CatCryptCore.Container.DNBang
 public import CatCryptCore.Container.DialecticaCat
 public import CatCryptCore.Container.DNGraded
@@ -823,11 +825,11 @@ public import CatCryptCore.Crypto.UCWakeTimed
 public import CatCryptCore.Crypto.UCGlobalSquare
 public import CatCryptCore.Crypto.UCGlobalSquareTimed
 public import CatCryptCore.Crypto.UCGlobalCompose
-public import CatCryptCore.Crypto.UCGlobalSetups
 public import CatCryptCore.Crypto.UCGlobalPipe
 public import CatCryptCore.Crypto.UCGlobalPipeTimed
 public import CatCryptCore.Crypto.UCSemiHonest
 public import CatCryptCore.Crypto.UCSemiHonestTimed
+public import CatCryptCore.Crypto.UCGlobalSetups
 public import CatCryptCore.Crypto.UCTransparentAdv
 public import CatCryptCore.Crypto.UCTransparentExample
 public import CatCryptCore.Crypto.UCClockNetworkDet
