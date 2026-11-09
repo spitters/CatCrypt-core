@@ -93,14 +93,6 @@ idealK` (`smAuthHopGame_eq_cka`), so (`acdAuthSM_truncGame_le_cka`)
 
   `Pr[smAuthTruncGame k A] ≤ Adv_CKA(smAuthCKARed k A) + Pr[smAuthHopGame k (unifKeyRoot R) A]`.
 
-## FS-AEAD integrity
-
-`fsaead_int_game G D ideal A` is the integrity game of a single epoch of the chain generator `G`
-and the AEAD `D`: encryption under the next key of the chain, with a log of the honest
-ciphertexts; decryption at a position under the key of the chain from the initial state, or
-from the log in the ideal game, refused after the corruption of the sender.
-`FSAEAD_Int_Advantage` is the distance between the two games.
-
 ## Main definitions
 
 * `SMAuthScheme`, `SMAuthQuery`, `SMAuthAns`, `SMLogEntry`, `SMAuthAux`, `smAuthOracleAt`,
@@ -109,28 +101,21 @@ from the log in the ideal game, refused after the corruption of the sender.
 * `smAuthImpl`, `smAuthRed` — the reduction to the corruption game
 * `smAuthBadAt`, `smAuthFlagOracle`, `smAuthFlagRun`, `smAuthBadGame`, `smAuthTruncOracle`,
   `smAuthTruncGame` — the forgery event at an epoch and its truncated game
-* `chainKey`, `acdAuthSM` — the ACD construction with the decryption of the receiving chain
+* `acdAuthSM` — the ACD construction with the decryption of the receiving chain
 * `smOracleOfAt`, `acdRecvDec`, `acdDeliverAns`, `acdDeliverBad`, `smAuthCut`,
   `smAuthHopStep`, `smAuthHopOracle`, `smAuthHopGame` — the truncated forgery game with a root
   step at the epoch `k`
 * `smCKAImplAt`, `smAuthCKAFwd`, `smAuthCKAImpl`, `smAuthCKATree`, `smAuthCKARed` — the CKA
   reduction of the forgery event
-* `FSIntQuery`, `FSIntAns`, `FSIntSt`, `fsIntOracle`, `fsaead_int_game`,
-  `FSAEAD_Int_Advantage` — the FS-AEAD integrity game
 
 ## Main results
 
 * `smAuthGame_logDec_eq` — the game with ideal decryption is the corruption game of
   `smAuthRed`
 * `SMAuthScheme.authAdvantage_le`, `acdAuthSM_authAdvantage_le` — the bounds above
-* `OracleAdv.run_eq_of_agree_level` — runs of oracles that agree below a level of a graded
-  invariant, for an adversary with a query bound
 * `SMAuthScheme.intAdvantage_le_sum` — the integrity advantage as a sum over the epochs
-* `OracleAdv.run_map_eq_of_agree_until_stop` — runs of oracles that agree until a stop after
-  which both keep an observation
 * `advantage_bind_liftPMF_le_flag` — identical until a flag, through a shared prefix
 * `SMAuthScheme.epochIntAdvantage_le_bad`, `smAuthTruncGame_eq` — the bounds above
-* `OracleAdv.run_map_eq_of_cut` — answers replaced on the transitions into a frozen stop
 * `smCKAImplAt_step`, `smAuthHop_step`, `smAuthHop_acd_step` — the simulations of the hop
 * `acdAuthSM_truncGame_eq_hop`, `smAuthHopGame_eq_cka`, `acdAuthSM_truncGame_le_cka` — the
   CKA hop of the forgery event
@@ -139,98 +124,6 @@ from the log in the ideal game, refused after the corruption of the sender.
 set_option autoImplicit false
 
 @[expose] public section
-
-namespace CatCrypt.Crypto.OracleAdv
-
-variable {S D R α : Type}
-
-/-- **Runs of oracles that agree below a level.** Let `L c` be state predicates such that every
-call of `O` from a state of `L c` leads to states of `L (c + 1)`, and let `O` and `O'` agree at
-the states of `L c` for `c < n`. A run of an adversary asking at most `m` queries from a state
-of `L c` with `c + m ≤ n` is the same under both oracles. -/
-theorem run_eq_of_agree_level (O O' : S → D → PMF (R × S)) (L : ℕ → S → Prop) (n : ℕ)
-    (hO : ∀ c s d, L c s → ∀ x ∈ (O s d).support, L (c + 1) x.2)
-    (hagree : ∀ c s d, c < n → L c s → O s d = O' s d) {A : OracleAdv D R α} {m : ℕ}
-    (hA : A.IsQueryBound m) (c : ℕ) (s : S) (hs : L c s) (hcm : c + m ≤ n) :
-    run O A s = run O' A s := by
-  induction A generalizing m c s with
-  | ret a => simp only [run_ret]
-  | rand p k ih =>
-    simp only [run_rand]
-    exact congrArg _ (funext fun b => ih b (hA b) c s hs hcm)
-  | query d k ih =>
-    cases m with
-    | zero => exact hA.elim
-    | succ m =>
-      rw [run_query, run_query, ← hagree c s d (by omega) hs]
-      exact PMF.bind_congr_support _ _ _ fun y hy =>
-        ih y.1 (hA y.1) (c + 1) y.2 (hO c s d hs y hy) (by omega)
-
-/-- **A frozen observation.** Let every call of `O` from a state of `Fr` lead to states of `Fr`
-with the same value of `g`. A run from a state of `Fr` ends with that value of `g`. -/
-theorem run_map_eq_pure_of_frozen {β : Type} (O : S → D → PMF (R × S)) (Fr : S → Prop)
-    (g : S → β) (hO : ∀ s d, Fr s → ∀ x ∈ (O s d).support, Fr x.2 ∧ g x.2 = g s)
-    (A : OracleAdv D R α) (s : S) (hs : Fr s) :
-    (run O A s).map (fun x => g x.2) = PMF.pure (g s) := by
-  induction A generalizing s with
-  | ret a => simp only [run_ret, PMF.pure_map]
-  | rand p k ih => simp only [run_rand, PMF.map_bind, fun b => ih b s hs, PMF.bind_const]
-  | query d k ih =>
-    rw [run_query, PMF.map_bind, PMF.bind_congr_support _ _ (fun _ => PMF.pure (g s))
-      fun y hy => by rw [ih y.1 y.2 (hO s d hs y hy).1, (hO s d hs y hy).2]]
-    exact PMF.bind_const _ _
-
-/-- **Runs that agree until a stop.** Let `O` and `O'` agree at the states outside `Stop`, and
-let every call of either from a state of `Stop` lead to states of `Stop` with the same value of
-`g`. The runs of an adversary against `O` and `O'` give the same distribution of the final value
-of `g`. -/
-theorem run_map_eq_of_agree_until_stop {β : Type} (O O' : S → D → PMF (R × S))
-    (Stop : S → Prop) (g : S → β) (hagree : ∀ s d, ¬ Stop s → O s d = O' s d)
-    (hO : ∀ s d, Stop s → ∀ x ∈ (O s d).support, Stop x.2 ∧ g x.2 = g s)
-    (hO' : ∀ s d, Stop s → ∀ x ∈ (O' s d).support, Stop x.2 ∧ g x.2 = g s)
-    (A : OracleAdv D R α) (s : S) :
-    (run O A s).map (fun x => g x.2) = (run O' A s).map (fun x => g x.2) := by
-  induction A generalizing s with
-  | ret a => rfl
-  | rand p k ih => simp only [run_rand, PMF.map_bind, fun b => ih b s]
-  | query d k ih =>
-    by_cases hs : Stop s
-    · rw [run_map_eq_pure_of_frozen O Stop g hO _ s hs,
-        run_map_eq_pure_of_frozen O' Stop g hO' _ s hs]
-    · rw [run_query, run_query, PMF.map_bind, PMF.map_bind, hagree s d hs]
-      exact congrArg _ (funext fun y => ih y.1 y.2)
-
-/-- **Answers replaced at the stop.** Let every call of `O` from a state of `Stop` lead to
-states of `Stop` with the same value of `g`. The oracle that answers `r₀` on every transition
-into `Stop` and keeps the transitions of `O` otherwise gives the same distribution of the final
-value of `g` as `O`. -/
-theorem run_map_eq_of_cut {β : Type} (O : S → D → PMF (R × S)) (Stop : S → Prop)
-    [DecidablePred Stop] (g : S → β) (r₀ : R)
-    (hO : ∀ s d, Stop s → ∀ x ∈ (O s d).support, Stop x.2 ∧ g x.2 = g s)
-    (A : OracleAdv D R α) (s : S) :
-    (run (fun s d => (O s d).map fun x => if Stop x.2 then (r₀, x.2) else x) A s).map
-        (fun x => g x.2) = (run O A s).map (fun x => g x.2) := by
-  have hO' : ∀ s d, Stop s → ∀ x ∈ ((O s d).map fun x =>
-      if Stop x.2 then (r₀, x.2) else x).support, Stop x.2 ∧ g x.2 = g s := by
-    intro s d hs x hx
-    rw [PMF.support_map] at hx
-    obtain ⟨y, hy, rfl⟩ := hx
-    have := hO s d hs y hy
-    grind
-  induction A generalizing s with
-  | ret a => rfl
-  | rand p k ih => simp only [run_rand, PMF.map_bind, fun b => ih b s]
-  | query d k ih =>
-    rw [run_query, run_query, PMF.map_bind, PMF.map_bind, PMF.bind_map]
-    refine PMF.bind_congr_support _ _ _ fun y _ => ?_
-    by_cases hy2 : Stop y.2
-    · simp only [Function.comp_apply, hy2, ite_true]
-      rw [run_map_eq_pure_of_frozen _ Stop g hO' _ _ hy2,
-        run_map_eq_pure_of_frozen O Stop g hO _ _ hy2]
-    · simp only [Function.comp_apply, hy2, ite_false]
-      exact ih y.1 y.2
-
-end CatCrypt.Crypto.OracleAdv
 
 namespace CatCrypt.Crypto.Messaging
 
@@ -822,10 +715,6 @@ section ACD
 variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [Fintype RK] [Nonempty RK]
 
-/-- The key at the position `j` of the chain from the state `sa` of the chain generator `G`. -/
-def chainKey (G : PRGDef Sa (W × Sa)) (sa : Sa) (j : ℕ) : W :=
-  (G.stretch ((fun s => (G.stretch s).2)^[j] sa)).1
-
 /-- **The ACD construction with decryption**: `acdSM C R G D` with the decryption of the
 ciphertext at the position `j` under the key at the position `j` of the receiving chain. -/
 noncomputable def acdAuthSM (C : CKADef Sc Msg Key) [CKACoins C Rand]
@@ -1355,82 +1244,5 @@ theorem acdAuthSM_truncGame_le_cka (C : CKADef Sc Msg Key) [CKACoins C Rand]
   exact le_tsub_add.trans (add_le_add le_sup_left le_rfl)
 
 end AuthCKA
-
-/-! ## Forward-secure AEAD integrity -/
-
-section FSInt
-
-variable {Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [DecidableEq W]
-  [DecidableEq Ct]
-
-/-- The queries of the FS-AEAD integrity adversary. -/
-inductive FSIntQuery (W Ct : Type) where
-  /-- The sender encrypts the message `m` under the next key of its chain. -/
-  | enc (m : W × W)
-  /-- The receiver decrypts the ciphertext `c` with associated data `ad` at the position `j`. -/
-  | dec (j : ℕ) (ad : W) (c : Ct)
-  /-- The state of the sender is returned; later decryptions are refused. -/
-  | corrupt
-
-/-- The answers of the FS-AEAD integrity oracle. -/
-inductive FSIntAns (Sa Ct W : Type) where
-  /-- A ciphertext. -/
-  | ct (c : Ct)
-  /-- A plaintext or a rejection. -/
-  | dec (m : Option W)
-  /-- The state of the sender. -/
-  | state (s : Sa)
-
-/-- The state of the FS-AEAD integrity game: the current state of the sender's chain, the
-initial state of the epoch (the state of the receiver), the log of the honest ciphertexts
-(position, plaintext, associated data, ciphertext) and the flag of the corruption. -/
-structure FSIntSt (Sa W Ct : Type) where
-  /-- The current state of the sender. -/
-  cur : Sa
-  /-- The initial state of the epoch, held by the receiver. -/
-  init : Sa
-  /-- The honest ciphertexts: position, plaintext, associated data, ciphertext. -/
-  log : List (ℕ × W × W × Ct)
-  /-- The sender has been corrupted. -/
-  corr : Bool
-
-omit [SampleableType W] [SampleableType Ct] in
-/-- Decryption from the log of the FS-AEAD integrity game: the plaintext of the honest
-ciphertext `c` with associated data `ad` at the position `j`, or `none`. -/
-def FSIntSt.logDec (s : FSIntSt Sa W Ct) (j : ℕ) (ad : W) (c : Ct) : Option W :=
-  (s.log.find? fun l => decide (l.1 = j ∧ l.2.2.1 = ad ∧ l.2.2.2 = c)).map fun l => l.2.1
-
-/-- The oracle of the FS-AEAD integrity game of the generator `G` and the AEAD `D` (the
-authenticity part of the FS-AEAD security of Alwen, Coretti and Dodis, §4.3, with immediate
-decryption): `enc m` encrypts under the next key `(G cur).1`, logs the ciphertext at the next
-position and moves the state to `(G cur).2`; `dec j ad c` decrypts under the key at the position
-`j` of the chain from the initial state (`ideal = false`) or from the log (`ideal = true`), and
-is refused after a corruption; `corrupt` returns the current state of the sender. -/
-noncomputable def fsIntOracle (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
-    (s : FSIntSt Sa W Ct) : FSIntQuery W Ct → PMF (FSIntAns Sa Ct W × FSIntSt Sa W Ct)
-  | .enc m =>
-    PMF.pure (.ct (D.encrypt (G.stretch s.cur).1 m.1 m.2),
-      { s with cur := (G.stretch s.cur).2,
-               log := (s.log.length, m.1, m.2, D.encrypt (G.stretch s.cur).1 m.1 m.2) :: s.log })
-  | .dec j ad c => PMF.pure (.dec (if s.corr then none
-      else if ideal then s.logDec j ad c else D.decrypt (chainKey G s.init j) c ad), s)
-  | .corrupt => PMF.pure (.state s.cur, { s with corr := true })
-
-variable [Fintype Sa] [Nonempty Sa]
-
-/-- **The FS-AEAD integrity game**: a uniform initial state of the epoch, and the run of the
-adversary against `fsIntOracle`. -/
-noncomputable def fsaead_int_game (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
-    (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) : SPComp Bool :=
-  liftPMF ((PMF.uniformFintype Sa).bind fun sa =>
-    (OracleAdv.run (fsIntOracle G D ideal) A ⟨sa, sa, [], false⟩).map Prod.fst)
-
-/-- **FS-AEAD integrity advantage** of the adversary `A`: real decryption against decryption
-from the log. -/
-noncomputable def FSAEAD_Int_Advantage (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) : ℝ≥0∞ :=
-  Advantage (fsaead_int_game G D false A) (fsaead_int_game G D true A)
-
-end FSInt
 
 end CatCrypt.Crypto.Messaging

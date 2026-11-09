@@ -46,9 +46,7 @@ outputs under the simulation relation `KEMRel` (`kemRel_step`).
 
 ## Main definitions
 
-* `KEMCoins`, `KEMCoins.Sound`, `KEMCoins.Correct` — a KEM with explicit randomness
-* `kemSendOf`, `kemCKACoins`, `kemInitP` — the send with explicit randomness and the initial
-  distribution of `kemCKA`
+* `kemInitP` — the initial distribution of `kemCKA`
 * `kemStepOf`, `kemEagerStepOf`, `kemSimStepOf` — the steps of the game, of the eager game and
   of the simulator
 * `kemHidden`, `KEMRel` — the hidden window of the embedded decapsulation key and the simulation
@@ -83,68 +81,13 @@ open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.Assumptions
   CatCrypt.Crypto.PRPPRF CatCryptCore.Examples.CyclicGroupDDH CatCrypt.Examples.KEMDEM
 open scoped ENNReal
 
-/-! ## A KEM with explicit randomness -/
-
-/-- A KEM whose key generation and encapsulation are given as functions of their randomness:
-`kgenR r` is the key pair generated with the randomness `r : Rg`, and `encapR pk r` the key and
-the encapsulation under `pk` with the randomness `r : Re`. -/
-class KEMCoins {PK SK K E : Type} (KEM : KEMScheme PK SK K E) (Rg Re : outParam Type) where
-  /-- Key generation with explicit randomness. -/
-  kgenR : Rg → PK × SK
-  /-- Encapsulation with explicit randomness. -/
-  encapR : PK → Re → K × E
+/-! ## The initial distribution and the correctness relation -/
 
 section Coins
 
 variable {PK SK K E Rg Re : Type}
 
-/-- The algorithms of the KEM draw a uniform randomness and run `kgenR` and `encapR`. -/
-def KEMCoins.Sound (KEM : KEMScheme PK SK K E) [KEMCoins KEM Rg Re] [Fintype Rg] [Nonempty Rg]
-    [Fintype Re] [Nonempty Re] : Prop :=
-  (KEM.kgen = SPComp.bind (SPComp.sample Rg) fun r =>
-      SPComp.pure (KEMCoins.kgenR (KEM := KEM) r)) ∧
-    ∀ pk, KEM.encap pk = SPComp.bind (SPComp.sample Re) fun r =>
-      SPComp.pure (KEMCoins.encapR (KEM := KEM) pk r)
-
-/-- Decapsulation with a generated decapsulation key inverts encapsulation under its
-encapsulation key. -/
-def KEMCoins.Correct (KEM : KEMScheme PK SK K E) [KEMCoins KEM Rg Re] : Prop :=
-  ∀ rg re, KEM.decap (KEMCoins.kgenR (KEM := KEM) rg).2
-      (KEMCoins.encapR (KEM := KEM) (KEMCoins.kgenR (KEM := KEM) rg).1 re).2 =
-    (KEMCoins.encapR (KEM := KEM) (KEMCoins.kgenR (KEM := KEM) rg).1 re).1
-
-/-- The send of `kemCKA` from the state `x` with the randomness `r = (re, rg)`, for the key
-generation `kg` and the encapsulation `en`: the next state, the message and the key. -/
-def kemSendOf (kg : Rg → PK × SK) (en : PK → Re → K × E) (x : PK × SK) (r : Re × Rg) :
-    (PK × SK) × (Option E × PK) × K :=
-  ((x.1, (kg r.2).2), (some (en x.1 r.1).2, (kg r.2).1), (en x.1 r.1).1)
-
-/-- The sending algorithm of `kemCKA KEM` with the randomness of the encapsulation and of the
-key generation as explicit randomness. -/
-noncomputable instance kemCKACoins [Inhabited K] (KEM : KEMScheme PK SK K E)
-    [KEMCoins KEM Rg Re] : CKACoins (kemCKA KEM) (Re × Rg) where
-  sendR := kemSendOf (KEMCoins.kgenR (KEM := KEM)) (KEMCoins.encapR (KEM := KEM))
-
-/-- The unfolding of the explicit-randomness sending algorithm of `kemCKA`. -/
-@[simp] theorem kemCKACoins_sendR [Inhabited K] (KEM : KEMScheme PK SK K E)
-    [KEMCoins KEM Rg Re] (x : PK × SK) (r : Re × Rg) :
-    CKACoins.sendR (C := kemCKA KEM) x r =
-      kemSendOf (KEMCoins.kgenR (KEM := KEM)) (KEMCoins.encapR (KEM := KEM)) x r :=
-  rfl
-
 variable [Fintype Rg] [Nonempty Rg] [Fintype Re] [Nonempty Re]
-
-/-- The explicit-randomness sending algorithm of `kemCKA` of a sound KEM is sound. -/
-theorem kemCKACoins_sound [Inhabited K] (KEM : KEMScheme PK SK K E) [KEMCoins KEM Rg Re]
-    (hS : KEMCoins.Sound KEM) : CKACoins.Sound (kemCKA KEM) := by
-  intro s
-  change SPComp.bind (KEM.encap s.1) (fun ke => SPComp.bind KEM.kgen fun ks =>
-      SPComp.pure ((s.1, ks.2), (some ke.2, ks.1), ke.1)) =
-    SPComp.bind (SPComp.sample (Re × Rg)) fun r => SPComp.pure
-      (kemSendOf (KEMCoins.kgenR (KEM := KEM)) (KEMCoins.encapR (KEM := KEM)) s r)
-  rw [hS.1, hS.2]
-  simp only [SPComp.sample_prod_eq, SPComp.bind_assoc, SPComp.pure_bind]
-  rfl
 
 /-- The initial distribution of `kemCKA`: a generated key pair is the public value and both
 initial states. -/

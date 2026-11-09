@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.OracleAdversaryTimed
+public import CatCryptCore.Crypto.OracleAdversaryPotential
 public import CatCryptCore.Crypto.FiatShamirROM.StraightLineMk
 public import CatCryptCore.Crypto.FiatShamirROM.KeyRecoveryFlag
 public import CatCryptCore.Crypto.FiatShamirROM.ProgFlag
@@ -175,50 +176,6 @@ theorem timeBound_simulate_of_isQueryBoundBy {S : Type}
     have hi := himpl s d
     have h := stepTimeBound_delay (c := (impl s d).1) (timeBound_bind hi.2 hk')
     exact h.mono (by have := hi.1; have := hA.1; omega)
-
-/-- **Simulation time with a cost per query and a state invariant.** Let `Inv i` hold of the
-states reached after `i` queries: a program of `impl` answering `d` from a state with `Inv i` has
-time at most `t d + g i` and returns states with `Inv (i + 1)`. Then an adversary of time `T` with
-at most `q` queries, whose query costs `t d` sum to at most `n` on every path, simulated from a
-state with `Inv i`, has time at most `T + n + ∑_{j < q} g (i + j)`. A handler that reads a log
-growing by one entry per query has such a time, with `g` linear. -/
-theorem timeBound_simulate_inv_of_isQueryBoundBy {S : Type}
-    (impl : S → D → ℕ × Timed D' R' (R × S)) (t : D → ℕ) (g : ℕ → ℕ) (Inv : ℕ → S → Prop)
-    (himpl : ∀ i s d, Inv i s →
-      StepTimeBound (impl s d) (t d + g i) ∧ AllRet (fun y => Inv (i + 1) y.2) (impl s d).2)
-    {A : Timed D R α} {T n q : ℕ} (hA : A.TimeBound T)
-    (hn : A.erase.IsQueryBoundBy t n) (hq : A.erase.IsQueryBound q) (i : ℕ) (s : S)
-    (hs : Inv i s) :
-    StepTimeBound (simulate impl A s) (T + n + ∑ j ∈ Finset.range q, g (i + j)) := by
-  induction A generalizing T n q i s with
-  | ret a => exact ⟨Nat.zero_le _, trivial⟩
-  | rand p c k ih =>
-    have h1 := hA.1
-    simp only [simulate, stepTimeBound_zero, timeBound_rand_iff]
-    refine ⟨by omega, fun b => ?_⟩
-    have h2 := (hA.2 b).1
-    exact (stepTimeBound_delay (c := c b) (ih b (hA.2 b).2 (hn b) (hq b) i s hs)).mono (by omega)
-  | query d c k ih =>
-    cases q with
-    | zero => exact (hq : False).elim
-    | succ q =>
-      obtain ⟨hd, hnk⟩ := hn
-      have hsum : ∑ j ∈ Finset.range (q + 1), g (i + j) =
-          ∑ j ∈ Finset.range q, g (i + 1 + j) + g i := by
-        rw [Finset.sum_range_succ']
-        simp only [Nat.add_zero]
-        congr 1
-        exact Finset.sum_congr rfl fun j _ => by rw [Nat.add_assoc, Nat.add_comm 1 j]
-      rw [hsum]
-      have hk : ∀ x : R × S, Inv (i + 1) x.2 →
-          StepTimeBound (delay (c x.1) (simulate impl (k x.1) x.2))
-            (T - 1 + (n - t d) + ∑ j ∈ Finset.range q, g (i + 1 + j)) := fun x hx =>
-        (stepTimeBound_delay (ih x.1 (hA.2 x.1).2 (hnk x.1) (hq x.1) (i + 1) x.2 hx)).mono
-          (by have := (hA.2 x.1).1; omega)
-      have hi := himpl i s d hs
-      have h := stepTimeBound_delay (c := (impl s d).1)
-        (timeBound_bind_of_allRet hi.1.2 hi.2 hk)
-      exact h.mono (by have := hi.1.1; have := hA.1; omega)
 
 /-- **Results of a simulation under a state invariant.** When a program of `impl` from a state
 with `Inv i` returns states with `Inv (i + 1)`, an adversary with at most `q` queries, simulated

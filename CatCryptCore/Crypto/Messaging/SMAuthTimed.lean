@@ -231,18 +231,6 @@ theorem smAuthCKARed.compile_tree (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDe
   rw [h]
   rfl
 
-/-- `j` iterations of a function of cost at most `c` cost at most `(c + 3) j + 1`. -/
-private theorem iterate_timedCost_le {α : Type} (f : α → α) (fCost : α → ℕ) {c : ℕ}
-    (hf : ∀ a, fCost a ≤ c) (j : ℕ) :
-    ∀ s, Nat.iterate.timedCost f fCost j s ≤ (c + 3) * j + 1 := by
-  induction j with
-  | zero => intro s; simp [Nat.iterate.timedCost]
-  | succ j ih =>
-    intro s
-    have := ih (f s); have := hf s
-    simp only [Nat.iterate.timedCost]
-    rw [Nat.mul_succ]; omega
-
 /-- The bound on a costed state of the simulator `smAuthCKAImpl` after at most `i` queries: the
 cost companions of the CKA simulator are at most `1 + 3 i` (`smCKACostInv`), and the log and the
 list of corruptions have at most `i` entries. -/
@@ -405,8 +393,8 @@ theorem smAuthCKAImpl.timed_bound (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDe
       have hfind := List.find?.timedCost_le
         (fun l : SMLogEntry W Ct => decide (l.e = σ.1.1.2.t p ∧ l.j = j ∧ l.ad = ad ∧ l.ct = c))
         (fun _ => 1) (k := 1) (fun _ => le_rfl) σ.1.2.log
-      have hit := iterate_timedCost_le (fun s => (G.stretch s).2) (fun s => 1 + gCost s)
-        (c := g + 1) (fun s => by have := hg s; omega) j
+      have hit := Nat.iterate.timedCost_le (fun s => (G.stretch s).2) (fun s => 1 + gCost s)
+        (k := g + 1) (fun s => by have := hg s; omega) j
       have hp5 := h5 p
       have hp3 := h3 p
       refine ⟨(OracleAdv.Timed.stepTimeBound_delay (OracleAdv.Timed.stepTimeBound_delay

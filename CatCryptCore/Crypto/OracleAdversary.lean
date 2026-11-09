@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.ForMathlib.PMFUniformDefs
+public import CatCryptCore.ForMathlib.PMFSupport
 
 /-!
 # Adaptive oracle adversaries
@@ -40,6 +41,11 @@ queries. An adversary runs against a stateful oracle
   query by the same distribution give the same run
 * `OracleAdv.run_map_fst_of_isQueryBound_zero` — an adversary without queries
   has an output distribution independent of the oracle
+* `OracleAdv.run_eq_of_agree_level` — runs of oracles that agree below a level of a graded
+  invariant, for an adversary with a query bound
+* `OracleAdv.run_map_eq_pure_of_frozen`, `OracleAdv.run_map_eq_of_agree_until_stop` — runs of
+  oracles that agree until a stop after which both keep an observation
+* `OracleAdv.run_map_eq_of_cut` — answers replaced on the transitions into a frozen stop
 * `OracleAdv.run_flag_apply_false_of_true` — an oracle whose flag is sticky
   keeps it set through a run
 * `OracleAdv.run_apply_flag_false_eq` — two oracles that agree on every
@@ -195,6 +201,94 @@ theorem run_map_eq_of_fixed (O : S → D → PMF (R × S)) (O' : S' → D → PM
   | rand p k ih => simp only [run_rand, PMF.map_bind, ih]
   | query d k ih =>
     simp only [run_query, hO, hO', PMF.bind_map, PMF.map_bind, Function.comp_def, ih]
+
+/-! ## Runs of oracles that agree on part of the state space -/
+
+/-- **Runs of oracles that agree below a level.** Let `L c` be state predicates such that every
+call of `O` from a state of `L c` leads to states of `L (c + 1)`, and let `O` and `O'` agree at
+the states of `L c` for `c < n`. A run of an adversary asking at most `m` queries from a state
+of `L c` with `c + m ≤ n` is the same under both oracles. -/
+theorem run_eq_of_agree_level (O O' : S → D → PMF (R × S)) (L : ℕ → S → Prop) (n : ℕ)
+    (hO : ∀ c s d, L c s → ∀ x ∈ (O s d).support, L (c + 1) x.2)
+    (hagree : ∀ c s d, c < n → L c s → O s d = O' s d) {A : OracleAdv D R α} {m : ℕ}
+    (hA : A.IsQueryBound m) (c : ℕ) (s : S) (hs : L c s) (hcm : c + m ≤ n) :
+    run O A s = run O' A s := by
+  induction A generalizing m c s with
+  | ret a => simp only [run_ret]
+  | rand p k ih =>
+    simp only [run_rand]
+    exact congrArg _ (funext fun b => ih b (hA b) c s hs hcm)
+  | query d k ih =>
+    cases m with
+    | zero => exact hA.elim
+    | succ m =>
+      rw [run_query, run_query, ← hagree c s d (by omega) hs]
+      exact PMF.bind_congr_support _ _ _ fun y hy =>
+        ih y.1 (hA y.1) (c + 1) y.2 (hO c s d hs y hy) (by omega)
+
+/-- **A frozen observation.** Let every call of `O` from a state of `Fr` lead to states of `Fr`
+with the same value of `g`. A run from a state of `Fr` ends with that value of `g`. -/
+theorem run_map_eq_pure_of_frozen {β : Type} (O : S → D → PMF (R × S)) (Fr : S → Prop)
+    (g : S → β) (hO : ∀ s d, Fr s → ∀ x ∈ (O s d).support, Fr x.2 ∧ g x.2 = g s)
+    (A : OracleAdv D R α) (s : S) (hs : Fr s) :
+    (run O A s).map (fun x => g x.2) = PMF.pure (g s) := by
+  induction A generalizing s with
+  | ret a => simp only [run_ret, PMF.pure_map]
+  | rand p k ih => simp only [run_rand, PMF.map_bind, fun b => ih b s hs, PMF.bind_const]
+  | query d k ih =>
+    rw [run_query, PMF.map_bind, PMF.bind_congr_support _ _ (fun _ => PMF.pure (g s))
+      fun y hy => by rw [ih y.1 y.2 (hO s d hs y hy).1, (hO s d hs y hy).2]]
+    exact PMF.bind_const _ _
+
+/-- **Runs that agree until a stop.** Let `O` and `O'` agree at the states outside `Stop`, and
+let every call of either from a state of `Stop` lead to states of `Stop` with the same value of
+`g`. The runs of an adversary against `O` and `O'` give the same distribution of the final value
+of `g`. -/
+theorem run_map_eq_of_agree_until_stop {β : Type} (O O' : S → D → PMF (R × S))
+    (Stop : S → Prop) (g : S → β) (hagree : ∀ s d, ¬ Stop s → O s d = O' s d)
+    (hO : ∀ s d, Stop s → ∀ x ∈ (O s d).support, Stop x.2 ∧ g x.2 = g s)
+    (hO' : ∀ s d, Stop s → ∀ x ∈ (O' s d).support, Stop x.2 ∧ g x.2 = g s)
+    (A : OracleAdv D R α) (s : S) :
+    (run O A s).map (fun x => g x.2) = (run O' A s).map (fun x => g x.2) := by
+  induction A generalizing s with
+  | ret a => rfl
+  | rand p k ih => simp only [run_rand, PMF.map_bind, fun b => ih b s]
+  | query d k ih =>
+    by_cases hs : Stop s
+    · rw [run_map_eq_pure_of_frozen O Stop g hO _ s hs,
+        run_map_eq_pure_of_frozen O' Stop g hO' _ s hs]
+    · rw [run_query, run_query, PMF.map_bind, PMF.map_bind, hagree s d hs]
+      exact congrArg _ (funext fun y => ih y.1 y.2)
+
+/-- **Answers replaced at the stop.** Let every call of `O` from a state of `Stop` lead to
+states of `Stop` with the same value of `g`. The oracle that answers `r₀` on every transition
+into `Stop` and keeps the transitions of `O` otherwise gives the same distribution of the final
+value of `g` as `O`. -/
+theorem run_map_eq_of_cut {β : Type} (O : S → D → PMF (R × S)) (Stop : S → Prop)
+    [DecidablePred Stop] (g : S → β) (r₀ : R)
+    (hO : ∀ s d, Stop s → ∀ x ∈ (O s d).support, Stop x.2 ∧ g x.2 = g s)
+    (A : OracleAdv D R α) (s : S) :
+    (run (fun s d => (O s d).map fun x => if Stop x.2 then (r₀, x.2) else x) A s).map
+        (fun x => g x.2) = (run O A s).map (fun x => g x.2) := by
+  have hO' : ∀ s d, Stop s → ∀ x ∈ ((O s d).map fun x =>
+      if Stop x.2 then (r₀, x.2) else x).support, Stop x.2 ∧ g x.2 = g s := by
+    intro s d hs x hx
+    rw [PMF.support_map] at hx
+    obtain ⟨y, hy, rfl⟩ := hx
+    have := hO s d hs y hy
+    grind
+  induction A generalizing s with
+  | ret a => rfl
+  | rand p k ih => simp only [run_rand, PMF.map_bind, fun b => ih b s]
+  | query d k ih =>
+    rw [run_query, run_query, PMF.map_bind, PMF.map_bind, PMF.bind_map]
+    refine PMF.bind_congr_support _ _ _ fun y _ => ?_
+    by_cases hy2 : Stop y.2
+    · simp only [Function.comp_apply, hy2, ite_true]
+      rw [run_map_eq_pure_of_frozen _ Stop g hO' _ _ hy2,
+        run_map_eq_pure_of_frozen O Stop g hO _ _ hy2]
+    · simp only [Function.comp_apply, hy2, ite_false]
+      exact ih y.1 y.2
 
 /-! ## Flagged oracle state -/
 

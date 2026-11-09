@@ -48,6 +48,8 @@ their definitions through `Array.toList`, so their costs are linear in the size.
 * `Fin.foldl.timedCost_le`, `Fin.foldl.timedCost_const` — the fold over `Fin n` costs at most
   `(k + 3) * n + 1` for step costs at most `k` (a registered cost defined by recursion in the
   order of `Fin.foldl_succ`, so that it does not depend on the definition of `Fin.foldl`)
+* `Nat.iterate.timedCost_le` — `i` iterations of a function of cost at most `k` cost at most
+  `(k + 3) * i + 1`
 * `Finset.toList.timedCost_eq` — enumerating `s` costs `s.card + 1`
 * `Finset.card.timedCost_eq` — the cardinality of `s` costs `s.card + 1`
 * `Finset.filter.timedCost_eq` — filtering `s` costs `∑ i ∈ s, pCost i + s.card + 1`
@@ -118,6 +120,7 @@ derive_cost List.filterMap
 derive_cost List.countP.go
 derive_cost List.countP
 derive_cost (unit := BEq.beq) List.erase
+derive_cost Nat.iterate
 
 section
 
@@ -661,6 +664,17 @@ theorem Fin.foldl.timedCost_const (n : ℕ) (f : α → Fin n → α) (c : ℕ) 
   | succ n ih =>
     have h := ih (fun x i => f x i.succ) (f init 0)
     rw [Fin.foldl.timedCost_succ, h, Nat.mul_succ]; omega
+
+/-- `i` iterations of a function of cost at most `k` cost at most `(k + 3) i + 1`. -/
+theorem Nat.iterate.timedCost_le (f : α → α) (fCost : α → ℕ) {k : ℕ}
+    (hf : ∀ a, fCost a ≤ k) (i : ℕ) : ∀ s, Nat.iterate.timedCost f fCost i s ≤ (k + 3) * i + 1 := by
+  induction i with
+  | zero => intro s; simp [Nat.iterate.timedCost]
+  | succ i ih =>
+    intro s
+    have := ih (f s); have := hf s
+    simp only [Nat.iterate.timedCost]
+    rw [Nat.mul_succ]; omega
 
 /-! Registered cost of a table write. `Function.update f a v`, on a table `f`, is the write of `v`
 at `a`: a registered primitive whose registered arity is six (`α`, `β`, the decision instance,

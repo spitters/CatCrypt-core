@@ -32,6 +32,12 @@ ciphertexts one at a time, each step at the cost of the AEAD advantage of `fsaea
   uniform keys
 * `fsaeadView`, `fsaeadRedOf`, `fsaeadRed` — the AEAD distinguisher of hybrid step `j`
 
+* `chainKey` — the key at a position of the chain of a generator from a state
+* `FSIntQuery`, `FSIntAns`, `FSIntSt`, `fsIntOracle`, `fsaead_int_game`,
+  `FSAEAD_Int_Advantage` — the FS-AEAD integrity game: encryption under the next key of the
+  chain, decryption at a position under the key of the chain from the initial state or from
+  the log of the honest ciphertexts, refused after the corruption of the sender
+
 ## Main results
 
 * `fsaead_real_bind_eq` — the real game is the FS-PRG real game followed by encryption
@@ -282,5 +288,86 @@ theorem fsaeadRed.timeBound_timed (D : AEADDef W C) (msgs : List (W × W)) (j r 
     SPTree.Timed.stepTime (fsaeadRed.timed D msgs j r viewCost A ACost c) ≤
       T + a + tv + 5 :=
   fsaeadRedOf.tree.timeBound_timed _ viewCost A ACost hA hAc hv c
+
+/-! ## The integrity game -/
+
+section FSInt
+
+variable {Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [DecidableEq W]
+  [DecidableEq Ct]
+
+/-- The key at the position `j` of the chain from the state `sa` of the chain generator `G`. -/
+def chainKey (G : PRGDef Sa (W × Sa)) (sa : Sa) (j : ℕ) : W :=
+  (G.stretch ((fun s => (G.stretch s).2)^[j] sa)).1
+
+/-- The queries of the FS-AEAD integrity adversary. -/
+inductive FSIntQuery (W Ct : Type) where
+  /-- The sender encrypts the message `m` under the next key of its chain. -/
+  | enc (m : W × W)
+  /-- The receiver decrypts the ciphertext `c` with associated data `ad` at the position `j`. -/
+  | dec (j : ℕ) (ad : W) (c : Ct)
+  /-- The state of the sender is returned; later decryptions are refused. -/
+  | corrupt
+
+/-- The answers of the FS-AEAD integrity oracle. -/
+inductive FSIntAns (Sa Ct W : Type) where
+  /-- A ciphertext. -/
+  | ct (c : Ct)
+  /-- A plaintext or a rejection. -/
+  | dec (m : Option W)
+  /-- The state of the sender. -/
+  | state (s : Sa)
+
+/-- The state of the FS-AEAD integrity game: the current state of the sender's chain, the
+initial state of the epoch (the state of the receiver), the log of the honest ciphertexts
+(position, plaintext, associated data, ciphertext) and the flag of the corruption. -/
+structure FSIntSt (Sa W Ct : Type) where
+  /-- The current state of the sender. -/
+  cur : Sa
+  /-- The initial state of the epoch, held by the receiver. -/
+  init : Sa
+  /-- The honest ciphertexts: position, plaintext, associated data, ciphertext. -/
+  log : List (ℕ × W × W × Ct)
+  /-- The sender has been corrupted. -/
+  corr : Bool
+
+omit [SampleableType W] [SampleableType Ct] in
+/-- Decryption from the log of the FS-AEAD integrity game: the plaintext of the honest
+ciphertext `c` with associated data `ad` at the position `j`, or `none`. -/
+def FSIntSt.logDec (s : FSIntSt Sa W Ct) (j : ℕ) (ad : W) (c : Ct) : Option W :=
+  (s.log.find? fun l => decide (l.1 = j ∧ l.2.2.1 = ad ∧ l.2.2.2 = c)).map fun l => l.2.1
+
+/-- The oracle of the FS-AEAD integrity game of the generator `G` and the AEAD `D` (the
+authenticity part of the FS-AEAD security of Alwen, Coretti and Dodis, §4.3, with immediate
+decryption): `enc m` encrypts under the next key `(G cur).1`, logs the ciphertext at the next
+position and moves the state to `(G cur).2`; `dec j ad c` decrypts under the key at the position
+`j` of the chain from the initial state (`ideal = false`) or from the log (`ideal = true`), and
+is refused after a corruption; `corrupt` returns the current state of the sender. -/
+noncomputable def fsIntOracle (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
+    (s : FSIntSt Sa W Ct) : FSIntQuery W Ct → PMF (FSIntAns Sa Ct W × FSIntSt Sa W Ct)
+  | .enc m =>
+    PMF.pure (.ct (D.encrypt (G.stretch s.cur).1 m.1 m.2),
+      { s with cur := (G.stretch s.cur).2,
+               log := (s.log.length, m.1, m.2, D.encrypt (G.stretch s.cur).1 m.1 m.2) :: s.log })
+  | .dec j ad c => PMF.pure (.dec (if s.corr then none
+      else if ideal then s.logDec j ad c else D.decrypt (chainKey G s.init j) c ad), s)
+  | .corrupt => PMF.pure (.state s.cur, { s with corr := true })
+
+variable [Fintype Sa] [Nonempty Sa]
+
+/-- **The FS-AEAD integrity game**: a uniform initial state of the epoch, and the run of the
+adversary against `fsIntOracle`. -/
+noncomputable def fsaead_int_game (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
+    (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) : SPComp Bool :=
+  liftPMF ((PMF.uniformFintype Sa).bind fun sa =>
+    (OracleAdv.run (fsIntOracle G D ideal) A ⟨sa, sa, [], false⟩).map Prod.fst)
+
+/-- **FS-AEAD integrity advantage** of the adversary `A`: real decryption against decryption
+from the log. -/
+noncomputable def FSAEAD_Int_Advantage (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) : ℝ≥0∞ :=
+  Advantage (fsaead_int_game G D false A) (fsaead_int_game G D true A)
+
+end FSInt
 
 end CatCrypt.Crypto.Messaging

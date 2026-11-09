@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Messaging.CKA
+public import CatCryptCore.Crypto.Messaging.CKACorrupt
 public import CatCryptCore.Examples.KEMDEM
 import CatCryptCore.Tactics.DeriveReduction
 
@@ -31,7 +32,10 @@ component alone does not hold for a pair key: the adversary sees both components
 * `kemCKA` — the CKA of a KEM
 * `kemRun`, `kemPre`, `kemPreRaw`, `kemPreView` — the public transcript of `kemCKA` runs
 * `kemCKAPub`, `kemCKAView`, `kemCKARed` — the KEM-CPA reduction
+* `KEMCoins`, `KEMCoins.Sound`, `KEMCoins.Correct` — a KEM with explicit randomness
+* `kemSendOf`, `kemCKACoins` — the send of `kemCKA` with explicit randomness
 * `prodCKA` — two CKA schemes side by side
+* `prodCKACoins` — the send of the product with explicit randomness
 * `zipT`, `zipView` — the transcripts and views of the product
 * `prodHyb` — the hybrid game: ideal game of `C₁`, real game of `C₂`
 * `prodCKARed₁`, `prodCKARed₂` — the reductions of the product to its components
@@ -52,6 +56,8 @@ component alone does not hold for a pair key: the adversary sees both components
   the KEM CKA and the product of CKA schemes that do not touch the heap do not touch the heap
 * `ckaRun_kem`, `cka_real_kem`, `cka_ideal_kem`, `ckaRun_prod`, `cka_real_prod`,
   `cka_ideal_prod` — the games of `kemCKA` and of the product
+* `kemCKACoins_sound`, `prodCKACoins_sound` — the explicit-randomness sends of `kemCKA` of a
+  sound KEM and of the product of sound CKA schemes are sound
 * `ckaPubRedOf.tree.timeBound_timed`, `kemCKARed.timeBound_timed`,
   `prodCKARed₁.timeBound_timed`, `prodCKARed₂.timeBound_timed` — the times of the costed
   reductions
@@ -345,6 +351,71 @@ theorem kemCKARed.timeBound_timed (KEM : KEMScheme PK SK K E) (k m : ℕ)
 
 end KEM
 
+/-! ## A KEM with explicit randomness -/
+
+/-- A KEM whose key generation and encapsulation are given as functions of their randomness:
+`kgenR r` is the key pair generated with the randomness `r : Rg`, and `encapR pk r` the key and
+the encapsulation under `pk` with the randomness `r : Re`. -/
+class KEMCoins {PK SK K E : Type} (KEM : KEMScheme PK SK K E) (Rg Re : outParam Type) where
+  /-- Key generation with explicit randomness. -/
+  kgenR : Rg → PK × SK
+  /-- Encapsulation with explicit randomness. -/
+  encapR : PK → Re → K × E
+
+section Coins
+
+variable {PK SK K E Rg Re : Type}
+
+/-- The algorithms of the KEM draw a uniform randomness and run `kgenR` and `encapR`. -/
+def KEMCoins.Sound (KEM : KEMScheme PK SK K E) [KEMCoins KEM Rg Re] [Fintype Rg] [Nonempty Rg]
+    [Fintype Re] [Nonempty Re] : Prop :=
+  (KEM.kgen = SPComp.bind (SPComp.sample Rg) fun r =>
+      SPComp.pure (KEMCoins.kgenR (KEM := KEM) r)) ∧
+    ∀ pk, KEM.encap pk = SPComp.bind (SPComp.sample Re) fun r =>
+      SPComp.pure (KEMCoins.encapR (KEM := KEM) pk r)
+
+/-- Decapsulation with a generated decapsulation key inverts encapsulation under its
+encapsulation key. -/
+def KEMCoins.Correct (KEM : KEMScheme PK SK K E) [KEMCoins KEM Rg Re] : Prop :=
+  ∀ rg re, KEM.decap (KEMCoins.kgenR (KEM := KEM) rg).2
+      (KEMCoins.encapR (KEM := KEM) (KEMCoins.kgenR (KEM := KEM) rg).1 re).2 =
+    (KEMCoins.encapR (KEM := KEM) (KEMCoins.kgenR (KEM := KEM) rg).1 re).1
+
+/-- The send of `kemCKA` from the state `x` with the randomness `r = (re, rg)`, for the key
+generation `kg` and the encapsulation `en`: the next state, the message and the key. -/
+def kemSendOf (kg : Rg → PK × SK) (en : PK → Re → K × E) (x : PK × SK) (r : Re × Rg) :
+    (PK × SK) × (Option E × PK) × K :=
+  ((x.1, (kg r.2).2), (some (en x.1 r.1).2, (kg r.2).1), (en x.1 r.1).1)
+
+/-- The sending algorithm of `kemCKA KEM` with the randomness of the encapsulation and of the
+key generation as explicit randomness. -/
+noncomputable instance kemCKACoins [Inhabited K] (KEM : KEMScheme PK SK K E)
+    [KEMCoins KEM Rg Re] : CKACoins (kemCKA KEM) (Re × Rg) where
+  sendR := kemSendOf (KEMCoins.kgenR (KEM := KEM)) (KEMCoins.encapR (KEM := KEM))
+
+/-- The unfolding of the explicit-randomness sending algorithm of `kemCKA`. -/
+@[simp] theorem kemCKACoins_sendR [Inhabited K] (KEM : KEMScheme PK SK K E)
+    [KEMCoins KEM Rg Re] (x : PK × SK) (r : Re × Rg) :
+    CKACoins.sendR (C := kemCKA KEM) x r =
+      kemSendOf (KEMCoins.kgenR (KEM := KEM)) (KEMCoins.encapR (KEM := KEM)) x r :=
+  rfl
+
+variable [Fintype Rg] [Nonempty Rg] [Fintype Re] [Nonempty Re]
+
+/-- The explicit-randomness sending algorithm of `kemCKA` of a sound KEM is sound. -/
+theorem kemCKACoins_sound [Inhabited K] (KEM : KEMScheme PK SK K E) [KEMCoins KEM Rg Re]
+    (hS : KEMCoins.Sound KEM) : CKACoins.Sound (kemCKA KEM) := by
+  intro s
+  change SPComp.bind (KEM.encap s.1) (fun ke => SPComp.bind KEM.kgen fun ks =>
+      SPComp.pure ((s.1, ks.2), (some ke.2, ks.1), ke.1)) =
+    SPComp.bind (SPComp.sample (Re × Rg)) fun r => SPComp.pure
+      (kemSendOf (KEMCoins.kgenR (KEM := KEM)) (KEMCoins.encapR (KEM := KEM)) s r)
+  rw [hS.1, hS.2]
+  simp only [SPComp.sample_prod_eq, SPComp.bind_assoc, SPComp.pure_bind]
+  rfl
+
+end Coins
+
 /-! ## The product of two CKA schemes -/
 
 section Prod
@@ -577,6 +648,43 @@ theorem prodCKARed₂.timeBound_timed [Fintype K₁] [Nonempty K₁] (C₁ : CKA
   ckaPubRedOf.tree.timeBound_timed _ _ viewCost A ACost hA hAc hv pubT hp y
 
 end Prod
+
+/-! ## The product CKA with explicit randomness -/
+
+section ProdCoins
+
+variable {S₁ M₁ K₁ R₁ S₂ M₂ K₂ R₂ : Type}
+
+/-- The sending algorithm of the product with explicit randomness: each component sends with its
+component of the randomness. -/
+noncomputable instance prodCKACoins (C₁ : CKADef S₁ M₁ K₁) (C₂ : CKADef S₂ M₂ K₂)
+    [CKACoins C₁ R₁] [CKACoins C₂ R₂] : CKACoins (prodCKA C₁ C₂) (R₁ × R₂) where
+  sendR s r :=
+    (((CKACoins.sendR (C := C₁) s.1 r.1).1, (CKACoins.sendR (C := C₂) s.2 r.2).1),
+      ((CKACoins.sendR (C := C₁) s.1 r.1).2.1, (CKACoins.sendR (C := C₂) s.2 r.2).2.1),
+      ((CKACoins.sendR (C := C₁) s.1 r.1).2.2, (CKACoins.sendR (C := C₂) s.2 r.2).2.2))
+
+/-- The unfolding of the explicit-randomness sending algorithm of the product. -/
+@[simp] theorem prodCKACoins_sendR (C₁ : CKADef S₁ M₁ K₁) (C₂ : CKADef S₂ M₂ K₂)
+    [CKACoins C₁ R₁] [CKACoins C₂ R₂] (s : S₁ × S₂) (r : R₁ × R₂) :
+    CKACoins.sendR (C := prodCKA C₁ C₂) s r =
+      (((CKACoins.sendR (C := C₁) s.1 r.1).1, (CKACoins.sendR (C := C₂) s.2 r.2).1),
+        ((CKACoins.sendR (C := C₁) s.1 r.1).2.1, (CKACoins.sendR (C := C₂) s.2 r.2).2.1),
+        ((CKACoins.sendR (C := C₁) s.1 r.1).2.2, (CKACoins.sendR (C := C₂) s.2 r.2).2.2)) :=
+  rfl
+
+/-- The explicit-randomness sending algorithm of the product of sound CKA schemes is sound. -/
+theorem prodCKACoins_sound (C₁ : CKADef S₁ M₁ K₁) (C₂ : CKADef S₂ M₂ K₂) [CKACoins C₁ R₁]
+    [CKACoins C₂ R₂] [Fintype R₁] [Nonempty R₁] [Fintype R₂] [Nonempty R₂]
+    (h₁ : CKACoins.Sound C₁) (h₂ : CKACoins.Sound C₂) : CKACoins.Sound (prodCKA C₁ C₂) := by
+  intro s
+  unfold prodCKA
+  dsimp only
+  rw [h₁, h₂]
+  simp only [SPComp.sample_prod_eq, SPComp.bind_assoc, SPComp.pure_bind]
+  rfl
+
+end ProdCoins
 
 /-! ## The hybrid Diffie–Hellman and KEM CKA -/
 

@@ -21,10 +21,11 @@ construction `acdSM` (`CatCryptCore.Crypto.Messaging.SMScheme`).
 
 ## The product CKA with explicit randomness
 
-The randomness of a send of the product is a pair: `prodCKACoins` sends in each component with
-its own component of the randomness. The product is sound (`prodCKACoins_sound`), correct along
-the product of the correctness relations (`prodCKA_correct`), and its initialisation is the lift
-of the product `prodInitP` of the initial distributions (`prodCKA_init_eq`).
+The randomness of a send of the product is a pair: `prodCKACoins`
+(`CatCryptCore.Crypto.Messaging.KEMCKA`) sends in each component with its own component of the
+randomness. The product is sound (`prodCKACoins_sound`), correct along the product of the
+correctness relations (`prodCKA_correct`), and its initialisation is the lift of the product
+`prodInitP` of the initial distributions (`prodCKA_init_eq`).
 
 ## The corruption game of the product
 
@@ -40,8 +41,7 @@ a uniform challenge key. The real game of the product is the real game of `C₁`
 
 ## Main definitions
 
-* `prodCKACoins`, `prodInitP` — the explicit randomness and the initial distribution of the
-  product
+* `prodInitP` — the initial distribution of the product
 * `CKAGameSt.fstSt`, `CKAGameSt.sndSt` — the game states of the components
 * `prodOracleP`, `prodHybGame` — the oracle and the hybrid games of the product
 * `prodSimImpl₁`, `prodSimImpl₂`, `prodCorruptTree₁`, `prodCorruptTree₂` — the simulators and
@@ -90,35 +90,6 @@ open scoped ENNReal
 section ProdCoins
 
 variable {S₁ M₁ K₁ R₁ S₂ M₂ K₂ R₂ : Type}
-
-/-- The sending algorithm of the product with explicit randomness: each component sends with its
-component of the randomness. -/
-noncomputable instance prodCKACoins (C₁ : CKADef S₁ M₁ K₁) (C₂ : CKADef S₂ M₂ K₂)
-    [CKACoins C₁ R₁] [CKACoins C₂ R₂] : CKACoins (prodCKA C₁ C₂) (R₁ × R₂) where
-  sendR s r :=
-    (((CKACoins.sendR (C := C₁) s.1 r.1).1, (CKACoins.sendR (C := C₂) s.2 r.2).1),
-      ((CKACoins.sendR (C := C₁) s.1 r.1).2.1, (CKACoins.sendR (C := C₂) s.2 r.2).2.1),
-      ((CKACoins.sendR (C := C₁) s.1 r.1).2.2, (CKACoins.sendR (C := C₂) s.2 r.2).2.2))
-
-/-- The unfolding of the explicit-randomness sending algorithm of the product. -/
-@[simp] theorem prodCKACoins_sendR (C₁ : CKADef S₁ M₁ K₁) (C₂ : CKADef S₂ M₂ K₂)
-    [CKACoins C₁ R₁] [CKACoins C₂ R₂] (s : S₁ × S₂) (r : R₁ × R₂) :
-    CKACoins.sendR (C := prodCKA C₁ C₂) s r =
-      (((CKACoins.sendR (C := C₁) s.1 r.1).1, (CKACoins.sendR (C := C₂) s.2 r.2).1),
-        ((CKACoins.sendR (C := C₁) s.1 r.1).2.1, (CKACoins.sendR (C := C₂) s.2 r.2).2.1),
-        ((CKACoins.sendR (C := C₁) s.1 r.1).2.2, (CKACoins.sendR (C := C₂) s.2 r.2).2.2)) :=
-  rfl
-
-/-- The explicit-randomness sending algorithm of the product of sound CKA schemes is sound. -/
-theorem prodCKACoins_sound (C₁ : CKADef S₁ M₁ K₁) (C₂ : CKADef S₂ M₂ K₂) [CKACoins C₁ R₁]
-    [CKACoins C₂ R₂] [Fintype R₁] [Nonempty R₁] [Fintype R₂] [Nonempty R₂]
-    (h₁ : CKACoins.Sound C₁) (h₂ : CKACoins.Sound C₂) : CKACoins.Sound (prodCKA C₁ C₂) := by
-  intro s
-  unfold prodCKA
-  dsimp only
-  rw [h₁, h₂]
-  simp only [SPComp.sample_prod_eq, SPComp.bind_assoc, SPComp.pure_bind]
-  rfl
 
 /-- **Correctness of the product** along the product of the correctness relations. -/
 theorem prodCKA_correct {C₁ : CKADef S₁ M₁ K₁} {C₂ : CKADef S₂ M₂ K₂} [CKACoins C₁ R₁]
