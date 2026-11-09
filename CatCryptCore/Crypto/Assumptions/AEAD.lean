@@ -74,23 +74,23 @@ namespace CatCrypt.Crypto.Assumptions
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open scoped ENNReal
 
-variable {W : Type} [SampleableType W] {C : Type} [SampleableType C]
+variable {W : Type} [SampleableType W] {C : Type} [SampleableType C] {AD : Type}
 
 /-! ## AEAD Definition -/
 
-/-- Abstract AEAD scheme with keys, plaintexts and associated data in `W` and
-ciphertexts in `C` (default `W`).
+/-- Abstract AEAD scheme with keys and plaintexts in `W`, ciphertexts in `C`
+(default `W`) and associated data in `AD` (default `W`).
 
 - `encrypt key plaintext ad` → ciphertext
 - `decrypt key ciphertext ad` → `some plaintext`, or `none` on rejection -/
-structure AEADDef (W : Type) [SampleableType W] (C : Type := W) where
+structure AEADDef (W : Type) [SampleableType W] (C : Type := W) (AD : Type := W) where
   /-- AEAD encryption: (key, plaintext, associated_data) → ciphertext.
   Models `aes_ccm_encrypt_tag_8` in lakers' `Crypto` trait. -/
-  encrypt : W → W → W → C
+  encrypt : W → W → AD → C
   /-- AEAD decryption: (key, ciphertext, associated_data) → plaintext, or
   `none` when the ciphertext is rejected.
   Models `aes_ccm_decrypt_tag_8` in lakers' `Crypto` trait. -/
-  decrypt : W → C → W → Option W
+  decrypt : W → C → AD → Option W
 
 /-! ## Single-sample real-or-random game -/
 
@@ -99,7 +99,7 @@ real encryption from random. -/
 abbrev AEAD_Adversary (C : Type) := C → SPComp Bool
 
 /-- AEAD real game: sample random key, encrypt the adversary's chosen plaintext. -/
-noncomputable def AEAD_Game_Real (D : AEADDef W C) (pt ad : W)
+noncomputable def AEAD_Game_Real (D : AEADDef W C AD) (pt : W) (ad : AD)
     (A : AEAD_Adversary C) : SPComp Bool := do
   let key ← SPComp.sample W
   let ct := D.encrypt key pt ad
@@ -112,14 +112,14 @@ noncomputable def AEAD_Game_Ideal (A : AEAD_Adversary C) : SPComp Bool := do
 
 /-- Advantage in distinguishing one encryption of `pt` under a uniform key from
 a uniform ciphertext. -/
-noncomputable def AEAD_Advantage (D : AEADDef W C) (pt ad : W)
+noncomputable def AEAD_Advantage (D : AEADDef W C AD) (pt : W) (ad : AD)
     (A : AEAD_Adversary C) : ℝ≥0∞ :=
   Advantage (AEAD_Game_Real D pt ad A) (AEAD_Game_Ideal A)
 
 /-! ## IsPure Proofs -/
 
 omit [SampleableType C] in
-theorem AEAD_Game_Real_isPure (D : AEADDef W C) (pt ad : W)
+theorem AEAD_Game_Real_isPure (D : AEADDef W C AD) (pt : W) (ad : AD)
     (A : AEAD_Adversary C) (hA : ∀ x, SPComp.IsPure (A x)) :
     SPComp.IsPure (AEAD_Game_Real D pt ad A) := by
   unfold AEAD_Game_Real
@@ -149,34 +149,36 @@ deterministic authenticated encryption). -/
 
 /-- Queries of the authenticated-encryption game: `.inl (pt, ad)` asks for an
 encryption, `.inr (ct, ad)` for a decryption. -/
-abbrev AEAD_CCA_Query (W C : Type) := (W × W) ⊕ (C × W)
+abbrev AEAD_CCA_Query (W C : Type) (AD : Type := W) := (W × AD) ⊕ (C × AD)
 
 /-- Answers of the authenticated-encryption game: `.inl ct` to an encryption
 query, `.inr` of a plaintext option to a decryption query. -/
 abbrev AEAD_CCA_Answer (W C : Type) := C ⊕ Option W
 
 /-- Adaptive adversary of the authenticated-encryption game. -/
-abbrev AEAD_CCA_Adversary (W C : Type) :=
-  OracleAdv (AEAD_CCA_Query W C) (AEAD_CCA_Answer W C) Bool
+abbrev AEAD_CCA_Adversary (W C : Type) (AD : Type := W) :=
+  OracleAdv (AEAD_CCA_Query W C AD) (AEAD_CCA_Answer W C) Bool
 
 /-- The real oracles under `key`: `encrypt key` and `decrypt key`. -/
-noncomputable def aeadRealOracle (D : AEADDef W C) (key : W) :
-    Unit → AEAD_CCA_Query W C → PMF (AEAD_CCA_Answer W C × Unit)
+noncomputable def aeadRealOracle (D : AEADDef W C AD) (key : W) :
+    Unit → AEAD_CCA_Query W C AD → PMF (AEAD_CCA_Answer W C × Unit)
   | _, .inl (pt, ad) => PMF.pure (.inl (D.encrypt key pt ad), ())
   | _, .inr (ct, ad) => PMF.pure (.inr (D.decrypt key ct ad), ())
 
 /-- Decryption from the log `((pt, ad), ct)` of encryption answers: the
 plaintext of the most recent entry with ciphertext `ct` and associated data
 `ad`, and `none` if there is no such entry. -/
-def aeadLogDecrypt (log : List ((W × W) × C)) (ct : C) (ad : W) : Option W :=
+def aeadLogDecrypt [DecidableEq AD] (log : List ((W × AD) × C)) (ct : C)
+    (ad : AD) : Option W :=
   (log.find? fun e => decide (e.2 = ct ∧ e.1.2 = ad)).map fun e => e.1.1
 
 /-- The ideal oracles with the log `((pt, ad), ct)` as state. Encryption of a
 recorded `(pt, ad)` returns the recorded ciphertext; encryption of a fresh
 `(pt, ad)` returns a uniform ciphertext and records it. Decryption answers
 with `aeadLogDecrypt`. -/
-noncomputable def aeadIdealOracle :
-    List ((W × W) × C) → AEAD_CCA_Query W C → PMF (AEAD_CCA_Answer W C × List ((W × W) × C))
+noncomputable def aeadIdealOracle [DecidableEq AD] :
+    List ((W × AD) × C) → AEAD_CCA_Query W C AD →
+      PMF (AEAD_CCA_Answer W C × List ((W × AD) × C))
   | log, .inl (pt, ad) =>
     match log.lookup (pt, ad) with
     | some ct => PMF.pure (.inl ct, log)
@@ -185,27 +187,28 @@ noncomputable def aeadIdealOracle :
 
 /-- Real authenticated-encryption game: sample a key, run `A` against
 `aeadRealOracle D key`. -/
-noncomputable def AEAD_CCA_Game_Real (D : AEADDef W C)
-    (A : AEAD_CCA_Adversary W C) : SPComp Bool :=
+noncomputable def AEAD_CCA_Game_Real (D : AEADDef W C AD)
+    (A : AEAD_CCA_Adversary W C AD) : SPComp Bool :=
   liftPMF ((PMF.uniformFintype W).bind fun key =>
     (OracleAdv.run (aeadRealOracle D key) A ()).map Prod.fst)
 
 /-- Ideal authenticated-encryption game: run `A` against `aeadIdealOracle`
 from the empty log. -/
-noncomputable def AEAD_CCA_Game_Ideal (A : AEAD_CCA_Adversary W C) : SPComp Bool :=
+noncomputable def AEAD_CCA_Game_Ideal [DecidableEq AD] (A : AEAD_CCA_Adversary W C AD) :
+    SPComp Bool :=
   liftPMF ((OracleAdv.run aeadIdealOracle A []).map Prod.fst)
 
 /-- Advantage of `A` in distinguishing the real encryption and decryption
 oracles of `D` from the ideal ones. -/
-noncomputable def AEAD_CCA_Advantage (D : AEADDef W C)
-    (A : AEAD_CCA_Adversary W C) : ℝ≥0∞ :=
+noncomputable def AEAD_CCA_Advantage [DecidableEq AD] (D : AEADDef W C AD)
+    (A : AEAD_CCA_Adversary W C AD) : ℝ≥0∞ :=
   Advantage (AEAD_CCA_Game_Real D A) (AEAD_CCA_Game_Ideal A)
 
 /-- The adversary of the authenticated-encryption game that asks one
 encryption query `(pt, ad)` and runs the single-sample adversary `A` on the
 answer. -/
-noncomputable def AEAD_CPA_to_CCA (pt ad : W) (A : C → PMF Bool) :
-    AEAD_CCA_Adversary W C :=
+noncomputable def AEAD_CPA_to_CCA (pt : W) (ad : AD) (A : C → PMF Bool) :
+    AEAD_CCA_Adversary W C AD :=
   .query (.inl (pt, ad)) fun r =>
     match r with
     | .inl ct => .rand (A ct) .ret
@@ -215,7 +218,8 @@ noncomputable def AEAD_CPA_to_CCA (pt ad : W) (A : C → PMF Bool) :
 For a single-sample adversary given by the distribution `A ct` of its guess,
 the single-sample advantage equals the advantage of `AEAD_CPA_to_CCA pt ad A`
 in the authenticated-encryption game. -/
-theorem AEAD_CPA_le_CCA (D : AEADDef W C) (pt ad : W) (A : C → PMF Bool) :
+theorem AEAD_CPA_le_CCA [DecidableEq AD] (D : AEADDef W C AD) (pt : W) (ad : AD)
+    (A : C → PMF Bool) :
     AEAD_Advantage D pt ad (fun ct => liftPMF (A ct)) ≤
     AEAD_CCA_Advantage D (AEAD_CPA_to_CCA pt ad A) := by
   refine le_of_eq ?_
@@ -227,7 +231,8 @@ theorem AEAD_CPA_le_CCA (D : AEADDef W C) (pt ad : W) (A : C → PMF Bool) :
     funext key
     simp [AEAD_CPA_to_CCA, aeadRealOracle, PMF.map_bind, PMF.pure_map, PMF.bind_pure]
   have hideal : prTrue (AEAD_Game_Ideal fun ct => liftPMF (A ct)) Heap.empty =
-      prTrue (AEAD_CCA_Game_Ideal (W := W) (AEAD_CPA_to_CCA pt ad A)) Heap.empty := by
+      prTrue (AEAD_CCA_Game_Ideal (W := W) (AD := AD) (AEAD_CPA_to_CCA pt ad A))
+        Heap.empty := by
     rw [AEAD_CCA_Game_Ideal, prTrue_liftPMF]
     refine (prTrue_sample_bind_liftPMF A _).trans ?_
     congr 1
@@ -246,8 +251,8 @@ additional assumptions (Black–Rogaway–Shrimpton, SAC 2003). -/
 
 /-- AEAD keyed real game: sample a key and output the ciphertext of the
 key-dependent plaintext and associated data. -/
-noncomputable def aead_keyed_real (D : AEADDef W C)
-    (pt ad : W → W) : SPComp C :=
+noncomputable def aead_keyed_real (D : AEADDef W C AD)
+    (pt : W → W) (ad : W → AD) : SPComp C :=
   SPComp.bind (SPComp.sample W) (fun key =>
     SPComp.pure (D.encrypt key (pt key) (ad key)))
 
@@ -257,12 +262,12 @@ noncomputable def aead_keyed_ideal : SPComp C :=
 
 /-- Advantage in distinguishing the ciphertext of key-dependent plaintext and
 associated data from a uniform ciphertext. -/
-noncomputable def AEAD_Keyed_Advantage (D : AEADDef W C) (pt ad : W → W)
+noncomputable def AEAD_Keyed_Advantage (D : AEADDef W C AD) (pt : W → W) (ad : W → AD)
     (A : C → SPComp Bool) : ENNReal :=
   AdvantageA (aead_keyed_real D pt ad) aead_keyed_ideal A
 
 omit [SampleableType C] in
-theorem aead_keyed_real_isPure (D : AEADDef W C) (pt ad : W → W) :
+theorem aead_keyed_real_isPure (D : AEADDef W C AD) (pt : W → W) (ad : W → AD) :
     SPComp.IsPure (aead_keyed_real D pt ad) := by
   unfold aead_keyed_real
   apply SPComp.bind_isPure (SPComp.sample_isPure _); intro _
