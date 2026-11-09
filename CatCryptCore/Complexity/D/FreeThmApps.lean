@@ -28,6 +28,10 @@ Applications of the command `free_theorem` to definitions of the workspace, in i
 * Representation independence. The x-only doubling `CatCrypt.Crypto.ECC.xdbl a24 (x, 1)` of
   Curve25519, as the term `xdblT` over the field operations: on two environments of operations
   related by the graph of an encoding, its results are related by the encoding, at equal cost.
+* Timing non-interference with secret field elements (`noninterference_ops`). With the field
+  secret, `xdblT` and, for public bits, `ladderT` take the same number of steps on any two
+  inputs and on any two environments of operations of the same costs. With the bits secret the
+  ladder is refused at its branch on the bit; the refusal is checked here.
 
 ## Main results
 
@@ -37,6 +41,11 @@ Applications of the command `free_theorem` to definitions of the workspace, in i
   `CatCrypt.Crypto.ECC.ladderFold`;
 * `ladderT_eval`, `ladderT_cost`, `ladderT_commute` — the ladder in D: its value, its number of
   steps and its commutation with homomorphisms;
+* `xdblEnv_secret_rel`, `homEnv_secret_rel` — environments of operations of fixed cost over a
+  secret field or group are related by the relation of the secret types;
+* `xdblT_ni`, `xdblT_cost_secret`, `ladderT_ni`, `ladderT_cost_secret` — timing
+  non-interference of x-only doubling and of the ladder with the field elements secret: equal
+  cost on any two secret inputs and any two operations of the same costs;
 * `xdblT_eval`, `xdblT_eval_ring`, `xdblT_rep` — x-only doubling in D: its value and number of
   steps, its value over a commutative ring, and its representation independence.
 -/
@@ -311,6 +320,85 @@ related by the graph of an encoding `φ`, the doubling of `x` and of `φ x` give
 componentwise by `φ`, in the same number of steps. -/
 free_theorem xdblT_rep {g : FTy} {φ : g.den → g.den} {ρ δ : Env (xdblCtx g)}
   (h : EnvRelB (homRel g φ) ρ δ) for xdblT g at rep_independence h
+
+/-! ## Timing non-interference with secret field elements
+
+With the field (or the group) secret, x-only doubling and the ladder are timing
+non-interfering: their cost depends neither on the field inputs nor on the operations, as long
+as the operations have fixed costs. With the bits of the ladder secret, the ladder is refused at
+its branch on the bit. -/
+
+/-- Two environments of the field operations of `xdblCtx` at equal costs are related by the
+relation of the secret types when the field is secret, whatever the operations and constants. -/
+theorem xdblEnv_secret_rel {Sec : FTy → Prop} {g : FTy} (hg : Sec g)
+    (mul sub add mul' sub' add' : g.den → g.den → g.den) (a24 one a24' one' : g.den)
+    (cm cs : ℕ) :
+    EnvRelB (BRel.secret Sec) (xdblEnv g mul sub add a24 one cm cs)
+      (xdblEnv g mul' sub' add' a24' one' cm cs) := by
+  have he : ∀ a b : g.den, Ty.relB (BRel.secret Sec) (el g) a b := fun _ _ => Or.inl hg
+  have hop : ∀ (k : ℕ) (f f' : g.den → g.den → g.den), Ty.relB (BRel.secret Sec) (binop g)
+      (fun p : g.den × g.den => opT k (f p.1 p.2))
+      (fun p : g.den × g.den => opT k (f' p.1 p.2)) :=
+    fun _ _ _ _ _ _ => stepN_lift (.ret (he _ _)) _
+  have hnil : EnvRelB (BRel.secret Sec) Env.nil Env.nil := fun _ x => by cases x
+  exact ((((hnil.cons (he one one')).cons (he a24 a24')).cons (hop cs add add')).cons
+    (hop cs sub sub')).cons (hop cm mul mul')
+
+/-- Two environments of group operations at equal costs are related by the relation of the
+secret types when the group is secret, whatever the operations. -/
+theorem homEnv_secret_rel {Sec : FTy → Prop} {g : FTy} (hg : Sec g) (M N : GrpOps g.den)
+    (c : OpCost) : EnvRelB (BRel.secret Sec) (homEnv g M c) (homEnv g N c) := by
+  have he : ∀ a b : g.den, Ty.relB (BRel.secret Sec) (el g) a b := fun _ _ => Or.inl hg
+  have hnil : EnvRelB (BRel.secret Sec) Env.nil Env.nil := fun _ x => by cases x
+  have hinv : Ty.relB (BRel.secret Sec) (.arr (el g) (el g))
+      (fun a : g.den => opT c.inv (M.inv a)) (fun a : g.den => opT c.inv (N.inv a)) :=
+    fun _ _ _ => stepN_lift (.ret (he _ _)) _
+  have hmul : Ty.relB (BRel.secret Sec) (.arr (.prod (el g) (el g)) (el g))
+      (fun p : g.den × g.den => opT c.mul (M.mul p.1 p.2))
+      (fun p : g.den × g.den => opT c.mul (N.mul p.1 p.2)) :=
+    fun _ _ _ => stepN_lift (.ret (he _ _)) _
+  exact ((hnil.cons (he M.one N.one)).cons hinv).cons hmul
+
+/-- Timing non-interference of x-only doubling with the field secret: on two environments of
+operations related by the relation of the secret types, any two inputs give runs of equal
+cost, and equal trees when the result type is public. -/
+free_theorem xdblT_ni {Sec : FTy → Prop} {g : FTy} (hg : Sec g) {ρ δ : Env (xdblCtx g)}
+  (h : EnvRelB (BRel.secret Sec) ρ δ) for xdblT g at noninterference_ops h hg
+
+/-- x-only doubling takes the same number of steps on any two field inputs and any two choices
+of operations and constants at the same costs. -/
+theorem xdblT_cost_secret {g : FTy} (mul sub add mul' sub' add' : g.den → g.den → g.den)
+    (a24 one a24' one' : g.den) (cm cs : ℕ) (x x' : g.den) :
+    ((xdblT g).eval (Env.cons (τ := el g) x (xdblEnv g mul sub add a24 one cm cs))).cost =
+      ((xdblT g).eval
+        (Env.cons (τ := el g) x' (xdblEnv g mul' sub' add' a24' one' cm cs))).cost :=
+  (xdblT_ni (Sec := (· = g)) rfl
+    (xdblEnv_secret_rel (Sec := (· = g)) rfl mul sub add mul' sub' add' a24 one a24' one' cm
+      cs) x x').1
+
+/-- Timing non-interference of the ladder with the base secret and the bits public: on two
+environments of group operations related by the relation of the secret types, the same bits
+and any two bases give runs of equal cost, and equal trees when the result type is public. -/
+free_theorem ladderT_ni {Sec : FTy → Prop} {g : FTy} (hg : Sec g) (hb : ¬ Sec .bool)
+  {ρ δ : Env (homCtx g)} (h : EnvRelB (BRel.secret Sec) ρ δ)
+  for ladderT g at noninterference_ops h _ hg
+
+/-- The ladder takes the same number of steps on any two bases and any two group operations
+at the same costs, for the same bits. -/
+theorem ladderT_cost_secret {g : FTy} (hg : FTy.bool ≠ g) (M N : GrpOps g.den) (c : OpCost)
+    (bits : List Bool) (x x' : g.den) :
+    ((ladderT g).eval (powEnv g M c x bits)).cost =
+      ((ladderT g).eval (powEnv g N c x' bits)).cost :=
+  (ladderT_ni (Sec := (· = g)) rfl hg (homEnv_secret_rel (Sec := (· = g)) rfl M N c) bits x x').1
+
+/--
+error: resp_b: no registered lemma closes the obligation
+  ∀ (b b' : FTy.bool.den), BRel.secret Sec FTy.bool b b' → b = b'
+-/
+#guard_msgs in
+free_theorem ladderT_ni_bits {Sec : FTy → Prop} {g : FTy} (hb : Sec .bool)
+  {ρ δ : Env (.list .bool :: el g :: homCtx g)} (h : EnvRelB (BRel.secret Sec) ρ δ)
+  for ladderT g at noninterference_ops h
 
 end FreeThmApps
 

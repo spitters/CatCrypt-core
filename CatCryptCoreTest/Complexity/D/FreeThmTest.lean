@@ -18,7 +18,11 @@ Each generated theorem is checked against the statement of the instance it regen
   `Tm.free_noninterference`; a definition reflected by `reflect_d`.
 * Commutation with a homomorphism: square-and-multiply, the statement of
   `GenericGroup.powT_commute`; the cube `x · (x · x)`, the statement of
-  `GenericGroup.hom_commute`.
+  `GenericGroup.hom_commute`; with the equality test, a term over `isoCtx`, the statement of
+  `GenericGroup.iso_commute`.
+* Non-interference with several secret variables: two secret words in front of a public `ℕ`,
+  secret words around a public `ℕ`, and a secret word in front of an environment of operations
+  related by the relation of the secret types (`noninterference_ops`).
 * Representation independence: the polynomial `x * x + 1` over field operations in an
   environment related to another by the graph of an encoding, the statement of
   `rep_independence_input` of the development's `Bridges/Transfer/RepIndependence` with the two
@@ -67,6 +71,67 @@ example {Sec : FTy → Prop} (hs : Sec (.word 64)) (ρ : Env [.nat]) (k k' : (FT
           addOne.d.eval (ρ.cons (τ := .base (.word 64)) k')) :=
   addOne_ni hs ρ k k'
 
+/-! ## Non-interference with several secret variables -/
+
+/-- A term over two secret words and a public `ℕ`: the public value plus one. -/
+def ni2T : Tm [.base (.word 64), .base (.word 64), .nat] .nat :=
+  .prim .natAdd (.pair (.var (.there (.there .here))) (.natLit 1))
+
+free_theorem ni2T_ni {Sec : FTy → Prop} (hs : Sec (.word 64))
+  for ni2T at noninterference hs hs
+
+example {Sec : FTy → Prop} (hs : Sec (.word 64)) (ρ : Env [.nat])
+    (k1 k1' k2 k2' : (FTy.word 64).den) :
+    (ni2T.eval (Env.cons (τ := .base (.word 64)) k1
+        (Env.cons (τ := .base (.word 64)) k2 ρ))).cost =
+      (ni2T.eval (Env.cons (τ := .base (.word 64)) k1'
+        (Env.cons (τ := .base (.word 64)) k2' ρ))).cost ∧
+      (Ty.nat.Pub Sec →
+        ni2T.eval (Env.cons (τ := .base (.word 64)) k1
+            (Env.cons (τ := .base (.word 64)) k2 ρ)) =
+          ni2T.eval (Env.cons (τ := .base (.word 64)) k1'
+            (Env.cons (τ := .base (.word 64)) k2' ρ))) :=
+  ni2T_ni hs ρ k1 k1' k2 k2'
+
+/-- A term over a secret word, a public `ℕ` and a secret word: the public value plus one. -/
+def ni3T : Tm [.base (.word 64), .nat, .base (.word 64)] .nat :=
+  .prim .natAdd (.pair (.var (.there .here)) (.natLit 1))
+
+free_theorem ni3T_ni {Sec : FTy → Prop} (hs : Sec (.word 64))
+  for ni3T at noninterference hs _ hs
+
+example {Sec : FTy → Prop} (hs : Sec (.word 64)) (k1 k1' : (FTy.word 64).den) (p2 : ℕ)
+    (k3 k3' : (FTy.word 64).den) :
+    (ni3T.eval (Env.cons (τ := .base (.word 64)) k1 (Env.cons (τ := .nat) p2
+        (Env.cons (τ := .base (.word 64)) k3 Env.nil)))).cost =
+      (ni3T.eval (Env.cons (τ := .base (.word 64)) k1' (Env.cons (τ := .nat) p2
+        (Env.cons (τ := .base (.word 64)) k3' Env.nil)))).cost ∧
+      (Ty.nat.Pub Sec →
+        ni3T.eval (Env.cons (τ := .base (.word 64)) k1 (Env.cons (τ := .nat) p2
+            (Env.cons (τ := .base (.word 64)) k3 Env.nil))) =
+          ni3T.eval (Env.cons (τ := .base (.word 64)) k1' (Env.cons (τ := .nat) p2
+            (Env.cons (τ := .base (.word 64)) k3' Env.nil)))) :=
+  ni3T_ni hs k1 k1' p2 k3 k3'
+
+/-- A binary operation applied to a secret word twice. -/
+def opsT : Tm [.base (.word 64), .arr (.prod (.base (.word 64)) (.base (.word 64)))
+    (.base (.word 64))] (.base (.word 64)) :=
+  .app (.var (.there .here)) (.pair (.var .here) (.var .here))
+
+free_theorem opsT_ni {Sec : FTy → Prop} (hs : Sec (.word 64))
+  {ρ δ : Env [.arr (.prod (.base (.word 64)) (.base (.word 64))) (.base (.word 64))]}
+  (h : EnvRelB (BRel.secret Sec) ρ δ) for opsT at noninterference_ops h hs
+
+example {Sec : FTy → Prop} (hs : Sec (.word 64))
+    {ρ δ : Env [.arr (.prod (.base (.word 64)) (.base (.word 64))) (.base (.word 64))]}
+    (h : EnvRelB (BRel.secret Sec) ρ δ) (k1 k1' : (FTy.word 64).den) :
+    (opsT.eval (Env.cons (τ := .base (.word 64)) k1 ρ)).cost =
+        (opsT.eval (Env.cons (τ := .base (.word 64)) k1' δ)).cost ∧
+      (Ty.Pub Sec (.base (.word 64)) →
+        opsT.eval (Env.cons (τ := .base (.word 64)) k1 ρ) =
+          opsT.eval (Env.cons (τ := .base (.word 64)) k1' δ)) :=
+  opsT_ni hs h k1 k1'
+
 /-! ## Commutation with a homomorphism -/
 
 free_theorem powT_free {g : FTy} {φ : g.den → g.den} {M N : GrpOps g.den}
@@ -94,6 +159,24 @@ example {g : FTy} {φ : g.den → g.den} {M N : GrpOps g.den} (hφ : M.IsHom N �
         ((cubeT g).eval (homEnv₁ g N c (φ x))) ∧
       ((cubeT g).eval (homEnv₁ g M c x)).cost = ((cubeT g).eval (homEnv₁ g N c (φ x))).cost :=
   cubeT_commute hφ c x
+
+/-- The element `x` if `x = x · x`, else `x · x`, over the group operations and the equality
+test. -/
+def idemT (g : FTy) : Tm (.base g :: isoCtx g) (.base g) :=
+  .ite (.app (.var (.there .here))
+      (.pair (.var .here) (.app (.var (.there (.there .here))) (.pair (.var .here) (.var .here)))))
+    (.var .here) (.app (.var (.there (.there .here))) (.pair (.var .here) (.var .here)))
+
+free_theorem idemT_commute {g : FTy} {φ : g.den → g.den} {M N : GrpOps g.den}
+  (hφ : M.IsHom N φ) (hinj : Function.Injective φ) (hg : FTy.bool ≠ g)
+  for idemT g at iso_commute hφ hinj hg
+
+example {g : FTy} {φ : g.den → g.den} {M N : GrpOps g.den} (hφ : M.IsHom N φ)
+    (hinj : Function.Injective φ) (hg : FTy.bool ≠ g) (c : OpCost) (x : g.den) :
+    CTree.Lift (fun a b => φ a = b) ((idemT g).eval (isoEnv₁ g M c x))
+        ((idemT g).eval (isoEnv₁ g N c (φ x))) ∧
+      ((idemT g).eval (isoEnv₁ g M c x)).cost = ((idemT g).eval (isoEnv₁ g N c (φ x))).cost :=
+  idemT_commute hφ hinj hg c x
 
 /-! ## Representation independence -/
 
