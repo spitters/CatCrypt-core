@@ -111,6 +111,7 @@ public import CatCryptCore.Complexity.D.PriceSound
 public import CatCryptCore.Complexity.D.PriceTransfer
 public import CatCryptCore.Complexity.D.RGraphInterp
 public import CatCryptCore.Complexity.D.FreeNI
+public import CatCryptCore.Complexity.D.GenericGroup
 public import CatCryptCore.Complexity.D.DNHered
 public import CatCryptCore.Complexity.D.OpenTree
 public import CatCryptCore.Complexity.D.DNHeredFull
