@@ -64,6 +64,9 @@ time measures of Forster, Kunze and Roth, is not proved here.
 | `OpenTree` | the open costed tree `Tm.dtO` with the calls of function variables as operations, `Tm.wpFold_dtC_eq_liftM_dtO`, `Tm.cost_le_of_useBound` and `Tm.useBound_liftM_substHandler_clocked` |
 | `PriceSound` | the gluing of the Diller–Nahm category along `CTree`: `PriceSound`, `KeepsTokens`, `PriceObj`, `Sim.arr_iff_priceSound` and `Tm.priceHom` |
 | `PriceTransfer` | transport of price-soundness along a change of implementation (`CTree.SimLE`, `DNLens.PriceSound.impl`) and along a square of specifications (`DNLens.PriceSound.spec`, `DNLens.KeepsTokens.of_dnSquare`), and of morphisms of the gluing along both (`PriceObj.transport`, `PriceHom.transport`) |
+| `RGraphInterp` | the abstraction theorem of D with cost: a base relation on the finite ground types extends to every type (`Ty.relB`), and a term that respects it gives related values at equal cost (`Tm.eval_lift`, `Tm.abstraction_cost`); D in the reflexive-graph model (`Tm.rg_abstraction`) and in the polynomial model over it (`Ty.polyC_pos_rel_iff`) |
+| `FreeNI` | non-interference with timing as a free theorem: equal cost, and equal trees at a public result type, for environments that agree on the public variables (`Tm.cost_eq_of_secret`, `Tm.free_noninterference`) |
+| `GenericGroup` | generic group algorithms: results on two representations of the group correspond under a homomorphism or an isomorphism at equal cost (`hom_free`, `iso_free`, `hom_commute`, `iso_commute`), and square-and-multiply exponentiation (`powT_eval`, `powT_commute`) |
 
 ## Reflection of Lean definitions
 
@@ -363,3 +366,23 @@ relations `ValRel` and `Sim` at inductive types are the relators `Container.WLif
 `Container.wmapF`, `Container.iwmapF`), and `Sim` at a function type is the bound of the
 evaluation by the demand of the Diller–Nahm morphism of the costed function
 (`Sim.arr_iff_demand`).
+
+## Relations on base types and the abstraction theorem
+
+`RGraphInterp` extends a relation on the values of the finite ground types to every type of D.
+The relation at a function type is the exact lifting `CTree.Lift` of trees: related trees have the
+same effect nodes and ticks at related leaves, hence equal cost. A term that respects the base
+relation (`Tm.RespB`) sends related environments to related results at equal cost (`Tm.eval_lift`,
+`Tm.abstraction_cost`). Over a reflexive graph with a base relation over each edge, the types of D
+are types of the reflexive-graph model and a respecting term is a term of it, at which the
+abstraction theorem of the model holds (`Tm.rg_abstraction`); the positions of a computation in the
+polynomial model over it are its ticks (`Ty.polyC_pos_rel_iff`).
+
+`FreeNI` takes the relation that is total at the secret types and equality elsewhere. A respecting
+term has equal cost on two environments that differ only in the secret (`Tm.cost_eq_of_secret`),
+and equal trees at a public result type (`Tm.free_noninterference`). `GenericGroup` takes the graph
+of a homomorphism of the group operations. A respecting term gives related results at equal cost on
+the operations of two representations (`hom_free`, `iso_free`), and a term of one input and one
+output commutes with the homomorphism (`hom_commute`, `iso_commute`). Square-and-multiply
+exponentiation `powT` is such a term; it is evaluated in `n · (m + 4) + w · (m + 1)` steps for `n`
+bits of weight `w` and multiplication cost `m` (`powT_eval`, `powT_commute`).
