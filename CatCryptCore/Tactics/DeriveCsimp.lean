@@ -59,11 +59,16 @@ witness is not unique, `bounded` without a bound, and an axiom outside `propext`
 `Classical.choice` and `Quot.sound` in the generated proof, in a source term or in the
 definition of `f`. Lean does not check the axioms of a csimp theorem, and the axioms of a
 compiled caller of `f` do not include them, so `sorryAx` or another axiom is refused here. The
-statement `@f = @f.csimpImpl` mentions
-`f`, so the axioms of the csimp theorem include those of `f` even when the generated proof
-reaches `f` only by unfolding: a specification whose instance carries a `native_decide` proof is
-refused at this point. The check is the one `#csimp_audit` (`CatCryptCore.Tactics.CsimpAudit`)
-runs over an environment.
+statement `@f = @f.csimpImpl` mentions `f`, so the axioms of the csimp theorem include those of
+`f` even when the generated proof reaches `f` only by unfolding.
+
+An auxiliary axiom of `native_decide` (`isNativeDecideAxiom`: an axiom named
+`<decl>._native.native_decide.ax_N` that states `b = true` for a Boolean term `b`) is accepted in
+each of the three places, following the project's acceptance of `native_decide`; the command
+warns, naming each such axiom, since the axioms of a compiled caller of `f` do not record it. A
+specification whose instance carries a `native_decide` proof, such as the primality instance of
+a prime field, is installed this way. The check is the one `#csimp_audit`
+(`CatCryptCore.Tactics.CsimpAudit`) runs over an environment.
 
 Callers of `f` compiled before the csimp theorem keep the code of `f`. The command warns, naming
 the computable definitions of the current module that call `f`, and warns when `f` is defined in
@@ -140,6 +145,21 @@ open CatCrypt.Tactics.ClassicalCostAudit
 
 /-- The axioms a generated csimp theorem may depend on. -/
 meta def standardAxioms : Array Name := #[``propext, ``Classical.choice, ``Quot.sound]
+
+/-- Whether `a` is an auxiliary axiom of `native_decide`: an axiom of `env` named
+`<decl>._native.native_decide.ax_N` (the name `Lean.Meta.nativeEqTrue` gives it) whose statement
+is `b = true` for a Boolean term `b`. -/
+meta def isNativeDecideAxiom (env : Environment) (a : Name) : Bool :=
+  match a, env.find? a with
+  | .str (.str (.str _ "_native") "native_decide") s, some (.axiomInfo ai) =>
+    s.startsWith "ax" && ai.type.isAppOfArity ``Eq 3 &&
+      (ai.type.getArg! 0).isConstOf ``Bool && (ai.type.getArg! 2).isConstOf ``Bool.true
+  | _, _ => false
+
+/-- Whether a csimp theorem may depend on the axiom `a`: a standard axiom or an auxiliary axiom
+of `native_decide`. -/
+meta def admissibleAxiom (env : Environment) (a : Name) : Bool :=
+  standardAxioms.contains a || isNativeDecideAxiom env a
 
 /-- The stages of `derive_csimp`. -/
 declare_syntax_cat csimpStage (behavior := symbol)
@@ -590,7 +610,10 @@ meta def deriveCsimpCore (f : Name) (stages : Array StageData) : TermElabM Unit 
         (noncomputable, no csimp, implemented_by or extern)."
     return (← mkLambdaFVars xs body, ← mkLambdaFVars xs pf)
   Meta.check eqPf
-  let bad := (← axiomsOf eqPf).filter (!standardAxioms.contains ·)
+  let env ← getEnv
+  let pfAxioms ← axiomsOf eqPf
+  let mut native := pfAxioms.filter (isNativeDecideAxiom env)
+  let bad := pfAxioms.filter (!admissibleAxiom env ·)
   if bad.contains ``sorryAx then
     throwError "derive_csimp {f}: the proof of `{thmName}` depends on `sorryAx`; a csimp \
       theorem is not recorded in the axioms of its callers, so it must be fully proved."
@@ -600,13 +623,23 @@ meta def deriveCsimpCore (f : Name) (stages : Array StageData) : TermElabM Unit 
       `Classical.choice` and `Quot.sound`."
   for (_, rs, _, stxs) in stages do
     for i in [0:rs.size] do
-      if let some a := (← axiomsOf rs[i]!.expr).find? (!standardAxioms.contains ·) then
+      let srcAxioms ← axiomsOf rs[i]!.expr
+      if let some a := srcAxioms.find? (!admissibleAxiom env ·) then
         throwError "derive_csimp {f}: the source `{stxs[i]!}` depends on the axiom `{a}`; a csimp \
           theorem may use only `propext`, `Classical.choice` and `Quot.sound`."
-  if let some a := (← collectAxioms f).find? (!standardAxioms.contains ·) then
+      for a in srcAxioms.filter (isNativeDecideAxiom env) do
+        unless native.contains a do native := native.push a
+  let fAxioms ← collectAxioms f
+  if let some a := fAxioms.find? (!admissibleAxiom env ·) then
     throwError "derive_csimp {f}: the definition of `{f}` depends on the axiom `{a}`, and so \
       does the statement `@{f} = @{implName}` of `{thmName}`; a csimp theorem may use only \
       `propext`, `Classical.choice` and `Quot.sound`."
+  for a in fAxioms.filter (isNativeDecideAxiom env) do
+    unless native.contains a do native := native.push a
+  unless native.isEmpty do
+    logWarning m!"derive_csimp {f}: `{thmName}` depends on the axioms {native.toList} of \
+      `native_decide`, which trust the compiled evaluation of a Boolean term; the axioms of \
+      compiled callers of `{f}` do not record them."
   let implDecl := Declaration.defnDecl {
     name := implName, levelParams := info.levelParams, type := info.type, value := implVal,
     hints := .regular (getMaxHeight (← getEnv) implVal + 1), safety := .safe,

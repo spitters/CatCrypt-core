@@ -16,8 +16,9 @@ derived cost of its implementation), `guard` (a remainder below the modulus), `w
 through `Fin.val`), `transfer` followed by `eq`, `bounded` (the least `k` with `n ≤ k * k`, a
 `noncomputable` definition with a computable caller) and `unique` (the value of a key in an
 association list, with a computable caller; its cost derivation is refused and reported). Each
-refusal of the command is checked by its message, and so is the warning on a caller compiled
-before the replacement.
+refusal of the command is checked by its message, and so are the warning on a caller compiled
+before the replacement and the warning on an auxiliary axiom of `native_decide` in the
+definition of the specification.
 -/
 
 public section
@@ -243,6 +244,21 @@ error: derive_csimp DeriveCsimpTest.modSpec2: guard: no fallback given; supply `
 -/
 #guard_msgs in
 derive_csimp modSpec2 via guard Nat.mod_eq_of_lt
+
+/-! ## An auxiliary axiom of `native_decide` -/
+
+set_option linter.style.native false in
+/-- A doubling whose definition carries a proof by `native_decide`. -/
+def specNdDouble (n : ℕ) : ℕ :=
+  (⟨n + n, (by native_decide : 2 + 2 = 4)⟩ : {_m : ℕ // 2 + 2 = 4}).val
+
+/--
+warning: derive_csimp DeriveCsimpTest.specNdDouble: `DeriveCsimpTest.specNdDouble_csimp` depends on the axioms [_private.CatCryptCoreTest.Tactics.DeriveCsimpTest.0.DeriveCsimpTest.specNdDouble._native.native_decide.ax_1] of `native_decide`, which trust the compiled evaluation of a Boolean term; the axioms of compiled callers of `DeriveCsimpTest.specNdDouble` do not record them.
+-/
+#guard_msgs (warning, drop info) in
+derive_csimp specNdDouble via eq Nat.two_mul
+
+example : @specNdDouble = @specNdDouble.csimpImpl := specNdDouble_csimp
 
 /-! ## Callers compiled before the replacement -/
 
