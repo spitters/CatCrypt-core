@@ -114,6 +114,7 @@ public import CatCryptCore.Complexity.D.FreeNI
 public import CatCryptCore.Complexity.D.GenericGroup
 public import CatCryptCore.Complexity.D.RespB
 public import CatCryptCore.Complexity.D.RespB.Basic
+public import CatCryptCore.Complexity.D.FreeThm
 public import CatCryptCore.Complexity.D.DNHered
 public import CatCryptCore.Complexity.D.OpenTree
 public import CatCryptCore.Complexity.D.DNHeredFull
@@ -727,6 +728,7 @@ public import CatCryptCore.Container.DNLogicNeg
 public import CatCryptCore.Container.DNLogicMono
 public import CatCryptCore.Container.DNLogicMonoClassical
 public import CatCryptCore.Container.DNLogicTestHybrid
+public import CatCryptCore.Container.DNLogicTestPrimes
 public import CatCryptCore.Container.DNBang
 public import CatCryptCore.Container.DialecticaCat
 public import CatCryptCore.Container.DNGraded
