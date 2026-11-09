@@ -393,6 +393,7 @@ public import CatCryptCore.Crypto.Messaging.SMAuthRoot
 public import CatCryptCore.Crypto.Messaging.SMAuthRootTimed
 public import CatCryptCore.Crypto.Messaging.SMAuthFSInt
 public import CatCryptCore.Crypto.Messaging.SMAuthFSIntTimed
+public import CatCryptCore.Crypto.Messaging.SMAuthPrim
 public import CatCryptCore.Crypto.Messaging.TripleRatchetCorrupt
 public import CatCryptCore.Crypto.Messaging.TripleRatchetCorruptTimed
 public import CatCryptCore.Crypto.Messaging.KEMCKACorrupt
