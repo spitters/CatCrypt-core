@@ -720,6 +720,7 @@ public import CatCryptCore.Container.CwFPi
 public import CatCryptCore.Container.GodelFibration
 public import CatCryptCore.Container.GodelFibrationW
 public import CatCryptCore.Container.GodelFibrationWIter
+public import CatCryptCore.Container.DNLogicForking
 public import CatCryptCore.Container.DNBang
 public import CatCryptCore.Container.DialecticaCat
 public import CatCryptCore.Container.DNGraded
