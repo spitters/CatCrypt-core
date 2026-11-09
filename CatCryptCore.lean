@@ -387,6 +387,8 @@ public import CatCryptCore.Crypto.Messaging.SMPrekey
 public import CatCryptCore.Crypto.Messaging.SMScheme
 public import CatCryptCore.Crypto.Messaging.SMAuth
 public import CatCryptCore.Crypto.Messaging.SMAuthTimed
+public import CatCryptCore.Crypto.Messaging.SMAuthRoot
+public import CatCryptCore.Crypto.Messaging.SMAuthRootTimed
 public import CatCryptCore.Crypto.Messaging.TripleRatchetCorrupt
 public import CatCryptCore.Crypto.Messaging.TripleRatchetCorruptTimed
 public import CatCryptCore.Crypto.Messaging.KEMCKACorrupt
