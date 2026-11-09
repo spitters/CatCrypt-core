@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.AKE.X3DHSquareJoint
+public import CatCryptCore.Crypto.AKE.X3DHSquareJointSimTimed
 public import CatCryptCore.Crypto.AKE.X3DHSquareSignedTimed
 public import CatCryptCore.Tactics.DeriveSimulator
 
@@ -22,6 +23,12 @@ entries of the Fiat–Shamir tables of all parties. The step cost of the layer i
 decisions, of a lookup in the Fiat–Shamir table of one party and of a simulated signature
 (`FiatShamirROM.simStep`).
 
+`derive_simulator` builds the costed form `x3dhJointSim.timed` from the costed layer and the
+costed X3DH simulator `x3dhSimC.timed` of `X3DHSquareJointSimTimed.lean`, with its erasure and
+its graded time bound at layer steps of bounded cost. At the steps `jPreS`, `jPostS`, whose cost
+grows with `jsize`, the potential certificate of the layer composes with the graded certificate
+of `x3dhSimC` (`x3dhJointSim.timeBoundPot_timed`).
+
 No module imports this file.
 
 ## Main results
@@ -30,6 +37,10 @@ No module imports this file.
   at an answer.
 * `jLayerS_erases`, `jLayerS_potentialBound`: the costed layer erases to `sigLayerJH` and has a
   potential time bound in `jsize`.
+* `x3dhJointSim.timed`, `x3dhJointSim.erase_timed`, `x3dhJointSim.timeBoundGraded_timed`: the
+  costed simulator, its erasure and its graded time bound.
+* `x3dhJointSim_erases_support`, `x3dhJointSim.timeBoundPot_timed`: its erasure and its
+  potential time bound at the steps `jPreS`, `jPostS`.
 -/
 
 @[expose] public section
@@ -327,5 +338,71 @@ noncomputable def jLayerS_potentialBound {K : Type} (pub : P.Wit → P.Stmt)
       simpa using this
 
 end Potential
+
+/-! ## The certificate of the simulator -/
+
+derive_simulator x3dhJointSim
+
+section JointPotential
+
+open CatCrypt.Crypto.AKE.X3DHSquareSigned (pmfS_erase)
+
+variable {S W K : Type} [Field S] [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype K]
+  [Nonempty K] [Inhabited K]
+
+/-- **Erasure of the costed simulator of X3DH with a joint identity and signing key at the steps
+on the support**: the derived costed form `x3dhJointSim.timed` at the costed steps `jPreS`,
+`jPostS` of the layer erases to `x3dhJointSim G`. -/
+theorem x3dhJointSim_erases_support (G : DHGroup S W)
+    (preCost : JSt (schnorrSigma (Examples.GroupParam.ofDHGroup G)) →
+      JEv (schnorrSigma (Examples.GroupParam.ofDHGroup G)) → ℕ)
+    (postCost : JSt (schnorrSigma (Examples.GroupParam.ofDHGroup G)) →
+      OOut (schnorrSigma (Examples.GroupParam.ofDHGroup G)).Wit
+        (schnorrSigma (Examples.GroupParam.ofDHGroup G)).Stmt K → ℕ)
+    (coeCost : S ≃ W → S → ℕ) (expCost : W → S → ℕ) (toFunCost : S → ℕ) :
+    (x3dhJointSim.timed (K := K) G (jPreS _) preCost (jPostS _ (x3dhJointAlg G).pub) postCost
+      coeCost expCost toFunCost).Erases (x3dhJointSim G) :=
+  x3dhJointSim.erase_timed G _ _ _ _ coeCost expCost toFunCost
+    (fun _ _ => pmfS_erase _) (fun _ _ => pmfS_erase _)
+
+/-- **Potential running time of the costed simulator of X3DH with a joint identity and signing
+key.** At the costed steps `jPreS`, `jPostS` of the layer, with step costs at most
+`tl + tk · jsize l` in the size `jsize l` of the tables of the layer, and group operations of
+costs at most `tc`, `te`, `tf`, the costed simulator has the potential time bound with the
+import `1` of every outer event and answer, the constants
+`tl + 2 + 202 + 20 tc + 20 te + 20 tf` and `tk + 40`, and the import `3` created per
+activation: the potential is the size of the tables of the layer plus that of the X3DH
+simulator below (the least activation count of its graded invariant), the layer adds at most
+one entry at an event and three at an answer, and the X3DH simulator at most one activation per
+message. -/
+theorem x3dhJointSim.timeBoundPot_timed (G : DHGroup S W)
+    (preCost : JSt (schnorrSigma (Examples.GroupParam.ofDHGroup G)) →
+      JEv (schnorrSigma (Examples.GroupParam.ofDHGroup G)) → ℕ)
+    (postCost : JSt (schnorrSigma (Examples.GroupParam.ofDHGroup G)) →
+      OOut (schnorrSigma (Examples.GroupParam.ofDHGroup G)).Wit
+        (schnorrSigma (Examples.GroupParam.ofDHGroup G)).Stmt K → ℕ)
+    (coeCost : S ≃ W → S → ℕ) (expCost : W → S → ℕ) (toFunCost : S → ℕ)
+    {tl tk tc te tf : ℕ}
+    (hpre : ∀ l e, preCost l e ≤ tl + tk * jsize _ l)
+    (hpost : ∀ l o, postCost l o ≤ tl + tk * jsize _ l) (hc : ∀ a b, coeCost a b ≤ tc)
+    (he : ∀ a b, expCost a b ≤ te) (hf : ∀ a, toFunCost a ≤ tf) :
+    (x3dhJointSim.timed (K := K) G (jPreS _) preCost (jPostS _ (x3dhJointAlg G).pub) postCost
+      coeCost expCost toFunCost).TimeBoundPot (fun _ => 1) 1 0 0
+      (tl + 2 + (202 + 20 * tc + 20 * te + 20 * tf)) (tk + 40) 3 := by
+  have P := jLayerS_potentialBound _ (x3dhJointAlg G).pub preCost postCost hpre hpost
+  have P' := Hybrid.Timed.PotentialBound.ofHybrid
+    (jLayerS_erases _ (x3dhJointAlg G).pub preCost postCost) P
+  have h₂ := (x3dhSimC.timeBoundGraded_timed (K := K) G coeCost expCost toFunCost hc he
+    hf).timeBoundPot
+  have h : (x3dhJointSim.timed (K := K) G (jPreS _) preCost (jPostS _ (x3dhJointAlg G).pub)
+      postCost coeCost expCost toFunCost).TimeBoundPot (fun _ => 1) 1 0 0
+      (tl + 1 + 1 + (202 + (20 * tc + (20 * te + 20 * tf)))) (tk + 40)
+      (0 + (x3dhSimC.timed (K := K) G coeCost expCost toFunCost).compCount + 3) :=
+    Simulator.comp.timeBoundPot_timed (κ := 3) (Simulator.ofMultiHybrid.timeBoundPot_timed P') h₂
+      (fun _ => Nat.le_add_left 1 2) (fun _ => le_rfl)
+  exact h.mono (by omega) le_rfl (by simp [x3dhSimC.timed, Simulator.Timed.compCount])
+    (fun _ => le_rfl) (fun _ => le_rfl) (fun _ => le_rfl) (fun _ => le_rfl)
+
+end JointPotential
 
 end CatCrypt.Crypto.AKE.X3DHSquare
