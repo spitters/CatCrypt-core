@@ -12,10 +12,11 @@ public import Mathlib.Data.ENat.Monoid
 # Soundness of positive many-sorted logic in the Gödel fibration, with use counts
 
 The formulas (`Form`) of positive many-sorted intuitionistic logic over Lean sorts have atoms
-`I → Prop`, `⊤`, `∧`, `→`, `∨`, the quantifiers `∀`, `∃` over a family of sorts `K : I → Type u`, and
-an explicit substitution `Form.sub` along a map of sort contexts. A formula is interpreted twice:
-by its truth value `Form.eval`, and by a Dialectica predicate `Form.dn` of the Gödel fibration of
-the Diller–Nahm category, through the connectives of `Container/GodelFibration.lean`.
+`I → Prop`, `⊤`, `∧`, `→`, `∨`, the quantifiers `∀`, `∃` over a family of sorts
+`K : I → Type u`, and an explicit substitution `Form.sub` along a map of sort contexts. A formula
+is interpreted twice: by its truth value `Form.eval`, and by a Dialectica predicate `Form.dn` of
+the Gödel fibration of the Diller–Nahm category, through the connectives of
+`Container/GodelFibration.lean`.
 
 Derivations (`Deriv`) are natural deduction derivations with hypotheses, as data: the rules of
 `⊤`, `∧`, `→`, `∨`, `∀`, `∃`, and the axioms of choice, independence of a universal premise and the
@@ -30,6 +31,15 @@ that it demands. The demand on hypothesis `k` is bounded by the use count `Deriv
 (`Deriv.card_back_le`): one use at a leaf, the maximum at `∧`-introduction, and at a cut
 (`→`-elimination, `∃`-elimination) the product of the uses of the cut formula with the uses in the
 derivation of the cut formula.
+
+The bound of an implication on its premise is a demand of the formula (`Form.Dem`): an `ℕ∞` at
+each implication, hereditarily through the connectives, with `Form.Resp` the witnesses that
+respect it. `Deriv.uses` takes an annotation of the context by demands (default `⊤`) and a
+transport `HomDem` of demands along realized axioms, and computes the uses of each hypothesis
+and the demand of the conclusion; `Deriv.bounds_resp` states that for witnesses of the hypotheses
+respecting their declared demands the realizer respects these counts. With `HomDem.keep` a
+conversion keeps the demand of the converted derivation (`Deriv.uses_conv_keep`), so that the cut
+of the negative translation of an `∃`-introduction has finite use counts (`Deriv.uses_exICut`).
 
 For a hypothesis `∀ x, ∃ y, a (x, y)` (an oracle, adversary or callee, given as a relation) and a
 conclusion `∀ x', ∃ z, r (x', z)`, a derivation gives a program `Deriv.program` that answers
@@ -46,6 +56,8 @@ program is its own time plus this price, as in `DNLens.price_comp`.
 * `Deriv` — derivations;
 * `Deriv.realize` — the morphism of the fibre of a derivation;
 * `Deriv.useCount` — the uses of a hypothesis;
+* `Form.Dem`, `Form.Resp`, `ctxResp`, `HomDem`, `Deriv.uses` — demands of formulas, their
+  respecting witnesses, transports of demands, and the use counts and demand of a derivation;
 * `Deriv.program`, `Deriv.queries`, `Deriv.queryPrice` — the program of a derivation from an
   oracle hypothesis.
 
@@ -54,6 +66,9 @@ program is its own time plus this price, as in `DNLens.price_comp`.
 * `Deriv.eval` — soundness for truth;
 * `Deriv.holds_dn` — soundness for the Dialectica meaning;
 * `Deriv.card_back_le` — quantitative soundness: the demand on a hypothesis is at most its uses;
+* `Deriv.bounds_resp` — hereditary quantitative soundness under declared demands;
+* `Deriv.uses_conv_keep`, `Deriv.uses_exICut`, `Deriv.uses_exICut_lt_top` — the demand of a
+  conversion, and the finite use counts of the cut of an `∃`-introduction;
 * `Deriv.queries_card_le`, `Deriv.query_sound`, `Deriv.queryPrice_le` — the query bound;
 * `Deriv.useCount_orE`, `Deriv.useCount_efq`, `Deriv.useCount_orComm` — use counts of
   `∨`-elimination, of ex falso (`Deriv.efq`, for a conclusion with a witness) and of the
@@ -159,6 +174,62 @@ falsity and demands no counter-witness. -/
 def notW {I : Type u} (φ : Form I) (i : I) : (not φ).dn.W i :=
   ⟨fun _ => PUnit.unit, fun _ _ => 0⟩
 
+/-- The demands of a formula: a bound in `ℕ∞` at each implication on the counter-witnesses of
+the premise that a witness demands, with the demand of its conclusion, and the demands of the
+components of `∧`, `∨`, `∀`, `∃` and of a substitution. -/
+def Dem : {I : Type u} → Form I → Type
+  | _, .atom _ => Unit
+  | _, .top => Unit
+  | _, .and φ ψ => φ.Dem × ψ.Dem
+  | _, .imp _ ψ => ℕ∞ × ψ.Dem
+  | _, .or φ ψ => φ.Dem × ψ.Dem
+  | _, .all φ => φ.Dem
+  | _, .ex φ => φ.Dem
+  | _, .sub _ φ => φ.Dem
+
+/-- The demand `⊤` at every implication of a formula. -/
+def demTop : {I : Type u} → (φ : Form I) → φ.Dem
+  | _, .atom _ => ()
+  | _, .top => ()
+  | _, .and φ ψ => (φ.demTop, ψ.demTop)
+  | _, .imp _ ψ => (⊤, ψ.demTop)
+  | _, .or φ ψ => (φ.demTop, ψ.demTop)
+  | _, .all φ => φ.demTop
+  | _, .ex φ => φ.demTop
+  | _, .sub _ φ => φ.demTop
+
+/-- A witness respects a demand: at each implication, for every witness of the premise, the
+backward map demands at most the bound of counter-witnesses of the premise and the image
+respects the demand of the conclusion; hereditarily through the other connectives. -/
+def Resp : {I : Type u} → (φ : Form I) → φ.Dem → (i : I) → φ.dn.W i → Prop
+  | _, .atom _, _, _, _ => True
+  | _, .top, _, _, _ => True
+  | _, .and φ ψ, D, i, w => φ.Resp D.1 i w.1 ∧ ψ.Resp D.2 i w.2
+  | _, .imp _ ψ, D, i, F => ∀ a, (∀ c, (((F.2 a c).card : ℕ) : ℕ∞) ≤ D.1) ∧ ψ.Resp D.2 i (F.1 a)
+  | _, .or φ ψ, D, i, w =>
+    Sum.elim (φ.Resp D.1 i) (ψ.Resp D.2 i) (w : φ.dn.W i ⊕ ψ.dn.W i)
+  | _, .all φ, D, i, w => ∀ k, φ.Resp D ⟨i, k⟩ (w k)
+  | _, .ex φ, D, i, w => φ.Resp D ⟨i, w.1⟩ w.2
+  | _, .sub h φ, D, j, w => φ.Resp D (h j) w
+
+/-- Every witness respects the demand `⊤`. -/
+theorem resp_demTop : ∀ {I : Type u} (φ : Form I) (i : I) (w : φ.dn.W i), φ.Resp φ.demTop i w
+  | _, .atom _, _, _ => trivial
+  | _, .top, _, _ => trivial
+  | _, .and φ ψ, i, w => ⟨resp_demTop φ i w.1, resp_demTop ψ i w.2⟩
+  | _, .imp _ ψ, i, F => fun a => ⟨fun _ => le_top, resp_demTop ψ i (F.1 a)⟩
+  | _, .or φ ψ, i, w =>
+    Sum.rec (motive := fun s => Sum.elim (φ.Resp φ.demTop i) (ψ.Resp ψ.demTop i) s)
+      (fun a => resp_demTop φ i a) (fun b => resp_demTop ψ i b) (w : φ.dn.W i ⊕ ψ.dn.W i)
+  | _, .all φ, i, w => fun k => resp_demTop φ ⟨i, k⟩ (w k)
+  | _, .ex φ, i, w => resp_demTop φ ⟨i, w.1⟩ w.2
+  | _, .sub h φ, j, w => resp_demTop φ (h j) w
+
+/-- The argument demand of a formula: the bound at an implication, `⊤` otherwise. -/
+def demArg : {I : Type u} → (φ : Form I) → φ.Dem → ℕ∞
+  | _, .imp _ _, D => D.1
+  | _, _, _ => ⊤
+
 end Form
 
 variable {I : Type u} {n : ℕ}
@@ -199,6 +270,11 @@ variable {φ : Form I} {Γ : Fin n → Form I}
 def consW (i : I) (a : φ.dn.W i) (w : (ctx Γ).W i) : (ctx (consF φ Γ)).W i := fun
   | ⟨0, _⟩ => a
   | ⟨j + 1, h⟩ => w ⟨j, Nat.lt_of_succ_lt_succ h⟩
+
+/-- The demands of an extended context: `a` on the new hypothesis, `δ` on the old ones. -/
+def consD (a : φ.Dem) (δ : ∀ k, (Γ k).Dem) : ∀ k, (consF φ Γ k).Dem
+  | ⟨0, _⟩ => a
+  | ⟨j + 1, h⟩ => δ ⟨j, Nat.lt_of_succ_lt_succ h⟩
 
 /-- The counter-witness of the new hypothesis, if it is one. -/
 def headC? {i : I} {a : φ.dn.W i} {w : (ctx Γ).W i} :
@@ -242,6 +318,24 @@ theorem tailC?_fst {i : I} {a : φ.dn.W i} {w : (ctx Γ).W i}
     rfl
 
 end Cons
+
+/-- A witness of a context respects an annotation of the context by demands: `none` declares
+`⊤` on every hypothesis, `some δ` the demand `δ k` on hypothesis `k`. -/
+def ctxResp (Γ : Fin n → Form I) : Option (∀ k, (Γ k).Dem) → (i : I) → (ctx Γ).W i → Prop
+  | none, _, _ => True
+  | some δ, i, w => ∀ k, (Γ k).Resp (δ k) i (w k)
+
+/-- A witness of an extended context respects the extended annotation. -/
+theorem ctxResp_cons {φ : Form I} {Γ : Fin n → Form I} {δ : Option (∀ k, (Γ k).Dem)} {i : I}
+    {w : (ctx Γ).W i} (hw : ctxResp Γ δ i w) (D : φ.Dem) {a : φ.dn.W i} (ha : φ.Resp D i a) :
+    ctxResp (consF φ Γ) (δ.map (consD D)) i (consW i a w) := by
+  cases δ with
+  | none => trivial
+  | some δ =>
+    intro k
+    match k with
+    | ⟨0, _⟩ => exact ha
+    | ⟨j + 1, h⟩ => exact hw ⟨j, Nat.lt_of_succ_lt_succ h⟩
 
 /-- A counter-witness of the context reindexed along `Sigma.fst`, at `⟨i, x⟩`, is a
 counter-witness of the context at `i`. -/
@@ -292,6 +386,21 @@ theorem orCase_sound (E₁ : (ctx (consF φ Γ)).Hom χ.dn) (E₂ : (ctx (consF 
       (fun z hz => h z (Multiset.mem_add.2 (.inl ((Multiset.mem_filterMap _ _).2 ⟨y, hy, hz⟩))))
 
 end OrCase
+
+/-- A transport of demands along morphisms of the Diller–Nahm meanings: a demand of the target
+for each demand of the source, respected by the image of every witness respecting the source
+demand. It gives the demand of the conclusion of a realized axiom `Deriv.hom`. -/
+structure HomDem : Type (u + 1) where
+  /-- The demand of the target. -/
+  map : ∀ {I : Type u} {φ ψ : Form I}, φ.dn.Hom ψ.dn → φ.Dem → ψ.Dem
+  /-- The image of a witness respecting the source demand respects the target demand. -/
+  sound : ∀ {I : Type u} {φ ψ : Form I} (f : φ.dn.Hom ψ.dn) (D : φ.Dem) (i : I)
+    (w : φ.dn.W i), φ.Resp D i w → ψ.Resp (map f D) i (f.fwd i w)
+
+/-- The transport that gives the demand `⊤` to every target. -/
+def HomDem.top : HomDem.{u} where
+  map {_ _ ψ} _ _ := ψ.demTop
+  sound {_ _ ψ} _ _ i _ _ := Form.resp_demTop ψ i _
 
 /-- Natural deduction derivations of positive many-sorted logic, as data. -/
 inductive Deriv : {I : Type u} → {n : ℕ} → (Fin n → Form I) → Form I → Type (u + 1)
@@ -498,38 +607,57 @@ def realize : {I : Type u} → {n : ℕ} → {Γ : Fin n → Form I} → {φ : F
         (d.realize.sound i w PUnit.unit fun x hx => hw x (Multiset.mem_add.2 (.inl hx)))
         (e.realize.sound i w PUnit.unit fun x hx => hw x (Multiset.mem_add.2 (.inr hx))) }
 
-/-- The use counts of a derivation: the uses of each hypothesis (one at a leaf, the maximum at
-`∧`-introduction, and at a cut the product of the uses of the cut formula with the uses in the
-derivation of the cut formula), and the uses of the premise by a derivation of an implication
-(finite for `→`-introduction, `⊤` otherwise). -/
+/-- The use counts and the demand of a derivation, under an annotation `δ` of the context by
+demands (`none`: `⊤` on every hypothesis) and a transport `T` of demands along realized axioms.
+The first component counts the uses of each hypothesis: one at a leaf, the maximum at
+`∧`-introduction, and at a cut the bound of the implication on its premise times the uses in
+the derivation of the premise. The second is the demand of the conclusion, read off
+hereditarily: the declared demand at a hypothesis, the uses of the premise at
+`→`-introduction, the components at the eliminations, `T` at a realized axiom, and `⊤` where the
+rule determines none (`∨`-elimination, choice, independence of premise). At `∃`- and
+`∨`-elimination the eliminated component receives the demand of the eliminated formula. -/
 def uses : {I : Type u} → {n : ℕ} → {Γ : Fin n → Form I} → {φ : Form I} → Deriv Γ φ →
-    (Fin n → ℕ∞) × ℕ∞
-  | _, _, Γ, .(Γ k), .hyp k => (fun j => if j = k then 1 else 0, ⊤)
-  | _, _, _, _, .topI => (fun _ => 0, ⊤)
-  | _, _, _, _, .andI d e => (fun j => max (d.uses.1 j) (e.uses.1 j), ⊤)
-  | _, _, _, _, .andE₁ d => (d.uses.1, ⊤)
-  | _, _, _, _, .andE₂ d => (d.uses.1, ⊤)
-  | _, _, _, _, .impI d => (fun j => d.uses.1 j.succ, d.uses.1 0)
-  | _, _, _, _, .impE d e => (fun j => d.uses.1 j + d.uses.2 * e.uses.1 j, ⊤)
-  | _, _, _, _, .orI₁ d => (d.uses.1, ⊤)
-  | _, _, _, _, .orI₂ d => (d.uses.1, ⊤)
-  | _, _, _, _, .orE d e₁ e₂ => (fun j => max (e₁.uses.1 j.succ + e₁.uses.1 0 * d.uses.1 j)
-      (e₂.uses.1 j.succ + e₂.uses.1 0 * d.uses.1 j), ⊤)
-  | _, _, _, _, .allI d => (d.uses.1, ⊤)
-  | _, _, _, _, .allE _ d => (d.uses.1, ⊤)
-  | _, _, _, _, .exI _ d => (d.uses.1, ⊤)
-  | _, _, _, _, .exE d e => (fun j => e.uses.1 j.succ + e.uses.1 0 * d.uses.1 j, ⊤)
-  | _, _, _, _, .ac d => (d.uses.1, ⊤)
-  | _, _, _, _, .ip _ _ d => (d.uses.1, ⊤)
-  | _, _, _, _, .markov _ _ d => (d.uses.1, ⊤)
-  | _, _, _, _, .hom _ N _ _ d => (fun j => (N : ℕ∞) * d.uses.1 j, ⊤)
-  | _, _, _, _, .atom₂ _ d e => (fun j => d.uses.1 j + e.uses.1 j, ⊤)
+    (δ : Option (∀ k, (Γ k).Dem) := none) → (T : HomDem.{u} := HomDem.top) →
+    (Fin n → ℕ∞) × φ.Dem
+  | _, _, Γ, .(Γ k), .hyp k, δ, _ =>
+    (fun j => if j = k then 1 else 0, δ.elim (Γ k).demTop (· k))
+  | _, _, _, _, .topI, _, _ => (fun _ => 0, ())
+  | _, _, _, _, .andI d e, δ, T =>
+    (fun j => max ((d.uses δ T).1 j) ((e.uses δ T).1 j), ((d.uses δ T).2, (e.uses δ T).2))
+  | _, _, _, _, .andE₁ d, δ, T => ((d.uses δ T).1, (d.uses δ T).2.1)
+  | _, _, _, _, .andE₂ d, δ, T => ((d.uses δ T).1, (d.uses δ T).2.2)
+  | _, _, _, _, .impI (φ := φ) d, δ, T =>
+    (fun j => (d.uses (δ.map (consD φ.demTop)) T).1 j.succ,
+      ((d.uses (δ.map (consD φ.demTop)) T).1 0, (d.uses (δ.map (consD φ.demTop)) T).2))
+  | _, _, _, _, .impE d e, δ, T =>
+    (fun j => (d.uses δ T).1 j + (d.uses δ T).2.1 * (e.uses δ T).1 j, (d.uses δ T).2.2)
+  | _, _, _, _, .orI₁ (ψ := ψ) d, δ, T => ((d.uses δ T).1, ((d.uses δ T).2, ψ.demTop))
+  | _, _, _, _, .orI₂ (φ := φ) d, δ, T => ((d.uses δ T).1, (φ.demTop, (d.uses δ T).2))
+  | _, _, _, _, .orE (χ := χ) d e₁ e₂, δ, T =>
+    (fun j => max
+      ((e₁.uses (δ.map (consD (d.uses δ T).2.1)) T).1 j.succ +
+        (e₁.uses (δ.map (consD (d.uses δ T).2.1)) T).1 0 * (d.uses δ T).1 j)
+      ((e₂.uses (δ.map (consD (d.uses δ T).2.2)) T).1 j.succ +
+        (e₂.uses (δ.map (consD (d.uses δ T).2.2)) T).1 0 * (d.uses δ T).1 j), χ.demTop)
+  | _, _, _, _, .allI d, δ, T => ((d.uses δ T).1, (d.uses δ T).2)
+  | _, _, _, _, .allE _ d, δ, T => ((d.uses δ T).1, (d.uses δ T).2)
+  | _, _, _, _, .exI _ d, δ, T => ((d.uses δ T).1, (d.uses δ T).2)
+  | _, _, _, _, .exE d e, δ, T =>
+    (fun j => (e.uses (δ.map (consD (d.uses δ T).2)) T).1 j.succ +
+      (e.uses (δ.map (consD (d.uses δ T).2)) T).1 0 * (d.uses δ T).1 j,
+      (e.uses (δ.map (consD (d.uses δ T).2)) T).2)
+  | _, _, _, _, .ac d, δ, T => ((d.uses δ T).1, Form.demTop _)
+  | _, _, _, _, .ip _ _ d, δ, T => ((d.uses δ T).1, Form.demTop _)
+  | _, _, _, _, .markov _ _ d, δ, T => ((d.uses δ T).1, ())
+  | _, _, _, _, .hom f N _ _ d, δ, T =>
+    (fun j => (N : ℕ∞) * (d.uses δ T).1 j, T.map f (d.uses δ T).2)
+  | _, _, _, _, .atom₂ _ d e, δ, T => (fun j => (d.uses δ T).1 j + (e.uses δ T).1 j, ())
 
 /-- The number of uses of hypothesis `k` in a derivation. -/
 def useCount {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) (k : Fin n) : ℕ∞ := d.uses.1 k
 
 /-- The number of uses of the premise by a derivation of an implication. -/
-def argUses {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) : ℕ∞ := d.uses.2
+def argUses {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) : ℕ∞ := φ.demArg d.uses.2
 
 end Deriv
 
@@ -538,6 +666,13 @@ the premise that its witnesses demand; true for other conclusions. -/
 def ArgBound {Γ : Fin n → Form I} : {χ : Form I} → (ctx Γ).Hom χ.dn → ℕ∞ → Prop
   | .imp _ _, f, b => ∀ i w a c, ((((f.fwd i w).2 a c).card : ℕ) : ℕ∞) ≤ b
   | _, _, _ => True
+
+/-- A morphism whose witnesses respect the demand `D` satisfies the bound `demArg D`. -/
+theorem argBound_of_resp {Γ : Fin n → Form I} {χ : Form I} (f : (ctx Γ).Hom χ.dn) (D : χ.Dem)
+    (h : ∀ i w, χ.Resp D i (f.fwd i w)) : ArgBound f (χ.demArg D) := by
+  cases χ with
+  | imp φ ψ => exact fun i w a c => (h i w a).1 c
+  | _ => trivial
 
 /-- Every morphism satisfies the bound `⊤`. -/
 theorem argBound_top {Γ : Fin n → Form I} {χ : Form I} (f : (ctx Γ).Hom χ.dn) :
@@ -578,6 +713,42 @@ theorem countP_bind_le {α β : Type*} (m : Multiset α) (f : α → Multiset β
     exact add_le_add (ih fun x hx => h x (Multiset.mem_cons_of_mem hx))
       (h y (Multiset.mem_cons_self y m))
 
+/-- The demand of a case analysis on hypothesis `k`, from bounds on the branch selected by the
+witness `x` of the disjunction: in that branch, its uses of `k` plus its uses of the disjunct
+times the bound `b` on the demand of the disjunction. -/
+theorem orCaseBack_countP_le_of {φ ψ χ : Form I} {Γ : Fin n → Form I}
+    (E₁ : (ctx (consF φ Γ)).Hom χ.dn) (E₂ : (ctx (consF ψ Γ)).Hom χ.dn)
+    (u₁ u₂ : Fin (n + 1) → ℕ∞) (k : Fin n) (i : I) (w : (ctx Γ).W i)
+    (x : (DPred.or φ.dn ψ.dn).W i)
+    (h₁ : ∀ a, x = .inl a → ∀ k c,
+      (((E₁.back i (consW i a w) c).countP fun x => x.1 = k : ℕ) : ℕ∞) ≤ u₁ k)
+    (h₂ : ∀ a, x = .inr a → ∀ k c,
+      (((E₂.back i (consW i a w) c).countP fun x => x.1 = k : ℕ) : ℕ∞) ≤ u₂ k)
+    (g : (DPred.or φ.dn ψ.dn).C i x → Multiset ((ctx Γ).C i w)) (b : ℕ∞)
+    (hg : ∀ c, (((g c).countP fun y => y.1 = k : ℕ) : ℕ∞) ≤ b)
+    (c : χ.dn.C i (orCaseFwd E₁ E₂ i w x)) :
+    (((orCaseBack E₁ E₂ i w x g c).countP fun y => y.1 = k : ℕ) : ℕ∞) ≤
+      max (u₁ k.succ + u₁ 0 * b) (u₂ k.succ + u₂ 0 * b) := by
+  cases x with
+  | inl a =>
+    refine le_max_of_le_left ?_
+    simp only [orCaseBack, Multiset.countP_add, Nat.cast_add]
+    exact add_le_add (le_trans (Nat.cast_le.2 (countP_filterMap_le
+        (m := E₁.back i (consW i a w) c) _ _ (fun y => y.1 = k.succ)
+        (fun y x hx hp => by rw [tailC?_fst y x hx, hp]))) (h₁ a rfl k.succ c))
+      ((countP_bind_le _ _ _ _ fun x _ => hg x).trans (mul_le_mul_of_nonneg_right
+        (le_trans (Nat.cast_le.2 (card_filterMap_le _ _ (fun y x hx => headC?_fst y x hx) _))
+          (h₁ a rfl 0 c)) (by simp)))
+  | inr b' =>
+    refine le_max_of_le_right ?_
+    simp only [orCaseBack, Multiset.countP_add, Nat.cast_add]
+    exact add_le_add (le_trans (Nat.cast_le.2 (countP_filterMap_le
+        (m := E₂.back i (consW i b' w) c) _ _ (fun y => y.1 = k.succ)
+        (fun y x hx hp => by rw [tailC?_fst y x hx, hp]))) (h₂ b' rfl k.succ c))
+      ((countP_bind_le _ _ _ _ fun x _ => hg x).trans (mul_le_mul_of_nonneg_right
+        (le_trans (Nat.cast_le.2 (card_filterMap_le _ _ (fun y x hx => headC?_fst y x hx) _))
+          (h₂ b' rfl 0 c)) (by simp)))
+
 /-- The demand of a case analysis on hypothesis `k`: in the selected branch, its uses of `k`
 plus its uses of the disjunct times the bound `b` on the demand of the disjunction. -/
 theorem orCaseBack_countP_le {φ ψ χ : Form I} {Γ : Fin n → Form I}
@@ -590,111 +761,139 @@ theorem orCaseBack_countP_le {φ ψ χ : Form I} {Γ : Fin n → Form I}
     (hg : ∀ c, (((g c).countP fun y => y.1 = k : ℕ) : ℕ∞) ≤ b)
     (c : χ.dn.C i (orCaseFwd E₁ E₂ i w x)) :
     (((orCaseBack E₁ E₂ i w x g c).countP fun y => y.1 = k : ℕ) : ℕ∞) ≤
-      max (u₁ k.succ + u₁ 0 * b) (u₂ k.succ + u₂ 0 * b) := by
-  cases x with
-  | inl a =>
-    refine le_max_of_le_left ?_
-    simp only [orCaseBack, Multiset.countP_add, Nat.cast_add]
-    exact add_le_add (le_trans (Nat.cast_le.2 (countP_filterMap_le
-        (m := E₁.back i (consW i a w) c) _ _ (fun y => y.1 = k.succ)
-        (fun y x hx hp => by rw [tailC?_fst y x hx, hp]))) (h₁ k.succ i _ c))
-      ((countP_bind_le _ _ _ _ fun x _ => hg x).trans (mul_le_mul_of_nonneg_right
-        (le_trans (Nat.cast_le.2 (card_filterMap_le _ _ (fun y x hx => headC?_fst y x hx) _))
-          (h₁ 0 i _ c)) (by simp)))
-  | inr b' =>
-    refine le_max_of_le_right ?_
-    simp only [orCaseBack, Multiset.countP_add, Nat.cast_add]
-    exact add_le_add (le_trans (Nat.cast_le.2 (countP_filterMap_le
-        (m := E₂.back i (consW i b' w) c) _ _ (fun y => y.1 = k.succ)
-        (fun y x hx hp => by rw [tailC?_fst y x hx, hp]))) (h₂ k.succ i _ c))
-      ((countP_bind_le _ _ _ _ fun x _ => hg x).trans (mul_le_mul_of_nonneg_right
-        (le_trans (Nat.cast_le.2 (card_filterMap_le _ _ (fun y x hx => headC?_fst y x hx) _))
-          (h₂ 0 i _ c)) (by simp)))
+      max (u₁ k.succ + u₁ 0 * b) (u₂ k.succ + u₂ 0 * b) :=
+  orCaseBack_countP_le_of E₁ E₂ u₁ u₂ k i w x (fun _ _ k c => h₁ k i _ c)
+    (fun _ _ k c => h₂ k i _ c) g b hg c
 
 namespace Deriv
 
-/-- The demand bounds of a derivation: on each hypothesis by its use count, and on the premise
-of an implication by `argUses`. -/
-theorem bounds {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) :
-    (∀ k i w c, (((d.realize.back i w c).countP fun x => x.1 = k : ℕ) : ℕ∞) ≤ d.useCount k) ∧
-      ArgBound d.realize d.argUses := by
+/-- **Hereditary demand bounds.** For a witness `w` of the context respecting the annotation `δ`,
+the realizer of a derivation demands at most `(d.uses δ T).1 k` counter-witnesses of hypothesis
+`k`, and its witness of the conclusion respects the demand `(d.uses δ T).2`. -/
+theorem bounds_resp {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) (T : HomDem.{u}) :
+    ∀ (δ : Option (∀ k, (Γ k).Dem)) (i : I) (w : (ctx Γ).W i), ctxResp Γ δ i w →
+      (∀ k c, (((d.realize.back i w c).countP fun x => x.1 = k : ℕ) : ℕ∞) ≤ (d.uses δ T).1 k) ∧
+        φ.Resp (d.uses δ T).2 i (d.realize.fwd i w) := by
   induction d with
   | hyp j =>
-    refine ⟨fun k i w c => ?_, argBound_top _⟩
-    simp only [realize, useCount, uses]
-    by_cases h : k = j
-    · subst h
-      simp only [↓reduceIte]
-      exact_mod_cast (Multiset.countP_le_card _ _).trans (Multiset.card_singleton _).le
-    · simp only [h, ↓reduceIte, nonpos_iff_eq_zero, Nat.cast_eq_zero, Multiset.countP_eq_zero]
-      intro x hx
-      rw [Multiset.mem_singleton.1 hx]
-      exact fun e => h e.symm
-  | topI => exact ⟨fun k i w c => by simp [realize, useCount, uses], argBound_top _⟩
+    intro δ i w hw
+    refine ⟨fun k c => ?_, ?_⟩
+    · simp only [realize, uses]
+      by_cases h : k = j
+      · subst h
+        simp only [↓reduceIte]
+        exact_mod_cast (Multiset.countP_le_card _ _).trans (Multiset.card_singleton _).le
+      · simp only [h, ↓reduceIte, nonpos_iff_eq_zero, Nat.cast_eq_zero, Multiset.countP_eq_zero]
+        intro x hx
+        rw [Multiset.mem_singleton.1 hx]
+        exact fun e => h e.symm
+    · cases δ with
+      | none => exact Form.resp_demTop _ i _
+      | some δ => exact hw j
+  | topI => exact fun δ i w _ => ⟨fun k c => by simp [realize, uses], trivial⟩
   | andI d e ihd ihe =>
-    refine ⟨fun k i w c => ?_, argBound_top _⟩
+    intro δ i w hw
+    obtain ⟨hd₁, hd₂⟩ := ihd δ i w hw
+    obtain ⟨he₁, he₂⟩ := ihe δ i w hw
+    refine ⟨fun k c => ?_, ⟨hd₂, he₂⟩⟩
     cases c with
-    | inl c => exact (ihd.1 k i w c).trans (le_max_left _ _)
-    | inr c => exact (ihe.1 k i w c).trans (le_max_right _ _)
-  | andE₁ d ih => exact ⟨fun k i w c => ih.1 k i w _, argBound_top _⟩
-  | andE₂ d ih => exact ⟨fun k i w c => ih.1 k i w _, argBound_top _⟩
+    | inl c => exact (hd₁ k c).trans (le_max_left _ _)
+    | inr c => exact (he₁ k c).trans (le_max_right _ _)
+  | andE₁ d ih =>
+    exact fun δ i w hw => ⟨fun k c => (ih δ i w hw).1 k _, (ih δ i w hw).2.1⟩
+  | andE₂ d ih =>
+    exact fun δ i w hw => ⟨fun k c => (ih δ i w hw).1 k _, (ih δ i w hw).2.2⟩
   | impI d ih =>
-    refine ⟨fun k i w c => ?_, fun i w a c => ?_⟩
+    intro δ i w hw
+    have h := fun a => ih _ i _ (ctxResp_cons hw _ (Form.resp_demTop _ i a))
+    refine ⟨fun k c => ?_, fun a => ⟨fun c => ?_, (h a).2⟩⟩
     · exact le_trans (Nat.cast_le.2 (countP_filterMap_le (m := d.realize.back i (consW i c.1 w) c.2)
         _ _ (fun y => y.1 = k.succ)
-        (fun y x hx hp => by rw [tailC?_fst y x hx, hp]))) (ih.1 k.succ i _ c.2)
-    · refine le_trans (Nat.cast_le.2 ?_) (ih.1 0 i _ c)
+        (fun y x hx hp => by rw [tailC?_fst y x hx, hp]))) ((h c.1).1 k.succ c.2)
+    · refine le_trans (Nat.cast_le.2 ?_) ((h a).1 0 c)
       exact card_filterMap_le _ _ (fun y x hx => headC?_fst y x hx) _
   | impE d e ihd ihe =>
-    refine ⟨fun k i w c => ?_, argBound_top _⟩
-    simp only [realize, useCount, uses, Multiset.countP_add, Nat.cast_add]
-    exact add_le_add (ihd.1 k i w _) ((countP_bind_le _ _ _ _ fun x _ => ihe.1 k i w x).trans
-      (mul_le_mul_of_nonneg_right (ihd.2 i w _ c) (by simp)))
-  | orI₁ d ih => exact ⟨fun k i w c => ih.1 k i w _, argBound_top _⟩
-  | orI₂ d ih => exact ⟨fun k i w c => ih.1 k i w _, argBound_top _⟩
+    intro δ i w hw
+    obtain ⟨hd₁, hd₂⟩ := ihd δ i w hw
+    obtain ⟨he₁, -⟩ := ihe δ i w hw
+    refine ⟨fun k c => ?_, (hd₂ _).2⟩
+    simp only [realize, uses, Multiset.countP_add, Nat.cast_add]
+    exact add_le_add (hd₁ k _) ((countP_bind_le _ _ _ _ fun x _ => he₁ k x).trans
+      (mul_le_mul_of_nonneg_right ((hd₂ _).1 c) (by simp)))
+  | orI₁ d ih => exact fun δ i w hw => ⟨fun k c => (ih δ i w hw).1 k _, (ih δ i w hw).2⟩
+  | orI₂ d ih => exact fun δ i w hw => ⟨fun k c => (ih δ i w hw).1 k _, (ih δ i w hw).2⟩
   | orE d e₁ e₂ ihd ih₁ ih₂ =>
-    exact ⟨fun k i w c => orCaseBack_countP_le _ _ _ _ ih₁.1 ih₂.1 k i w _ _ _ (ihd.1 k i w) c,
-      argBound_top _⟩
-  | allI d ih => exact ⟨fun k i w c => ih.1 k ⟨i, c.1⟩ w c.2, argBound_top _⟩
-  | allE t d ih => exact ⟨fun k i w c => ih.1 k i w _, argBound_top _⟩
-  | exI t d ih => exact ⟨fun k i w c => ih.1 k i w _, argBound_top _⟩
-  | exE d e ihd ihe =>
-    refine ⟨fun k i w c => ?_, argBound_top _⟩
-    simp only [realize, useCount, uses, Multiset.countP_add, Nat.cast_add, Multiset.countP_map,
+    intro δ i w hw
+    obtain ⟨hd₁, hd₂⟩ := ihd δ i w hw
+    refine ⟨fun k c => orCaseBack_countP_le_of _ _ _ _ k i w _ (fun a hx => ?_) (fun a hx => ?_)
+      _ _ (hd₁ k) c, Form.resp_demTop _ i _⟩
+    · rw [hx] at hd₂
+      exact (ih₁ _ i _ (ctxResp_cons hw _ hd₂)).1
+    · rw [hx] at hd₂
+      exact (ih₂ _ i _ (ctxResp_cons hw _ hd₂)).1
+  | allI d ih =>
+    intro δ i w hw
+    have h := fun x => ih δ ⟨i, x⟩ w (by cases δ <;> exact hw)
+    exact ⟨fun k c => (h c.1).1 k c.2, fun x => (h x).2⟩
+  | allE t d ih =>
+    exact fun δ i w hw => ⟨fun k c => (ih δ i w hw).1 k _, (ih δ i w hw).2 (t i)⟩
+  | exI t d ih => exact fun δ i w hw => ⟨fun k c => (ih δ i w hw).1 k _, (ih δ i w hw).2⟩
+  | @exE _ _ Γ K φ _ d e ihd ihe =>
+    intro δ i w hw
+    obtain ⟨hd₁, hd₂⟩ := ihd δ i w hw
+    have hw' : ctxResp (fun k => (Γ k).sub (Sigma.fst : (Σ i, K i) → _)) δ
+        ⟨i, (d.realize.fwd i w).1⟩ w := by
+      cases δ <;> exact hw
+    have he := ihe _ ⟨i, (d.realize.fwd i w).1⟩ (consW _ (d.realize.fwd i w).2 w)
+      (ctxResp_cons (φ := φ) hw' _ hd₂)
+    refine ⟨fun k c => ?_, he.2⟩
+    simp only [realize, uses, Multiset.countP_add, Nat.cast_add, Multiset.countP_map,
       ← Multiset.countP_eq_card_filter]
     refine add_le_add (le_trans (Nat.cast_le.2 (countP_filterMap_le
         (m := e.realize.back ⟨i, (d.realize.fwd i w).1⟩ (consW _ (d.realize.fwd i w).2 w) c)
         _ _ (fun y => y.1 = k.succ)
         (fun y x hx hp => by rw [tailC?_fst y x hx]; exact congrArg Fin.succ hp) ))
-        (ihe.1 k.succ ⟨i, (d.realize.fwd i w).1⟩ (consW _ (d.realize.fwd i w).2 w) c)) ?_
-    refine (countP_bind_le _ _ _ _ fun x _ => ihd.1 k i w x).trans
+        (he.1 k.succ c)) ?_
+    refine (countP_bind_le _ _ _ _ fun x _ => hd₁ k x).trans
       (mul_le_mul_of_nonneg_right ?_ (by simp))
-    refine le_trans (Nat.cast_le.2 ?_)
-      (ihe.1 0 ⟨i, (d.realize.fwd i w).1⟩ (consW _ (d.realize.fwd i w).2 w) c)
+    refine le_trans (Nat.cast_le.2 ?_) (he.1 0 c)
     exact card_filterMap_le _ _ (fun y x hx => headC?_fst y x hx) _
   | ac d ih =>
-    refine ⟨fun k i w c => ?_, argBound_top _⟩
+    intro δ i w hw
+    refine ⟨fun k c => ?_, Form.resp_demTop _ i _⟩
     change ((Multiset.countP _ (({_} : Multiset _).bind (d.realize.back i w)) : ℕ) : ℕ∞) ≤ _
     exact (congrArg (fun m => ((Multiset.countP (fun x => x.1 = k) m : ℕ) : ℕ∞))
-      (Multiset.singleton_bind _ (d.realize.back i w))).trans_le (ih.1 k i w _)
+      (Multiset.singleton_bind _ (d.realize.back i w))).trans_le ((ih δ i w hw).1 k _)
   | ip p hL d ih =>
-    refine ⟨fun k i w c => ?_, argBound_top _⟩
+    intro δ i w hw
+    refine ⟨fun k c => ?_, Form.resp_demTop _ i _⟩
     change ((Multiset.countP _ (({_} : Multiset _).bind (d.realize.back i w)) : ℕ) : ℕ∞) ≤ _
     exact (congrArg (fun m => ((Multiset.countP (fun x => x.1 = k) m : ℕ) : ℕ∞))
-      (Multiset.singleton_bind _ (d.realize.back i w))).trans_le (ih.1 k i w _)
+      (Multiset.singleton_bind _ (d.realize.back i w))).trans_le ((ih δ i w hw).1 k _)
   | markov p q d ih =>
-    refine ⟨fun k i w c => ?_, argBound_top _⟩
+    intro δ i w hw
+    refine ⟨fun k c => ?_, trivial⟩
     change ((Multiset.countP _ (({_} : Multiset _).bind (d.realize.back i w)) : ℕ) : ℕ∞) ≤ _
     exact (congrArg (fun m => ((Multiset.countP (fun x => x.1 = k) m : ℕ) : ℕ∞))
-      (Multiset.singleton_bind _ (d.realize.back i w))).trans_le (ih.1 k i w _)
+      (Multiset.singleton_bind _ (d.realize.back i w))).trans_le ((ih δ i w hw).1 k _)
   | hom f N hN hev d ih =>
-    refine ⟨fun k i w c => ?_, argBound_top _⟩
-    exact (countP_bind_le _ _ _ _ fun x _ => ih.1 k i w x).trans
+    intro δ i w hw
+    refine ⟨fun k c => ?_, T.sound f _ i _ (ih δ i w hw).2⟩
+    exact (countP_bind_le _ _ _ _ fun x _ => (ih δ i w hw).1 k x).trans
       (mul_le_mul_of_nonneg_right (by exact_mod_cast hN i _ c) (by simp))
   | atom₂ h d e ihd ihe =>
-    refine ⟨fun k i w c => ?_, argBound_top _⟩
-    simp only [realize, useCount, uses, Multiset.countP_add, Nat.cast_add]
-    exact add_le_add (ihd.1 k i w _) (ihe.1 k i w _)
+    intro δ i w hw
+    refine ⟨fun k c => ?_, trivial⟩
+    simp only [realize, uses, Multiset.countP_add, Nat.cast_add]
+    exact add_le_add ((ihd δ i w hw).1 k _) ((ihe δ i w hw).1 k _)
+
+/-- The demand bounds of a derivation: on each hypothesis by its use count, and on the premise
+of an implication by `argUses`. -/
+theorem bounds {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) :
+    (∀ k i w c, (((d.realize.back i w c).countP fun x => x.1 = k : ℕ) : ℕ∞) ≤ d.useCount k) ∧
+      ArgBound d.realize d.argUses :=
+  ⟨fun k i w c => (d.bounds_resp HomDem.top none i w trivial).1 k c,
+    argBound_of_resp _ _ fun i w => (d.bounds_resp HomDem.top none i w trivial).2⟩
 
 /-- **Quantitative soundness.** The realizer of a derivation demands at most `useCount d k`
 counter-witnesses of hypothesis `k`. -/
@@ -852,6 +1051,74 @@ def conv {φ ψ : Form I} (d : Deriv Γ φ) (h : φ.dn = ψ.dn := by rfl)
     (hev : ∀ i, φ.eval i → ψ.eval i) (k : Fin n) :
     (conv d h hev).useCount k = d.useCount k := by
   simp [conv]
+
+/-- The transport of demands that keeps the demand of the source along every morphism that
+carries it: when the source and target have the same type of demands and the morphism sends
+witnesses respecting the demand to witnesses respecting it, and `⊤` otherwise. -/
+noncomputable def _root_.CatCrypt.Container.DNLogic.HomDem.keep : HomDem.{u} where
+  map {_ φ ψ} f D :=
+    @dite _ (∃ e : φ.Dem = ψ.Dem, ∀ i w, φ.Resp D i w → ψ.Resp (cast e D) i (f.fwd i w))
+      (Classical.propDecidable _) (fun h => cast h.choose D) fun _ => ψ.demTop
+  sound {_ φ ψ} f D i w hw := by
+    split
+    · next h => exact h.choose_spec i w hw
+    · exact Form.resp_demTop ψ i _
+
+/-- `HomDem.keep` keeps the demand along a morphism that carries it. -/
+theorem _root_.CatCrypt.Container.DNLogic.HomDem.keep_map {φ ψ : Form I} (f : φ.dn.Hom ψ.dn)
+    (D : φ.Dem) (e : φ.Dem = ψ.Dem)
+    (h : ∀ i w, φ.Resp D i w → ψ.Resp (cast e D) i (f.fwd i w)) :
+    HomDem.keep.map f D = cast e D := by
+  change @dite _ _ (Classical.propDecidable _) _ _ = _
+  exact dite_eq_left ⟨e, h⟩
+
+/-- Under the transport `HomDem.keep`, the demand of a conversion is the demand of the converted
+derivation, when the conversion carries it. -/
+theorem uses_conv_keep {φ ψ : Form I} (d : Deriv Γ φ) (h : φ.dn = ψ.dn)
+    (hev : ∀ i, φ.eval i → ψ.eval i) (δ : Option (∀ k, (Γ k).Dem)) (e : φ.Dem = ψ.Dem)
+    (hR : ∀ D i w, φ.Resp D i w → ψ.Resp (cast e D) i ((homOfEq h).fwd i w)) :
+    ((conv d h hev).uses δ HomDem.keep).2 = cast e (d.uses δ HomDem.keep).2 :=
+  HomDem.keep_map _ _ e (hR _)
+
+/-- The cut of the negative translation of an `∃`-introduction at the term `t`: the hypothesis
+`∀ x, ¬ X x`, instantiated at `t` and converted to `¬ X t`, applied to a derivation `e` of
+`X t`. -/
+def exICut {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K i) {Δ : Fin n → Form I}
+    (e : Deriv (consF (.all (Form.not X)) Δ) (X.sub fun i => ⟨i, t i⟩)) :
+    Deriv (consF (.all (Form.not X)) Δ) Form.bot :=
+  .impE (conv (ψ := Form.not (X.sub fun i => (⟨i, t i⟩ : Σ i, K i)))
+    (.allE t (.hyp ⟨0, Nat.succ_pos _⟩))) e
+
+/-- **Use counts of the cut of an `∃`-introduction.** When the hypothesis `∀ x, ¬ X x` is
+declared to demand at most `N` counter-witnesses of `X x`, the cut uses hypothesis `k` as often
+as the instantiation does plus `N` times the uses of `k` by `e`. -/
+theorem uses_exICut {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K i) {Δ : Fin n → Form I}
+    (e : Deriv (consF (.all (Form.not X)) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
+    (δ : ∀ k, (Δ k).Dem) (k : Fin (n + 1)) :
+    ((exICut X t e).uses (some (consD ((N, ()) : (Form.all (Form.not X)).Dem) δ))
+        HomDem.keep).1 k =
+      1 * (if k = 0 then 1 else 0) +
+        N * (e.uses (some (consD ((N, ()) : (Form.all (Form.not X)).Dem) δ)) HomDem.keep).1 k := by
+  have hm := HomDem.keep_map
+    (homOfEq (P := ((Form.not X).sub fun i => (⟨i, t i⟩ : Σ i, K i)).dn)
+      (Q := (Form.not (X.sub fun i => (⟨i, t i⟩ : Σ i, K i))).dn) rfl) ((N, ()) : ℕ∞ × Unit) rfl
+    (fun _ _ hw => hw)
+  simp only [exICut, conv, uses]
+  erw [hm]
+  rfl
+
+/-- The cut of an `∃`-introduction has finite use counts when the declared demand `N` and the use
+counts of `e` are finite. -/
+theorem uses_exICut_lt_top {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K i)
+    {Δ : Fin n → Form I}
+    (e : Deriv (consF (.all (Form.not X)) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
+    (δ : ∀ k, (Δ k).Dem) (k : Fin (n + 1)) (hN : N < ⊤)
+    (he : (e.uses (some (consD ((N, ()) : (Form.all (Form.not X)).Dem) δ)) HomDem.keep).1 k < ⊤) :
+    ((exICut X t e).uses (some (consD ((N, ()) : (Form.all (Form.not X)).Dem) δ))
+        HomDem.keep).1 k < ⊤ := by
+  rw [uses_exICut]
+  refine ENat.add_lt_top.2 ⟨?_, WithTop.mul_lt_top hN he⟩
+  split_ifs <;> simp
 
 /-- An atom from two atoms uses each hypothesis as often as both premises together (the
 unfolding equation of `useCount` at `atom₂`). -/
