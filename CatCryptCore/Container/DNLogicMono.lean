@@ -58,6 +58,8 @@ of `x + 2` by `Classical.choose` and has the majorant `m ↦ m + 2`, whose bound
 ## Main results
 
 * `Form.maj_join` — majorization is upward closed along the join of majorants;
+* `Deriv.bnd_hyp`, `Deriv.bnd_impE_fst`, `Deriv.bnd_impE_snd`, … — the unfolding lemmas of
+  `Deriv.bnd`, one for each rule and each component of the bound;
 * `Deriv.bnd_sound` — soundness of the monotone interpretation;
 * `Deriv.allEx_costMaj`, `Deriv.exists_le_pi2Bound` — bound extraction at the Π⁰₂ level;
 * `CDeriv.extract_costMaj`, `CDeriv.exists_le_extract_pi2Bound` — the same for classical
@@ -406,7 +408,240 @@ def bnd : {I : Type u} → {n : ℕ} → {Γ : Fin n → Form I} → {φ : Form 
   | _, _, _, _, .atom₂ _ d e, R, D, hm, m =>
     ((), fun _ k => (bnd d R D.1 hm m).2 () k ++ (bnd e R D.2 hm m).2 () k)
 
+/-! ### Unfolding lemmas of `bnd`
+
+One lemma for each rule and each component of the bound: `_fst` gives the majorant of the
+conclusion and `_snd` the counter-witness majorants. Each mentions only the components of the
+bounds of the premises that it reads, so that `simp only` with these lemmas unfolds the bound of
+a concrete derivation without expanding the components that the result does not read. -/
+
+section Unfold
+
+variable {Γ : Fin n → Form I} (R : ℕ → I → Prop) (hm : CtxB Γ) (m : ℕ)
+
+/-- Unfolding lemma of `bnd` at a hypothesis. -/
+theorem bnd_hyp (k : Fin n) (D : MajD σ (Deriv.hyp (Γ := Γ) k) R) :
+    bnd σ (.hyp k) R D hm m = (hm k, fun bc j => if h : j = k then [h ▸ bc] else []) := rfl
+
+/-- Unfolding lemma of `bnd` at `⊤`-introduction. -/
+theorem bnd_topI (D : MajD σ (Deriv.topI (Γ := Γ)) R) :
+    bnd σ .topI R D hm m = ((), fun _ _ => []) := rfl
+
+section Props
+
+variable {φ ψ χ : Form I}
+
+/-- Unfolding lemma of the majorant of `bnd` at a conjunction introduction. -/
+theorem bnd_andI_fst (d : Deriv Γ φ) (e : Deriv Γ ψ) (D : MajD σ (.andI d e) R) :
+    (bnd σ (.andI d e) R D hm m).1 = ((bnd σ d R D.1 hm m).1, (bnd σ e R D.2 hm m).1) := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at a conjunction introduction. -/
+theorem bnd_andI_snd (d : Deriv Γ φ) (e : Deriv Γ ψ) (D : MajD σ (.andI d e) R) :
+    (bnd σ (.andI d e) R D hm m).2 = fun bc k => Sum.elim (fun b => (bnd σ d R D.1 hm m).2 b k)
+      (fun b => (bnd σ e R D.2 hm m).2 b k) bc := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at the first conjunction elimination. -/
+theorem bnd_andE₁_fst (d : Deriv Γ (.and φ ψ)) (D : MajD σ (.andE₁ d) R) :
+    (bnd σ (.andE₁ d) R D hm m).1 = (bnd σ d R D hm m).1.1 := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at the first conjunction
+elimination. -/
+theorem bnd_andE₁_snd (d : Deriv Γ (.and φ ψ)) (D : MajD σ (.andE₁ d) R) :
+    (bnd σ (.andE₁ d) R D hm m).2 = fun bc k => (bnd σ d R D hm m).2 (.inl bc) k := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at the second conjunction elimination. -/
+theorem bnd_andE₂_fst (d : Deriv Γ (.and φ ψ)) (D : MajD σ (.andE₂ d) R) :
+    (bnd σ (.andE₂ d) R D hm m).1 = (bnd σ d R D hm m).1.2 := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at the second conjunction
+elimination. -/
+theorem bnd_andE₂_snd (d : Deriv Γ (.and φ ψ)) (D : MajD σ (.andE₂ d) R) :
+    (bnd σ (.andE₂ d) R D hm m).2 = fun bc k => (bnd σ d R D hm m).2 (.inr bc) k := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at an implication introduction. -/
+theorem bnd_impI_fst (d : Deriv (consF φ Γ) ψ) (D : MajD σ (.impI d) R) :
+    (bnd σ (.impI d) R D hm m).1 = (fun a => (bnd σ d R D (consB a hm) m).1,
+      fun a bc => (bnd σ d R D (consB a hm) m).2 bc ⟨0, Nat.succ_pos _⟩) := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at an implication
+introduction. -/
+theorem bnd_impI_snd (d : Deriv (consF φ Γ) ψ) (D : MajD σ (.impI d) R) :
+    (bnd σ (.impI d) R D hm m).2 =
+      fun (bc : (Form.imp φ ψ).Bc) (k : Fin n) => (bnd σ d R D (consB bc.1 hm) m).2 bc.2 k.succ :=
+  rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at an implication elimination. -/
+theorem bnd_impE_fst (d : Deriv Γ (.imp φ ψ)) (e : Deriv Γ φ) (D : MajD σ (.impE d e) R) :
+    (bnd σ (.impE d e) R D hm m).1 = (bnd σ d R D.1 hm m).1.1 (bnd σ e R D.2 hm m).1 := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at an implication elimination. -/
+theorem bnd_impE_snd (d : Deriv Γ (.imp φ ψ)) (e : Deriv Γ φ) (D : MajD σ (.impE d e) R) :
+    (bnd σ (.impE d e) R D hm m).2 = fun bc k => (bnd σ d R D.1 hm m).2
+      ((bnd σ e R D.2 hm m).1, bc) k ++
+        ((bnd σ d R D.1 hm m).1.2 (bnd σ e R D.2 hm m).1 bc).flatMap
+          fun b => (bnd σ e R D.2 hm m).2 b k := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at the first disjunction introduction. -/
+theorem bnd_orI₁_fst (d : Deriv Γ φ) (D : MajD σ (.orI₁ (ψ := ψ) d) R) :
+    (bnd σ (.orI₁ (ψ := ψ) d) R D hm m).1 = ((bnd σ d R D hm m).1, ψ.bdef) := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at the first disjunction
+introduction. -/
+theorem bnd_orI₁_snd (d : Deriv Γ φ) (D : MajD σ (.orI₁ (ψ := ψ) d) R) :
+    (bnd σ (.orI₁ (ψ := ψ) d) R D hm m).2 =
+      fun bc k => Sum.elim (fun b => (bnd σ d R D hm m).2 b k) (fun _ => []) bc := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at the second disjunction introduction. -/
+theorem bnd_orI₂_fst (d : Deriv Γ ψ) (D : MajD σ (.orI₂ (φ := φ) d) R) :
+    (bnd σ (.orI₂ (φ := φ) d) R D hm m).1 = (φ.bdef, (bnd σ d R D hm m).1) := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at the second disjunction
+introduction. -/
+theorem bnd_orI₂_snd (d : Deriv Γ ψ) (D : MajD σ (.orI₂ (φ := φ) d) R) :
+    (bnd σ (.orI₂ (φ := φ) d) R D hm m).2 =
+      fun bc k => Sum.elim (fun _ => []) (fun b => (bnd σ d R D hm m).2 b k) bc := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at a case analysis. -/
+theorem bnd_orE_fst (d : Deriv Γ (.or φ ψ)) (e₁ : Deriv (consF φ Γ) χ)
+    (e₂ : Deriv (consF ψ Γ) χ) (D : MajD σ (.orE d e₁ e₂) R) :
+    (bnd σ (.orE d e₁ e₂) R D hm m).1 =
+      χ.join (bnd σ e₁ R D.2.1 (consB (bnd σ d R D.1 hm m).1.1 hm) m).1
+        (bnd σ e₂ R D.2.2 (consB (bnd σ d R D.1 hm m).1.2 hm) m).1 := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at a case analysis. -/
+theorem bnd_orE_snd (d : Deriv Γ (.or φ ψ)) (e₁ : Deriv (consF φ Γ) χ)
+    (e₂ : Deriv (consF ψ Γ) χ) (D : MajD σ (.orE d e₁ e₂) R) :
+    (bnd σ (.orE d e₁ e₂) R D hm m).2 =
+      orBack (bnd σ d R D.1 hm m).2 (bnd σ e₁ R D.2.1 (consB (bnd σ d R D.1 hm m).1.1 hm) m).2
+        (bnd σ e₂ R D.2.2 (consB (bnd σ d R D.1 hm m).1.2 hm) m).2 := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at a realized axiom. -/
+theorem bnd_hom_fst (f : φ.dn.Hom ψ.dn) (N : ℕ) (hN : ∀ i w c, (f.back i w c).card ≤ N)
+    (hev : ∀ i, φ.eval i → ψ.eval i) (d : Deriv Γ φ) (D : MajD σ (.hom f N hN hev d) R) :
+    (bnd σ (.hom f N hN hev d) R D hm m).1 = D.2.1.1 m (bnd σ d R D.1 hm m).1 := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at a realized axiom. -/
+theorem bnd_hom_snd (f : φ.dn.Hom ψ.dn) (N : ℕ) (hN : ∀ i w c, (f.back i w c).card ≤ N)
+    (hev : ∀ i, φ.eval i → ψ.eval i) (d : Deriv Γ φ) (D : MajD σ (.hom f N hN hev d) R) :
+    (bnd σ (.hom f N hN hev d) R D hm m).2 = fun bc k =>
+      (D.2.1.2 m (bnd σ d R D.1 hm m).1 bc).flatMap fun b => (bnd σ d R D.1 hm m).2 b k := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at the atom rule. -/
+theorem bnd_atom₂_fst {p q s : I → Prop} (h : ∀ i, p i → q i → s i) (d : Deriv Γ (.atom p))
+    (e : Deriv Γ (.atom q)) (D : MajD σ (.atom₂ h d e) R) :
+    (bnd σ (.atom₂ h d e) R D hm m).1 = () := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at the atom rule. -/
+theorem bnd_atom₂_snd {p q s : I → Prop} (h : ∀ i, p i → q i → s i) (d : Deriv Γ (.atom p))
+    (e : Deriv Γ (.atom q)) (D : MajD σ (.atom₂ h d e) R) :
+    (bnd σ (.atom₂ h d e) R D hm m).2 =
+      fun _ k => (bnd σ d R D.1 hm m).2 () k ++ (bnd σ e R D.2 hm m).2 () k := rfl
+
+end Props
+
+section Quant
+
+variable {K : I → Type u} {φ : Form (Σ i, K i)}
+
+/-- Unfolding lemma of the majorant of `bnd` at a `∀`-introduction: the bound of the premise at
+the larger environment. -/
+theorem bnd_allI_fst (d : Deriv (fun k => (Γ k).sub Sigma.fst) φ) (D : MajD σ (.allI d) R) :
+    (bnd σ (.allI d) R D hm m).1 = fun m' =>
+      (@bnd σ _ _ (fun k => (Γ k).sub Sigma.fst) φ d (envExt σ R K) D hm (max m m')).1 := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at a `∀`-introduction. -/
+theorem bnd_allI_snd (d : Deriv (fun k => (Γ k).sub Sigma.fst) φ) (D : MajD σ (.allI d) R) :
+    (bnd σ (.allI d) R D hm m).2 = fun bc k =>
+      (@bnd σ _ _ (fun k => (Γ k).sub Sigma.fst) φ d (envExt σ R K) D hm (max m bc.1)).2 bc.2 k :=
+  rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at a `∀`-elimination: the majorant of the premise
+at the bound of the term. -/
+theorem bnd_allE_fst (t : ∀ i, K i) (d : Deriv Γ (.all φ)) (D : MajD σ (.allE t d) R) :
+    (bnd σ (.allE t d) R D hm m).1 = (bnd σ d R D.2 hm m).1 (D.1.1 m) := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at a `∀`-elimination. -/
+theorem bnd_allE_snd (t : ∀ i, K i) (d : Deriv Γ (.all φ)) (D : MajD σ (.allE t d) R) :
+    (bnd σ (.allE t d) R D hm m).2 = fun bc k => (bnd σ d R D.2 hm m).2 (D.1.1 m, bc) k := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at an `∃`-introduction: the bound of the term and
+the majorant of the premise. -/
+theorem bnd_exI_fst (t : ∀ i, K i) (d : Deriv Γ (φ.sub fun i => (⟨i, t i⟩ : Σ i, K i)))
+    (D : MajD σ (.exI (φ := φ) t d) R) :
+    (bnd σ (.exI (φ := φ) t d) R D hm m).1 = (D.1.1 m, (bnd σ d R D.2 hm m).1) := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at an `∃`-introduction. -/
+theorem bnd_exI_snd (t : ∀ i, K i) (d : Deriv Γ (φ.sub fun i => (⟨i, t i⟩ : Σ i, K i)))
+    (D : MajD σ (.exI (φ := φ) t d) R) :
+    (bnd σ (.exI (φ := φ) t d) R D hm m).2 = (bnd σ d R D.2 hm m).2 := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at an `∃`-elimination: the bound of the second
+premise at the environment enlarged by the bound of the witness. -/
+theorem bnd_exE_fst {ψ : Form I} (d : Deriv Γ (.ex φ))
+    (e : Deriv (consF φ fun k => (Γ k).sub Sigma.fst) (ψ.sub Sigma.fst))
+    (D : MajD σ (.exE d e) R) :
+    (bnd σ (.exE d e) R D hm m).1 = (bnd σ e (envExt σ R K) D.2
+      (consB (bnd σ d R D.1 hm m).1.2 hm) (max m (bnd σ d R D.1 hm m).1.1)).1 := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at an `∃`-elimination. -/
+theorem bnd_exE_snd {ψ : Form I} (d : Deriv Γ (.ex φ))
+    (e : Deriv (consF φ fun k => (Γ k).sub Sigma.fst) (ψ.sub Sigma.fst))
+    (D : MajD σ (.exE d e) R) :
+    (bnd σ (.exE d e) R D hm m).2 = fun bc k => List.append (α := (Γ k).Bc)
+      ((bnd σ e (envExt σ R K) D.2 (consB (bnd σ d R D.1 hm m).1.2 hm)
+        (max m (bnd σ d R D.1 hm m).1.1)).2 bc k.succ)
+      (((bnd σ e (envExt σ R K) D.2 (consB (bnd σ d R D.1 hm m).1.2 hm)
+        (max m (bnd σ d R D.1 hm m).1.1)).2 bc ⟨0, Nat.succ_pos _⟩).flatMap
+          fun b => (bnd σ d R D.1 hm m).2 b k) := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at Markov's principle. -/
+theorem bnd_markov_fst (p : (Σ i, K i) → Prop) (q : I → Prop)
+    (d : Deriv Γ (.imp (.all (.atom p)) (.atom q))) (D : MajD σ (.markov p q d) R) :
+    (bnd σ (.markov p q d) R D hm m).1 = D.2.1.1 m (bnd σ d R D.1 hm m).1 := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at Markov's principle. -/
+theorem bnd_markov_snd (p : (Σ i, K i) → Prop) (q : I → Prop)
+    (d : Deriv Γ (.imp (.all (.atom p)) (.atom q))) (D : MajD σ (.markov p q d) R) :
+    (bnd σ (.markov p q d) R D hm m).2 = fun bc k =>
+      (D.2.1.2 m (bnd σ d R D.1 hm m).1 bc).flatMap fun b => (bnd σ d R D.1 hm m).2 b k := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at independence of premise. -/
+theorem bnd_ip_fst {L : I → Type u} (p : (Σ i, K i) → Prop) {ψ : Form (Σ i, L i)}
+    (hL : ∀ i, Nonempty (L i)) (d : Deriv Γ (.imp (.all (.atom p)) (.ex ψ)))
+    (D : MajD σ (.ip p hL d) R) :
+    (bnd σ (.ip p hL d) R D hm m).1 = D.2.1.1 m (bnd σ d R D.1 hm m).1 := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at independence of premise. -/
+theorem bnd_ip_snd {L : I → Type u} (p : (Σ i, K i) → Prop) {ψ : Form (Σ i, L i)}
+    (hL : ∀ i, Nonempty (L i)) (d : Deriv Γ (.imp (.all (.atom p)) (.ex ψ)))
+    (D : MajD σ (.ip p hL d) R) :
+    (bnd σ (.ip p hL d) R D hm m).2 = fun bc k =>
+      (D.2.1.2 m (bnd σ d R D.1 hm m).1 bc).flatMap fun b => (bnd σ d R D.1 hm m).2 b k := rfl
+
+/-- Unfolding lemma of the majorant of `bnd` at the axiom of choice. -/
+theorem bnd_ac_fst {L : (Σ i, K i) → Type u} {φ : Form (Σ x : Σ i, K i, L x)}
+    (d : Deriv Γ (.all (.ex φ))) (D : MajD σ (.ac d) R) :
+    (bnd σ (.ac d) R D hm m).1 = D.2.1.1 m (bnd σ d R D.1 hm m).1 := rfl
+
+/-- Unfolding lemma of the counter-witness majorants of `bnd` at the axiom of choice. -/
+theorem bnd_ac_snd {L : (Σ i, K i) → Type u} {φ : Form (Σ x : Σ i, K i, L x)}
+    (d : Deriv Γ (.all (.ex φ))) (D : MajD σ (.ac d) R) :
+    (bnd σ (.ac d) R D hm m).2 = fun bc k =>
+      (D.2.1.2 m (bnd σ d R D.1 hm m).1 bc).flatMap fun b => (bnd σ d R D.1 hm m).2 b k := rfl
+
+end Quant
+
+end Unfold
+
 variable {σ}
+
+/-- The majorant of the new hypothesis of an extended context. -/
+theorem consB_zero {φ : Form I} {Γ : Fin n → Form I} (a : φ.B) (hm : CtxB Γ) (h : 0 < n + 1) :
+    consB a hm ⟨0, h⟩ = a := rfl
+
+/-- The majorant of an old hypothesis of an extended context. -/
+theorem consB_succ {φ : Form I} {Γ : Fin n → Form I} (a : φ.B) (hm : CtxB Γ) (k : Fin n) :
+    consB a hm k.succ = hm k := rfl
 
 /-- Soundness of a case analysis for the majorants: the join of the majorants of the two branches
 majorizes the selected branch, and `orBack` covers its demand. -/
