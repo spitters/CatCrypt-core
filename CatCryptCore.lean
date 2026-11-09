@@ -115,6 +115,7 @@ public import CatCryptCore.Complexity.D.GenericGroup
 public import CatCryptCore.Complexity.D.RespB
 public import CatCryptCore.Complexity.D.RespB.Basic
 public import CatCryptCore.Complexity.D.FreeThm
+public import CatCryptCore.Complexity.D.FreeThmApps
 public import CatCryptCore.Complexity.D.DNHered
 public import CatCryptCore.Complexity.D.OpenTree
 public import CatCryptCore.Complexity.D.DNHeredFull
