@@ -14,8 +14,9 @@ public import CatCryptCore.Complexity.D.FreeNI
 
 A term of D whose group is a finite ground type `g` and whose group operations are variables of
 its context is a generic algorithm in the sense of Maurer (the type-safe model of Zhandry): its
-results on two representations of the group correspond under the isomorphism, at equal cost. This module derives
-the statement from the abstraction theorem of D with cost (`Tm.abstraction_cost`).
+results on two representations of the group correspond under the isomorphism, at equal cost.
+This module derives the statement from the abstraction theorem of D with cost
+(`Tm.abstraction_cost`).
 
 The operations are a record `GrpOps` (multiplication, inverse, unit) on the carrier `g.den`; the
 group laws play no part. The context `homCtx g` holds the operations, and `isoCtx g` adds an
