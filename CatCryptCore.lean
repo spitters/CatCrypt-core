@@ -728,6 +728,7 @@ public import CatCryptCore.Container.DNLogicForking
 public import CatCryptCore.Container.DNLogicNeg
 public import CatCryptCore.Container.DNLogicMono
 public import CatCryptCore.Container.DNLogicMonoClassical
+public import CatCryptCore.Container.DNLogicMetastable
 public import CatCryptCore.Container.DNLogicTestHybrid
 public import CatCryptCore.Container.DNLogicTestPrimes
 public import CatCryptCore.Container.DNBang
