@@ -731,6 +731,7 @@ public import CatCryptCore.Container.DNLogicMonoClassical
 public import CatCryptCore.Container.DNLogicMetastable
 public import CatCryptCore.Container.DNLogicTestHybrid
 public import CatCryptCore.Container.DNLogicTestPrimes
+public import CatCryptCore.Container.DNLogicTestMonotone
 public import CatCryptCore.Container.DNBang
 public import CatCryptCore.Container.DialecticaCat
 public import CatCryptCore.Container.DNGraded
