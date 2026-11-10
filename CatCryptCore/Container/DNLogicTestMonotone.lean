@@ -55,7 +55,12 @@ the atom at every `m ∈ G n`, and every candidate is at most the abstract bound
 * `cauchyDeriv`, `cauchyMajData` — the classical derivation of the Cauchy statement and its
   majorant data;
 * `cauchyHm`, `cauchyHm_maj` — the majorants of the translated hypotheses;
-* `cauchy_candidates` — the candidates of the counterexample reading and their bound.
+* `cauchy_candidates` — the candidates of the counterexample reading and their bound;
+* `monotone_metastable_bound` — the metastable statement on `[N, N + g N]` with `N` at most the
+  extracted bound `cauchyBound`, from the counterexample reading at `n ↦ {n + g n}`;
+* `monotone_metastable_iterate`, `monotone_metastable_rate` — by the telescoping argument, one of
+  the first `k + 1` iterates of `n ↦ n + g n` at `0` is such a point, and the rate
+  `N ≤ g̃^(k+1) 0` for `g̃ n = n + gᴹ n`; this bound is not read from `cauchyBound`.
 
 ## References
 
@@ -572,5 +577,94 @@ theorem cauchy_candidates (hmono : Monotone a) (h0 : ∀ i, 0 ≤ a i) (h1 : ∀
   CDeriv.exAll_candidates idS idS idS (cauchyRel a) (cauchyDeriv a) R0
     (fun _ _ _ _ _ => trivial) (cauchyMajData a) (cauchyHm hmono h0 h1) 0 PUnit.unit trivial
     (cauchyW hmono h0 h1) (cauchyHm_maj hmono h0 h1) (cauchyW_mat hmono h0 h1) k k le_rfl G Gs hG
+
+/-! ## The metastable statement and its rate -/
+
+/-- The step `n ↦ n + g n` of the rate of metastability. -/
+def iterStep (g : ℕ → ℕ) (n : ℕ) : ℕ := n + g n
+
+/-- The step of a function lies below the step of its running maximum, in Howard's sense. -/
+theorem iterStep_le_partialSups (g : ℕ → ℕ) {n x : ℕ} (hnx : n ≤ x) :
+    iterStep g n ≤ iterStep (partialSups g) x := by
+  have hg : g n ≤ partialSups g x := le_partialSups_of_le g hnx
+  unfold iterStep
+  omega
+
+/-- At a monotone function, the running maximum leaves the step unchanged. -/
+theorem iterStep_partialSups_of_monotone {g : ℕ → ℕ} (hg : Monotone g) :
+    iterStep (partialSups g) = iterStep g := by
+  rw [hg.partialSups_eq]
+
+/-- The iterates at `0` of a step are nondecreasing in the number of iterations. -/
+theorem iterStep_iterate_mono (g : ℕ → ℕ) : Monotone fun j => (iterStep g)^[j] 0 :=
+  monotone_nat_of_le_succ fun j => by
+    rw [Function.iterate_succ_apply']
+    exact Nat.le_add_right _ _
+
+/-- The increment of a nondecreasing sequence over `[N, M]` bounds the distance of any two of its
+values on that interval. -/
+theorem abs_sub_le_of_endpoints (hmono : Monotone a) {N M i j : ℕ} {ε : ℚ}
+    (hε : a M - a N ≤ ε) (hi : i ∈ Set.Icc N M) (hj : j ∈ Set.Icc N M) : |a i - a j| ≤ ε := by
+  have h1 := hmono hi.1
+  have h2 := hmono hi.2
+  have h3 := hmono hj.1
+  have h4 := hmono hj.2
+  rw [abs_sub_le_iff]
+  constructor <;> linarith
+
+/-- **Metastability with the extracted bound.** The counterexample reading `cauchy_candidates` at
+the counterexample function `n ↦ {n + g n}`, with the running maximum of `g` as majorant, gives a
+point `N` at most the abstract bound `cauchyBound` on whose interval `[N, N + g N]` the sequence
+varies by at most `1 / (k + 1)`. -/
+theorem monotone_metastable_bound (hmono : Monotone a) (h0 : ∀ i, 0 ≤ a i) (h1 : ∀ i, a i ≤ 1)
+    (k : ℕ) (g : ℕ → ℕ) :
+    ∃ N ≤ cauchyBound a hmono h0 h1 k (fun j => [iterStep (partialSups g) j]),
+      ∀ i ∈ Set.Icc N (N + g N), ∀ j ∈ Set.Icc N (N + g N),
+        |a i - a j| ≤ 1 / ((k : ℚ) + 1) := by
+  have hG : ∀ y j, y ≤ j → ∀ z ∈ ({y + g y} : Multiset ℕ),
+      ∃ b ∈ [iterStep (partialSups g) j], z ≤ b := by
+    intro y j hyj z hz
+    obtain rfl := Multiset.mem_singleton.1 hz
+    exact ⟨_, List.mem_singleton_self _, iterStep_le_partialSups g hyj⟩
+  obtain ⟨hle, y, hy, hp⟩ := cauchy_candidates hmono h0 h1 k (fun n => {n + g n})
+    (fun j => [iterStep (partialSups g) j]) hG
+  have hgap : a (y + g y) - a y ≤ 1 / ((k : ℚ) + 1) :=
+    hp _ (Multiset.mem_singleton_self _) (Nat.le_add_right _ _)
+  exact ⟨y, hle y hy, fun i hi j hj => abs_sub_le_of_endpoints hmono hgap hi hj⟩
+
+/-- **The telescoping argument at the iterates.** One of the first `k + 1` iterates at `0` of the
+step of `g` is a point `N` on whose interval `[N, N + g N]` the sequence varies by at most
+`1 / (k + 1)`. -/
+theorem monotone_metastable_iterate (hmono : Monotone a) (h0 : ∀ i, 0 ≤ a i) (h1 : ∀ i, a i ≤ 1)
+    (k : ℕ) (g : ℕ → ℕ) :
+    ∃ j ≤ k, ∀ i ∈ Set.Icc ((iterStep g)^[j] 0) ((iterStep g)^[j] 0 + g ((iterStep g)^[j] 0)),
+      ∀ i' ∈ Set.Icc ((iterStep g)^[j] 0) ((iterStep g)^[j] 0 + g ((iterStep g)^[j] 0)),
+        |a i - a i'| ≤ 1 / ((k : ℚ) + 1) := by
+  by_contra hne
+  refine telescope_gt h0 h1 (k := k) (K := k + 1) le_rfl (x := fun j => (iterStep g)^[j] 0)
+    fun j hj => ?_
+  by_contra hle
+  refine hne ⟨j, Nat.le_of_lt_succ hj, fun i hi i' hi' =>
+    abs_sub_le_of_endpoints hmono (not_lt.1 ?_) hi hi'⟩
+  simpa only [Function.iterate_succ_apply', iterStep] using hle
+
+/-- **The rate of metastability**, by the telescoping argument; the bound is not read from
+`cauchyBound`, the bound of the extraction in `monotone_metastable_bound`. For
+`g̃ n = n + gᴹ n`, with `gᴹ` the running maximum of `g`, there is `N ≤ g̃^(k+1) 0` on whose
+interval `[N, N + g N]` the sequence varies by at most `1 / (k + 1)`. At a monotone `g`, `g̃` is
+`n ↦ n + g n` (`iterStep_partialSups_of_monotone`) and this is the rate of Sipoş and Tao at
+`ε = 1 / (k + 1)`. -/
+theorem monotone_metastable_rate (hmono : Monotone a) (h0 : ∀ i, 0 ≤ a i) (h1 : ∀ i, a i ≤ 1)
+    (k : ℕ) (g : ℕ → ℕ) :
+    ∃ N ≤ (iterStep (partialSups g))^[k + 1] 0,
+      ∀ i ∈ Set.Icc N (N + g N), ∀ j ∈ Set.Icc N (N + g N),
+        |a i - a j| ≤ 1 / ((k : ℚ) + 1) := by
+  obtain ⟨j, hj, hp⟩ := monotone_metastable_iterate hmono h0 h1 k g
+  refine ⟨_, ?_, hp⟩
+  calc (iterStep g)^[j] 0
+      ≤ (iterStep (partialSups g))^[j] 0 :=
+        iter_le_iter_of_maj (fun _ _ h => iterStep_le_partialSups g h) j
+    _ ≤ (iterStep (partialSups g))^[k + 1] 0 :=
+        iterStep_iterate_mono _ (Nat.le_succ_of_le hj)
 
 end CatCrypt.Container.DNLogic.Monotone
