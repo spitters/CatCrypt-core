@@ -76,14 +76,14 @@ variable {I : Type u} {X : I → Type u} {Y : (Σ i, X i) → Type u} {Wt : I �
 
 /-- The body of the choice formula: the chosen function answers every point correctly. -/
 abbrev choiceBody (a : (Σ x : Σ i, X i, Y x) → Prop) : Form (Σ i, ∀ k : X i, Y ⟨i, k⟩) :=
-  .all (K := fun p => X p.1) ((Form.atom a).sub fun y => ⟨⟨y.1.1, y.2⟩, y.1.2 y.2⟩)
+  .all (K := fun p => X p.1) (sz := 0) ((Form.atom a).sub fun y => ⟨⟨y.1.1, y.2⟩, y.1.2 y.2⟩)
 
 /-- The formula `∃ z, R (i, z)`. -/
-abbrev exAtom (R : (Σ i, Wt i) → Prop) : Form I := .ex (K := Wt) (.atom R)
+abbrev exAtom (R : (Σ i, Wt i) → Prop) : Form I := .ex (K := Wt) (sz := 0) (.atom R)
 
 /-- The formula `∀ _ : PUnit, ∃ z, R (i, z)`, the oracle form of `Deriv.program`. -/
 abbrev allExUnit (R : (Σ i, Wt i) → Prop) : Form I :=
-  Deriv.allEx (X := fun _ => PUnit.{u + 1}) (Y := fun x => Wt x.1) fun y => R ⟨y.1.1, y.2⟩
+  Deriv.allEx (X := fun _ => PUnit.{u + 1}) (Y := fun x => Wt x.1) 0 0 fun y => R ⟨y.1.1, y.2⟩
 
 /-- Decoding as a realized axiom: the decoded value `D i g` from a chosen function `g`, which
 demands the counter-witnesses at the points of `e i`. -/
@@ -119,9 +119,9 @@ def extract (a : (Σ x : Σ i, X i, Y x) → Prop) (R : (Σ i, Wt i) → Prop)
     (e : ∀ i, Multiset (X i)) (N : ℕ) (hN : ∀ i, (e i).card ≤ N)
     (D : ∀ i, (∀ k : X i, Y ⟨i, k⟩) → Wt i)
     (hD : ∀ i g, (∀ k ∈ e i, a ⟨⟨i, k⟩, g k⟩) → R ⟨i, D i g⟩) :
-    Deriv (fun _ : Fin 1 => Deriv.allEx a) (allExUnit R) :=
+    Deriv (fun _ : Fin 1 => Deriv.allEx 0 0 a) (allExUnit R) :=
   .hom (exToAll R) 1 (fun _ _ _ => le_of_eq (Multiset.card_singleton _)) (exToAll_eval R)
-    (.exE (.ac (φ := .atom a) (.hyp 0))
+    (.exE (.ac (sF := 0) (φ := .atom a) (.hyp 0))
       (.hom (decodeHom a R e D hD) N (fun q _ _ => (Multiset.card_map _ _).trans_le (hN q.1))
         (decode_eval a R e D hD)
         (.hyp (Γ := consF (choiceBody a) _) ⟨0, Nat.zero_lt_succ 1⟩)))
@@ -185,7 +185,7 @@ theorem lagrangeDecode_eq (hx : Set.InjOn x s) (f : DealerPoly (F := F) s) (g : 
 /-- **Threshold reconstruction** as a derivation from the hypothesis that every party of `s`
 gives its share: the realizer computes the secret by Lagrange interpolation at `0`. -/
 noncomputable def thresholdDeriv (hx : Set.InjOn x s) :
-    Deriv (fun _ : Fin 1 => Deriv.allEx (X := fun _ => ↥s) (Y := fun _ => F) (shareRel s x))
+    Deriv (fun _ : Fin 1 => Deriv.allEx (X := fun _ => ↥s) (Y := fun _ => F) 0 0 (shareRel s x))
       (Decode.allExUnit (Wt := fun _ => F) (secretRel s)) :=
   Decode.extract (X := fun _ => ↥s) (Y := fun _ => F) (Wt := fun _ => F) (shareRel s x)
     (secretRel s) (fun _ => Finset.univ.val) s.card
@@ -231,7 +231,7 @@ variable {I J : Type u} [Fintype J] {V : J → Type u} {Wt : I → Type u}
 the statement, a decoding function `D` of the opened views gives a witness. -/
 def viewDeriv (cons : I → ∀ j, V j → Prop) (R : (Σ i, Wt i) → Prop) (D : ∀ i, (∀ j, V j) → Wt i)
     (hD : ∀ i v, (∀ j, cons i j (v j)) → R ⟨i, D i v⟩) :
-    Deriv (fun _ : Fin 1 => Deriv.allEx (X := fun _ => J) (Y := fun q => V q.2)
+    Deriv (fun _ : Fin 1 => Deriv.allEx (X := fun _ => J) (Y := fun q => V q.2) 0 0
       fun y => cons y.1.1 y.1.2 y.2) (Decode.allExUnit R) :=
   Decode.extract (X := fun _ => J) (Y := fun q => V q.2) _ R (fun _ => Finset.univ.val)
     (Fintype.card J) (fun _ => by simp) D fun i v hv => hD i v fun j => hv j (Finset.mem_univ j)
@@ -270,7 +270,7 @@ responses by `Ext` gives a witness. -/
 def rewindDeriv (acc : (Σ x : Σ i, Ch i, Z x) → Prop) (R : (Σ i, Wt i) → Prop)
     (ch : ∀ i, J → Ch i) (Ext : ∀ i, (∀ j, Z ⟨i, ch i j⟩) → Wt i)
     (hExt : ∀ i zs, (∀ j, acc ⟨⟨i, ch i j⟩, zs j⟩) → R ⟨i, Ext i zs⟩) :
-    Deriv (fun _ : Fin 1 => Deriv.allEx acc) (Decode.allExUnit R) :=
+    Deriv (fun _ : Fin 1 => Deriv.allEx 0 0 acc) (Decode.allExUnit R) :=
   Decode.extract acc R (fun i => Finset.univ.val.map (ch i)) (Fintype.card J) (fun _ => by simp)
     (fun i g => Ext i fun j => g (ch i j))
     fun i g hg => hExt i _ fun j => hg _ (Multiset.mem_map_of_mem _ (Finset.mem_univ j))

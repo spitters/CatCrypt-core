@@ -1,1 +1,3 @@
 name	removed_in	successor	decision	note
+CatCrypt.Container.DNLogic.natSize	0a4d58f	CatCrypt.Container.DNLogic.allExNat	-	a size on every type is replaced by the size on each quantifier; allExNat states the identity size at the naturals
+CatCrypt.Container.DNLogic.natSize_nat	0a4d58f	CatCrypt.Container.DNLogic.allExNat	-	the equation of natSize at the naturals; allExNat carries the identity size directly

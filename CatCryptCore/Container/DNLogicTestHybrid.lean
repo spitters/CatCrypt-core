@@ -125,9 +125,12 @@ theorem averaging (q : ℕ+) (h : Hybrids) (H : ∀ j < (q : ℕ), ¬ gapAt q h 
           field_simp
   linarith [hε.2]
 
+/-- The size of a hop index: the index itself. An instance has size `0`. -/
+abbrev indS {I : Type} : I → ℕ → ℕ := fun _ => id
+
 /-- The triangle hypothesis `∀ x, ¬ ∀ j, ¬ gapRel (x, j)`. -/
 abbrev triForm : Form ℕ+ :=
-  .all (K := HK) (.imp (.all (K := HL) (Form.not (.atom gapRel))) Form.bot)
+  .all (K := HK) (sz := 0) (.imp (.all (K := HL) (sz := indS) (Form.not (.atom gapRel))) Form.bot)
 
 /-- Conversion of classical derivations whose side conditions hold by unfolding the
 interpretations. -/
@@ -139,22 +142,22 @@ def cconv {I : Type} {n : ℕ} {Γ : Fin n → Form I} {φ ψ : Form I} (d : CDe
 
 /-- The instance at the bound variable of a universal formula reindexed along `Sigma.fst`, in
 classical derivations. -/
-def cInstSelf {I : Type} {n : ℕ} {K : I → Type} {X : Form (Σ i, K i)}
-    {Δ : Fin n → Form (Σ i, K i)} (d : CDeriv Δ ((Form.all (K := K) X).sub Sigma.fst)) :
+def cInstSelf {I : Type} {n : ℕ} {K : I → Type} {s : ∀ i, K i → ℕ} {X : Form (Σ i, K i)}
+    {Δ : Fin n → Form (Σ i, K i)} (d : CDeriv Δ ((Form.all (K := K) (sz := s) X).sub Sigma.fst)) :
     CDeriv Δ X :=
-  cconv (.allE (K := fun x : Σ i, K i => K x.1) (φ := X.sub fun y => ⟨y.1.1, y.2⟩)
-    (fun x => x.2) (cconv d))
+  cconv (.allE (K := fun x : Σ i, K i => K x.1) (s := fun x => s x.1)
+    (φ := X.sub fun y => ⟨y.1.1, y.2⟩) (fun x => x.2) (cconv d))
 
 /-- **The classical derivation of the averaging step**: for every instance, by reductio, the
 assumption that no index has the gap property contradicts the triangle hypothesis. -/
 def hybridCDeriv :
-    CDeriv (fun _ : Fin 1 => triForm) (Deriv.allEx (X := HK) (Y := HL) gapRel) :=
+    CDeriv (fun _ : Fin 1 => triForm) (Deriv.allEx (X := HK) (Y := HL) 0 indS gapRel) :=
   .allI (.raa (.impE (cInstSelf (.hyp ⟨1, by omega⟩))
     (.allI (.impI (cconv
-      (.impE (cconv (ψ := .imp ((Form.ex (K := HL) (.atom gapRel)).sub Sigma.fst)
+      (.impE (cconv (ψ := .imp ((Form.ex (K := HL) (sz := indS) (.atom gapRel)).sub Sigma.fst)
           ((Form.bot : Form (Σ _ : ℕ+, Hybrids)).sub Sigma.fst)) (.hyp ⟨1, by omega⟩))
         (cconv
-          (.exI (K := fun y : Σ x : Σ _ : ℕ+, Hybrids, ℕ => HL y.1)
+          (.exI (K := fun y : Σ x : Σ _ : ℕ+, Hybrids, ℕ => HL y.1) (s := indS)
             (φ := (Form.atom gapRel).sub fun z => ⟨z.1.1, z.2⟩) (fun y => y.2)
             (cconv (.hyp ⟨0, by omega⟩))))))))))
 
@@ -208,10 +211,14 @@ theorem gapSel_spec (x : Σ _ : ℕ+, Hybrids) (ys : Multiset ℕ)
   rw [gapSel, he]
   exact (Finset.mem_filter.1 hj).2
 
+/-- The size of a multiset of candidate indices: its maximum. -/
+abbrev gapMS : ∀ _ : Σ _ : ℕ+, Hybrids, Multiset ℕ → ℕ :=
+  CDeriv.supSize (K := HK) (L := HL) indS
+
 /-- **The extracted index finder**: `CDeriv.extract` of the classical derivation at the witness
 of the translated triangle hypothesis, with the selection `gapSel`. -/
 def hybridFinder (q : ℕ+) (h : Hybrids) : ℕ :=
-  CDeriv.extract gapRel gapSel gapSel_spec hybridCDeriv q (triCtxW q) h
+  CDeriv.extract gapRel gapSel gapSel_spec gapMS hybridCDeriv q (triCtxW q) h
 
 /-- **Correctness of the index finder.** When the end points are at distance at least `ε > 0`,
 the extracted index `j` satisfies `j < q` and `ε / q ≤ |a (j + 1) - a j|`. -/
@@ -219,15 +226,16 @@ theorem hybridFinder_spec (q : ℕ+) (h : Hybrids) (hε : 0 < h.ε)
     (hd : h.ε ≤ |h.a q - h.a 0|) :
     hybridFinder q h < (q : ℕ) ∧
       h.ε / q ≤ |h.a (hybridFinder q h + 1) - h.a (hybridFinder q h)| :=
-  CDeriv.extract_spec gapRel gapSel gapSel_spec hybridCDeriv q (triCtxW q) (triCtxW_mat q) h hε
-    hd
+  CDeriv.extract_spec gapRel gapSel gapSel_spec gapMS hybridCDeriv q (triCtxW q) (triCtxW_mat q) h
+    hε hd
 
 /-! ## Use count -/
 
 /-- The extraction composed with the translation of the triangle hypothesis: a derivation of the
 Π⁰₂ statement from the untranslated hypothesis. -/
-def hybridFull : Deriv (fun _ : Fin 1 => triForm) (Deriv.allEx (X := HK) (Y := HL) gapRel) :=
-  .impE (CDeriv.pi2Imp gapRel gapSel gapSel_spec _)
+def hybridFull :
+    Deriv (fun _ : Fin 1 => triForm) (Deriv.allEx (X := HK) (Y := HL) 0 indS gapRel) :=
+  .impE (CDeriv.pi2Imp gapRel gapSel gapSel_spec gapMS _)
     (.impE (.impI (hybridCDeriv.toDerivAt (consF triForm.negT fun _ : Fin 1 => triForm)
       (fun _ => 0) fun _ => rfl)) triNegT)
 

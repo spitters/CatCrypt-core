@@ -80,8 +80,8 @@ def negT : {I : Type u} → Form I → Form I
   | _, .and φ ψ => .and φ.negT ψ.negT
   | _, .imp φ ψ => .imp φ.negT ψ.negT
   | _, .or φ ψ => Form.not (.and (Form.not φ.negT) (Form.not ψ.negT))
-  | _, .all φ => .all φ.negT
-  | _, .ex φ => Form.not (.all (Form.not φ.negT))
+  | _, .all (sz := s) φ => .all (sz := s) φ.negT
+  | _, .ex (sz := s) φ => Form.not (.all (sz := s) (Form.not φ.negT))
   | _, .sub h φ => .sub h φ.negT
 
 end Form
@@ -117,18 +117,22 @@ inductive CDeriv : {I : Type u} → {n : ℕ} → (Fin n → Form I) → Form I 
   | orE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {φ ψ χ : Form I} (d : CDeriv Γ (.or φ ψ))
       (e₁ : CDeriv (consF φ Γ) χ) (e₂ : CDeriv (consF ψ Γ) χ) : CDeriv Γ χ
   /-- `∀`-introduction: a derivation over the extended sort context. -/
-  | allI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      (d : CDeriv (fun k => (Γ k).sub Sigma.fst) φ) : CDeriv Γ (.all φ)
+  | allI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      (d : CDeriv (fun k => (Γ k).sub Sigma.fst) φ) : CDeriv Γ (.all (sz := s) φ)
   /-- `∀`-elimination at a term `t`. -/
-  | allE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      (t : ∀ i, K i) (d : CDeriv Γ (.all φ)) : CDeriv Γ (φ.sub fun i => ⟨i, t i⟩)
+  | allE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      (t : ∀ i, K i) (d : CDeriv Γ (.all (sz := s) φ)) : CDeriv Γ (φ.sub fun i => ⟨i, t i⟩)
   /-- `∃`-introduction at a term `t`. -/
-  | exI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      (t : ∀ i, K i) (d : CDeriv Γ (φ.sub fun i => ⟨i, t i⟩)) : CDeriv Γ (.ex φ)
+  | exI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      (t : ∀ i, K i) (d : CDeriv Γ (φ.sub fun i => ⟨i, t i⟩)) : CDeriv Γ (.ex (sz := s) φ)
   /-- `∃`-elimination: the body becomes the hypothesis at position `0` over the extended sort
   context. -/
-  | exE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      {ψ : Form I} (d : CDeriv Γ (.ex φ))
+  | exE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      {ψ : Form I} (d : CDeriv Γ (.ex (sz := s) φ))
       (e : CDeriv (consF φ fun k => (Γ k).sub Sigma.fst) (ψ.sub Sigma.fst)) : CDeriv Γ ψ
   /-- Reductio ad absurdum. -/
   | raa {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {φ : Form I}
@@ -194,10 +198,11 @@ def castC {Γ : Fin n → Form I} {φ ψ : Form I} (e : φ = ψ) (d : Deriv Γ �
   rfl
 
 /-- The instance at the bound variable of a universal formula reindexed along `Sigma.fst`. -/
-def instSelf {K : I → Type u} {X : Form (Σ i, K i)} {Δ : Fin n → Form (Σ i, K i)}
-    (d : Deriv Δ ((Form.all (K := K) X).sub Sigma.fst)) : Deriv Δ X :=
-  conv (allE (K := fun x : Σ i, K i => K x.1) (φ := X.sub fun y => ⟨y.1.1, y.2⟩)
-    (fun x => x.2) (conv d))
+def instSelf {K : I → Type u} {s : ∀ i, K i → ℕ} {X : Form (Σ i, K i)}
+    {Δ : Fin n → Form (Σ i, K i)}
+    (d : Deriv Δ ((Form.all (K := K) (sz := s) X).sub Sigma.fst)) : Deriv Δ X :=
+  conv (allE (K := fun x : Σ i, K i => K x.1) (s := fun x => s x.1)
+    (φ := X.sub fun y => ⟨y.1.1, y.2⟩) (fun x => x.2) (conv d))
 
 /-- The stability derivation `¬¬X → X` of a formula `X`. -/
 abbrev Stab {m : ℕ} (Δ : Fin m → Form I) (X : Form I) : Type (u + 1) :=
@@ -229,11 +234,11 @@ def stabImp {X Y : Form I} (sY : ∀ (m : ℕ) (Δ : Fin m → Form I), Stab Δ 
     (impI (impE (hyp ⟨1, by omega⟩) (impE (hyp ⟨0, by omega⟩) (hyp ⟨2, by omega⟩))))))))
 
 /-- A universal quantification of a stable formula is stable. -/
-def stabAll {K : I → Type u} {X : Form (Σ i, K i)}
+def stabAll {K : I → Type u} {s : ∀ i, K i → ℕ} {X : Form (Σ i, K i)}
     (sX : ∀ (m : ℕ) (Δ : Fin m → Form (Σ i, K i)), Stab Δ X) {m : ℕ} (Δ : Fin m → Form I) :
-    Stab Δ (.all X) :=
+    Stab Δ (.all (sz := s) X) :=
   impI (allI (impE (sX _ _) (impI (impE
-    (conv (ψ := Form.not (Form.not ((Form.all X).sub Sigma.fst))) (hyp ⟨1, by omega⟩))
+    (conv (ψ := Form.not (Form.not ((Form.all (sz := s) X).sub Sigma.fst))) (hyp ⟨1, by omega⟩))
     (impI (impE (hyp ⟨1, by omega⟩) (instSelf (hyp ⟨0, by omega⟩))))))))
 
 /-- Stability of a translated formula under a substitution. -/
@@ -247,9 +252,11 @@ def stabSub : {I : Type u} → (φ : Form I) → {J : Type u} → (h : J → I) 
     conv (stabImp (X := φ.negT.sub h) (fun _ Δ' => stabSub ψ h Δ') Δ)
   | _, .or φ ψ, _, h, _, Δ =>
     conv (stabNot Δ ((Form.and (Form.not φ.negT) (Form.not ψ.negT)).sub h))
-  | _, .all (K := K) φ, _, h, _, Δ =>
-    conv (stabAll (K := fun j => K (h j)) (fun _ Δ' => stabSub φ (fun x => ⟨h x.1, x.2⟩) Δ') Δ)
-  | _, .ex φ, _, h, _, Δ => conv (stabNot Δ ((Form.all (Form.not φ.negT)).sub h))
+  | _, .all (K := K) (sz := s) φ, _, h, _, Δ =>
+    conv (stabAll (K := fun j => K (h j)) (s := fun j => s (h j))
+      (fun _ Δ' => stabSub φ (fun x => ⟨h x.1, x.2⟩) Δ') Δ)
+  | _, .ex (sz := s) φ, _, h, _, Δ =>
+    conv (stabNot Δ ((Form.all (sz := s) (Form.not φ.negT)).sub h))
   | _, .sub g φ, _, h, _, Δ => conv (stabSub φ (fun j => g (h j)) Δ)
 
 /-- **Stability.** Every negative translation is stable: `¬¬φᴺ → φᴺ` is derivable in every
@@ -315,10 +322,10 @@ def toDerivAt : {I : Type u} → {n : ℕ} → {Γ : Fin n → Form I} → {φ :
     .allI (d.toDerivAt (fun k => (Δ k).sub Sigma.fst) ρ
       fun k => congrArg (Form.sub Sigma.fst) (h k))
   | _, _, _, _, .allE t d, _, Δ, ρ, h => .allE t (d.toDerivAt Δ ρ h)
-  | _, _, _, _, .exI (K := K) (φ := φ) t d, _, Δ, ρ, h =>
+  | _, _, _, _, .exI (K := K) (s := s) (φ := φ) t d, _, Δ, ρ, h =>
     .impI (.impE (Deriv.conv (ψ := Form.not (φ.negT.sub fun i => (⟨i, t i⟩ : Σ i, K i)))
         (.allE t (.hyp ⟨0, Nat.succ_pos _⟩)))
-      (d.toDerivAt (consF (.all (Form.not φ.negT)) Δ) (fun k => (ρ k).succ) h))
+      (d.toDerivAt (consF (.all (sz := s) (Form.not φ.negT)) Δ) (fun k => (ρ k).succ) h))
   | _, _, Γ, _, .exE (K := K) (φ := φ) (ψ := ψ) d e, _, Δ, ρ, h =>
     .impE (Deriv.stab ψ Δ) (.impI (.impE
       (d.toDerivAt (consF (Form.not ψ.negT) Δ) (fun k => (ρ k).succ) h)
@@ -355,12 +362,14 @@ section Pi2
 variable {K : I → Type u} {L : (Σ i, K i) → Type u} (p : (Σ x : Σ i, K i, L x) → Prop)
   (sel : ∀ x : Σ i, K i, Multiset (L x) → L x)
   (hsel : ∀ x ys, ((∀ y ∈ ys, ¬ p ⟨x, y⟩) → False) → p ⟨x, sel x ys⟩)
+  (sM : ∀ x : Σ i, K i, Multiset (L x) → ℕ)
+  {sX : ∀ i, K i → ℕ} {sY : ∀ x, L x → ℕ}
 
 /-- The selection of a candidate: from a multiset of candidates not all of which fail `p`, the
 candidate chosen by `sel`, demanding the one counter-witness of the premise. -/
-def selHom : (Form.ex (K := fun x : Σ i, K i => Multiset (L x))
+def selHom : (Form.ex (K := fun x : Σ i, K i => Multiset (L x)) (sz := sM)
       (.atom fun z => (∀ y ∈ z.2, ¬ p ⟨z.1, y⟩) → False)).dn.Hom
-      (Form.ex (K := L) (.atom p)).dn where
+      (Form.ex (K := L) (sz := sY) (.atom p)).dn where
   fwd x w := ⟨sel x w.1, PUnit.unit⟩
   back _ _ _ := {PUnit.unit}
   sound x w _ h := hsel x w.1 (h PUnit.unit (Multiset.mem_singleton_self _))
@@ -368,12 +377,12 @@ def selHom : (Form.ex (K := fun x : Σ i, K i => Multiset (L x))
 /-- The derivation of `∀ x, ∃ y, p (x, y)` from its negative translation, by Markov's principle
 and the selection `sel`, in every context. -/
 def pi2Imp {m : ℕ} (Δ : Fin m → Form I) :
-    Deriv Δ (.imp (Deriv.allEx (X := K) (Y := L) p).negT (Deriv.allEx p)) :=
-  .impI (.allI (.hom (selHom p sel hsel) 1 (fun _ _ _ => (Multiset.card_singleton _).le)
+    Deriv Δ (.imp (Deriv.allEx (X := K) (Y := L) sX sY p).negT (Deriv.allEx sX sY p)) :=
+  .impI (.allI (.hom (selHom p sel hsel sM) 1 (fun _ _ _ => (Multiset.card_singleton _).le)
     (fun x hx => by
       obtain ⟨ys, hq⟩ := hx
       exact ⟨sel x ys, hsel x ys hq⟩)
-    (.markov (fun z => ¬ p z) (fun _ => False)
+    (.markov (fun z => ¬ p z) (sK := sY) (sM := sM) (fun _ => False)
       (.impI (.impE (Deriv.instSelf (.hyp ⟨1, by omega⟩))
         (.allI (.impI (.impE (.hyp ⟨0, by omega⟩)
           (.impI (.atom₂ (p := fun z => ¬ p z) (q := p) (fun _ hnp hp => hnp hp)
@@ -382,14 +391,15 @@ def pi2Imp {m : ℕ} (Δ : Fin m → Form I) :
 /-- **Π⁰₂ extraction.** A classical derivation of `∀ x, ∃ y, p (x, y)` gives a derivation of
 `∀ x, ∃ y, p (x, y)` from the translated hypotheses: the negative translation followed by
 Markov's principle and the selection `sel`. -/
-def pi2 {Γ : Fin n → Form I} (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) p)) :
-    Deriv (fun k => (Γ k).negT) (Deriv.allEx p) :=
-  .impE (pi2Imp p sel hsel _) c.translate
+def pi2 {Γ : Fin n → Form I} (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) sX sY p)) :
+    Deriv (fun k => (Γ k).negT) (Deriv.allEx sX sY p) :=
+  .impE (pi2Imp p sel hsel sM _) c.translate
 
 /-- The extracted derivation uses each translated hypothesis as often as the translated
 derivation does. -/
-theorem useCount_pi2 {Γ : Fin n → Form I} (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) p))
-    (k : Fin n) : (pi2 p sel hsel c).useCount k = c.translate.useCount k := by
+theorem useCount_pi2 {Γ : Fin n → Form I}
+    (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) sX sY p))
+    (k : Fin n) : (pi2 p sel hsel sM c).useCount k = c.translate.useCount k := by
   have h₁ : k.succ.succ ≠ 1 := by simp [Fin.ext_iff]
   have h₂ : k.succ.succ.succ.succ ≠ ⟨2, by omega⟩ := by simp [Fin.ext_iff]
   simp [pi2, pi2Imp, Deriv.useCount, Deriv.uses, Deriv.instSelf, Deriv.conv, h₁, h₂]
@@ -397,27 +407,29 @@ theorem useCount_pi2 {Γ : Fin n → Form I} (c : CDeriv Γ (Deriv.allEx (X := K
 
 /-- The function extracted from a classical derivation of `∀ x, ∃ y, p (x, y)`: the realizer of
 `pi2` at a witness `w` of the translated hypotheses. -/
-def extract {Γ : Fin n → Form I} (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) p)) (i : I)
+def extract {Γ : Fin n → Form I} (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) sX sY p)) (i : I)
     (w : (ctx fun k => (Γ k).negT).W i) (x : K i) : L ⟨i, x⟩ :=
-  ((pi2 p sel hsel c).realize.fwd i w x).1
+  ((pi2 p sel hsel sM c).realize.fwd i w x).1
 
 /-- **Correctness of the extracted function.** When the witness `w` withstands every
 counter-witness of the translated hypotheses, the extracted function satisfies `p`. -/
-theorem extract_spec {Γ : Fin n → Form I} (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) p))
+theorem extract_spec {Γ : Fin n → Form I}
+    (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) sX sY p))
     (i : I) (w : (ctx fun k => (Γ k).negT).W i)
     (hw : ∀ c', (ctx fun k => (Γ k).negT).mat i w c') (x : K i) :
-    p ⟨⟨i, x⟩, extract p sel hsel c i w x⟩ :=
-  (pi2 p sel hsel c).realize.sound i w ⟨x, PUnit.unit⟩ fun y _ => hw y
+    p ⟨⟨i, x⟩, extract p sel hsel sM c i w x⟩ :=
+  (pi2 p sel hsel sM c).realize.sound i w ⟨x, PUnit.unit⟩ fun y _ => hw y
 
 /-- The function extracted from a closed classical derivation of `∀ x, ∃ y, p (x, y)`. -/
-def extractClosed {Γ : Fin 0 → Form I} (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) p))
+def extractClosed {Γ : Fin 0 → Form I} (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) sX sY p))
     (i : I) (x : K i) : L ⟨i, x⟩ :=
-  extract p sel hsel c i (fun k => k.elim0) x
+  extract p sel hsel sM c i (fun k => k.elim0) x
 
 /-- **Correctness of the function extracted from a closed derivation.** -/
-theorem extractClosed_spec {Γ : Fin 0 → Form I} (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) p))
-    (i : I) (x : K i) : p ⟨⟨i, x⟩, extractClosed p sel hsel c i x⟩ :=
-  extract_spec p sel hsel c i _ (fun c' => c'.1.elim0) x
+theorem extractClosed_spec {Γ : Fin 0 → Form I}
+    (c : CDeriv Γ (Deriv.allEx (X := K) (Y := L) sX sY p))
+    (i : I) (x : K i) : p ⟨⟨i, x⟩, extractClosed p sel hsel sM c i x⟩ :=
+  extract_spec p sel hsel sM c i _ (fun c' => c'.1.elim0) x
 
 end Pi2
 

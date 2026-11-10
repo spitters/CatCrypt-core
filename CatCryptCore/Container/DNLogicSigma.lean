@@ -77,12 +77,12 @@ abbrev ChPair (E : Type u) : Type u := {p : E × E // p.1 ≠ p.2}
 
 /-- The hypothesis that the prover answers every challenge: `∀ e, ∃ z, V i e z`. -/
 abbrev answers (V : I → E → Rsp → Prop) : Form I :=
-  Deriv.allEx (X := fun _ => E) (Y := fun _ => Rsp) fun x => V x.1.1 x.1.2 x.2
+  Deriv.allEx (X := fun _ => E) (Y := fun _ => Rsp) 0 0 fun x => V x.1.1 x.1.2 x.2
 
 /-- The conclusion that every pair of distinct challenges gives a witness:
 `∀ (e₁, e₂), e₁ ≠ e₂ → ∃ w, R i w`. -/
 abbrev extracts (E : Type u) (R : I → Wit → Prop) : Form I :=
-  Deriv.allEx (X := fun _ => ChPair E) (Y := fun _ => Wit) fun x => R x.1.1 x.2
+  Deriv.allEx (X := fun _ => ChPair E) (Y := fun _ => Wit) 0 0 fun x => R x.1.1 x.2
 
 /-- Special soundness as a derivation: instantiate the hypothesis at both challenges of the pair,
 eliminate the two responses, and introduce the witness of the extraction step `ext`, whose
@@ -91,19 +91,20 @@ def ssDeriv (V : I → E → Rsp → Prop) (R : I → Wit → Prop) (ext : I →
     (hext : ∀ i e₁ e₂ z₁ z₂, e₁ ≠ e₂ → V i e₁ z₁ → V i e₂ z₂ → R i (ext i e₁ e₂ z₁ z₂)) :
     Deriv (fun _ : Fin 1 => answers V) (extracts E R) :=
   .allI <|
-  .exE (φ := .atom fun y : (Σ _ : (Σ _ : I, ChPair E), Rsp) => V y.1.1 y.1.2.1.1 y.2)
+  .exE (s := 0) (φ := .atom fun y : (Σ _ : (Σ _ : I, ChPair E), Rsp) => V y.1.1 y.1.2.1.1 y.2)
     (.conv
-      (.allE (K := fun _ : (Σ _ : I, ChPair E) => E) (t := fun j => j.2.1.1)
-        (φ := .ex (K := fun _ => Rsp) (.atom fun y => V y.1.1.1 y.1.2 y.2))
+      (.allE (K := fun _ : (Σ _ : I, ChPair E) => E) (s := 0) (t := fun j => j.2.1.1)
+        (φ := .ex (K := fun _ => Rsp) (sz := 0) (.atom fun y => V y.1.1.1 y.1.2 y.2))
         (.conv (.hyp 0)))) <|
-  .exE (φ := .atom fun y : (Σ _ : (Σ _ : (Σ _ : I, ChPair E), Rsp), Rsp) =>
+  .exE (s := 0) (φ := .atom fun y : (Σ _ : (Σ _ : (Σ _ : I, ChPair E), Rsp), Rsp) =>
       V y.1.1.1 y.1.1.2.1.2 y.2)
     (.conv
-      (.allE (K := fun _ : (Σ _ : (Σ _ : I, ChPair E), Rsp) => E) (t := fun j => j.1.2.1.2)
-        (φ := .ex (K := fun _ => Rsp) (.atom fun y => V y.1.1.1.1 y.1.2 y.2))
+      (.allE (K := fun _ : (Σ _ : (Σ _ : I, ChPair E), Rsp) => E) (s := 0)
+        (t := fun j => j.1.2.1.2)
+        (φ := .ex (K := fun _ => Rsp) (sz := 0) (.atom fun y => V y.1.1.1.1 y.1.2 y.2))
         (.conv (.hyp 1)))) <|
   .conv <|
-  .exI (K := fun _ : (Σ _ : (Σ _ : (Σ _ : I, ChPair E), Rsp), Rsp) => Wit)
+  .exI (K := fun _ : (Σ _ : (Σ _ : (Σ _ : I, ChPair E), Rsp), Rsp) => Wit) (s := 0)
     (t := fun j => ext j.1.1.1 j.1.1.2.1.1 j.1.1.2.1.2 j.1.2 j.2)
     (φ := .atom fun y => R y.1.1.1.1 y.2) <|
   .conv <|

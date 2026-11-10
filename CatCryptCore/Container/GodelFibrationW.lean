@@ -720,32 +720,43 @@ inductive WDeriv : {I : Type u} → {n : ℕ} → (Fin n → Form I) → Form I 
   | impE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {φ ψ : Form I} (d : WDeriv Γ (.imp φ ψ))
       (e : WDeriv Γ φ) : WDeriv Γ ψ
   /-- `∀`-introduction: a derivation over the extended sort context. -/
-  | allI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      (d : WDeriv (fun k => (Γ k).sub Sigma.fst) φ) : WDeriv Γ (.all φ)
+  | allI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      (d : WDeriv (fun k => (Γ k).sub Sigma.fst) φ) : WDeriv Γ (.all (sz := s) φ)
   /-- `∀`-elimination at a term `t`. -/
-  | allE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      (t : ∀ i, K i) (d : WDeriv Γ (.all φ)) : WDeriv Γ (φ.sub fun i => ⟨i, t i⟩)
+  | allE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      (t : ∀ i, K i) (d : WDeriv Γ (.all (sz := s) φ)) : WDeriv Γ (φ.sub fun i => ⟨i, t i⟩)
   /-- `∃`-introduction at a term `t`. -/
-  | exI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      (t : ∀ i, K i) (d : WDeriv Γ (φ.sub fun i => ⟨i, t i⟩)) : WDeriv Γ (.ex φ)
+  | exI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      (t : ∀ i, K i) (d : WDeriv Γ (φ.sub fun i => ⟨i, t i⟩)) : WDeriv Γ (.ex (sz := s) φ)
   /-- `∃`-elimination: the body becomes the hypothesis at position `0` over the extended sort
   context. -/
-  | exE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      {ψ : Form I} (d : WDeriv Γ (.ex φ))
+  | exE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      {ψ : Form I} (d : WDeriv Γ (.ex (sz := s) φ))
       (e : WDeriv (consF φ fun k => (Γ k).sub Sigma.fst) (ψ.sub Sigma.fst)) : WDeriv Γ ψ
-  /-- The axiom of choice: `∀ k ∃ l, φ` gives `∃ f ∀ k, φ (k, f k)`. -/
+  /-- The axiom of choice: `∀ k ∃ l, φ` gives `∃ f ∀ k, φ (k, f k)`. The size `sF` of the
+  functions is free. -/
   | ac {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {L : (Σ i, K i) → Type u}
-      {φ : Form (Σ x : Σ i, K i, L x)} (d : WDeriv Γ (.all (.ex φ))) :
-      WDeriv Γ (.ex (K := fun i => ∀ k : K i, L ⟨i, k⟩)
-        (.all (K := fun p => K p.1) (φ.sub fun y => ⟨⟨y.1.1, y.2⟩, y.1.2 y.2⟩)))
+      {sK : ∀ i, K i → ℕ} {sL : ∀ x, L x → ℕ} {sF : ∀ i, (∀ k : K i, L ⟨i, k⟩) → ℕ}
+      {φ : Form (Σ x : Σ i, K i, L x)} (d : WDeriv Γ (.all (sz := sK) (.ex (sz := sL) φ))) :
+      WDeriv Γ (.ex (K := fun i => ∀ k : K i, L ⟨i, k⟩) (sz := sF)
+        (.all (K := fun p => K p.1) (sz := fun p => sK p.1)
+          (φ.sub fun y => ⟨⟨y.1.1, y.2⟩, y.1.2 y.2⟩)))
   /-- Independence of a universal premise. -/
   | ip {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K L : I → Type u} (p : (Σ i, K i) → Prop)
-      {ψ : Form (Σ i, L i)} (d : WDeriv Γ (.imp (.all (.atom p)) (.ex ψ))) :
-      WDeriv Γ (.ex (.imp ((Form.all (.atom p)).sub Sigma.fst) ψ))
-  /-- Markov's principle, Diller–Nahm form: finitely many candidates suffice. -/
+      {sK : ∀ i, K i → ℕ} {sL : ∀ i, L i → ℕ}
+      {ψ : Form (Σ i, L i)}
+      (d : WDeriv Γ (.imp (.all (sz := sK) (.atom p)) (.ex (sz := sL) ψ))) :
+      WDeriv Γ (.ex (sz := sL) (.imp ((Form.all (sz := sK) (.atom p)).sub Sigma.fst) ψ))
+  /-- Markov's principle, Diller–Nahm form: finitely many candidates suffice. The size `sM` of
+  the finite multisets of candidates is free. -/
   | markov {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} (p : (Σ i, K i) → Prop)
-      (q : I → Prop) (d : WDeriv Γ (.imp (.all (.atom p)) (.atom q))) :
-      WDeriv Γ (.ex (K := fun i => Multiset (K i))
+      {sK : ∀ i, K i → ℕ} {sM : ∀ i, Multiset (K i) → ℕ}
+      (q : I → Prop) (d : WDeriv Γ (.imp (.all (sz := sK) (.atom p)) (.atom q))) :
+      WDeriv Γ (.ex (K := fun i => Multiset (K i)) (sz := sM)
         (.atom fun x => (∀ k ∈ x.2, p ⟨x.1, k⟩) → q x.1))
   /-- A realized axiom: a weighted entailment `f` of the weighted meanings whose expected demand
   on the premise has total weight at most `N`. -/
@@ -1014,23 +1025,23 @@ variable {X : I → Type u} {Y : (Σ i, X i) → Type u} {a : (Σ x : Σ i, X i,
 
 /-- The witness of the hypothesis `∀ x, ∃ y, a (x, y)` given by an oracle `g`. -/
 def woracleW (a : (Σ x : Σ i, X i, Y x) → Prop) (g : ∀ i (x : X i), Y ⟨i, x⟩) (i : I) :
-    (wctx fun _ : Fin 1 => Deriv.allEx a).W i :=
+    (wctx fun _ : Fin 1 => Deriv.allEx 0 0 a).W i :=
   fun _ x => ⟨g i x, PUnit.unit⟩
 
 /-- The program of a weighted derivation of `∀ x', ∃ z, r (x', z)` from `∀ x, ∃ y, a (x, y)`. -/
-noncomputable def wprogram (d : WDeriv (fun _ : Fin 1 => Deriv.allEx a) (Deriv.allEx r))
+noncomputable def wprogram (d : WDeriv (fun _ : Fin 1 => Deriv.allEx 0 0 a) (Deriv.allEx 0 0 r))
     (g : ∀ i (x : X i), Y ⟨i, x⟩) (i : I) (x' : X' i) : Z ⟨i, x'⟩ :=
   (d.realize.fwd i (woracleW a g i) x').1
 
 /-- The expected queries of the program at `x'`: a finitely supported measure on the arguments of
 the oracle. -/
-noncomputable def wqueries (d : WDeriv (fun _ : Fin 1 => Deriv.allEx a) (Deriv.allEx r))
+noncomputable def wqueries (d : WDeriv (fun _ : Fin 1 => Deriv.allEx 0 0 a) (Deriv.allEx 0 0 r))
     (g : ∀ i (x : X i), Y ⟨i, x⟩) (i : I) (x' : X' i) : X i →₀ ℝ≥0 :=
   filterMap (d.realize.back i (woracleW a g i) ⟨x', PUnit.unit⟩) fun c => some c.2.1
 
 /-- **Expected query bound.** The expected number of oracle queries of the program is at most
 `wuseCount d 0`. -/
-theorem wqueries_total_le (d : WDeriv (fun _ : Fin 1 => Deriv.allEx a) (Deriv.allEx r))
+theorem wqueries_total_le (d : WDeriv (fun _ : Fin 1 => Deriv.allEx 0 0 a) (Deriv.allEx 0 0 r))
     (g : ∀ i (x : X i), Y ⟨i, x⟩) (i : I) (x' : X' i) :
     (total (d.wqueries g i x') : ℝ≥0∞) ≤ d.wuseCount 0 :=
   by
@@ -1040,7 +1051,7 @@ theorem wqueries_total_le (d : WDeriv (fun _ : Fin 1 => Deriv.allEx a) (Deriv.al
 
 /-- **Correctness from the queries.** The answer of the program at `x'` satisfies `r` whenever
 the oracle satisfies `a` on the support of the expected queries. -/
-theorem wquery_sound (d : WDeriv (fun _ : Fin 1 => Deriv.allEx a) (Deriv.allEx r))
+theorem wquery_sound (d : WDeriv (fun _ : Fin 1 => Deriv.allEx 0 0 a) (Deriv.allEx 0 0 r))
     (g : ∀ i (x : X i), Y ⟨i, x⟩) (i : I) (x' : X' i)
     (h : ∀ x ∈ (d.wqueries g i x').support, a ⟨⟨i, x⟩, g i x⟩) :
     r ⟨⟨i, x'⟩, d.wprogram g i x'⟩ :=
@@ -1049,13 +1060,13 @@ theorem wquery_sound (d : WDeriv (fun _ : Fin 1 => Deriv.allEx a) (Deriv.allEx r
 
 /-- The expected price of the queries of the program at `x'`, under a price `t` of an oracle
 call. -/
-noncomputable def wqueryPrice (d : WDeriv (fun _ : Fin 1 => Deriv.allEx a) (Deriv.allEx r))
+noncomputable def wqueryPrice (d : WDeriv (fun _ : Fin 1 => Deriv.allEx 0 0 a) (Deriv.allEx 0 0 r))
     (g : ∀ i (x : X i), Y ⟨i, x⟩) (t : ∀ i, X i → ℝ≥0) (i : I) (x' : X' i) : ℝ≥0 :=
   Finsupp.linearCombination ℝ≥0 (t i) (d.wqueries g i x')
 
 /-- **Expected price bound.** When each oracle call costs at most `T`, the queries of the program
 cost at most `wuseCount d 0 * T` in expectation. -/
-theorem wqueryPrice_le (d : WDeriv (fun _ : Fin 1 => Deriv.allEx a) (Deriv.allEx r))
+theorem wqueryPrice_le (d : WDeriv (fun _ : Fin 1 => Deriv.allEx 0 0 a) (Deriv.allEx 0 0 r))
     (g : ∀ i (x : X i), Y ⟨i, x⟩) (t : ∀ i, X i → ℝ≥0) (T : ℝ≥0) (ht : ∀ i x, t i x ≤ T)
     (i : I) (x' : X' i) : (d.wqueryPrice g t i x' : ℝ≥0∞) ≤ d.wuseCount 0 * T :=
   (linearCombination_le_total_mul (fun x => ENNReal.coe_le_coe.2 (ht i x)) _).trans

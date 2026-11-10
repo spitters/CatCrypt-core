@@ -29,8 +29,9 @@ negative translation as witnesses of their translations, the realizers of the cl
 the selection `euclidSel` (the largest candidate that is a prime above `n`), and
 `euclidExtract_spec` states that it gives a prime above its argument. `euclidBound` is the bound of
 the monotone interpretation, computed from the majorant `m ↦ m! + 1` of the least prime factor.
-`euclidExtract_le` and `euclid_exists_le` bound the extracted function and a prime above `n` by it,
-for every size `σ` that reads a number as itself and a multiset of numbers as its maximum.
+The quantifiers over numbers carry the size `idS` (a number is its own size) and the multisets of
+candidates the maximum size `mSize`. `euclidExtract_le` and `euclid_exists_le` bound the extracted
+function and a prime above `n` by the bound, with no hypothesis on sizes.
 
 ## Main results
 
@@ -74,12 +75,16 @@ theorem euclidRel_of_facRel (z : J) (h : facRel z) : euclidRel z := by
   have h1 : z.2 ∣ 1 := (Nat.dvd_add_right hd).mp h.2
   exact h.1.one_lt.ne' (Nat.dvd_one.mp h1)
 
+/-- The size on numbers at every sort context: a number has size itself. -/
+abbrev idS {I : Type} : I → ℕ → ℕ := fun _ => id
+
 /-- The hypothesis `∀ n, ∃ q, q prime ∧ q ∣ n! + 1`. -/
-abbrev euclidH0 : Form PUnit.{1} := Deriv.allEx (X := fun _ => ℕ) (Y := fun _ => ℕ) facRel
+abbrev euclidH0 : Form PUnit.{1} :=
+  Deriv.allEx (X := fun _ => ℕ) (Y := fun _ => ℕ) idS idS facRel
 
 /-- The hypothesis `∀ n q, (q prime ∧ q ∣ n! + 1) → ¬(n < q ∧ q prime) → ⊥`. -/
 abbrev euclidH1 : Form PUnit.{1} :=
-  .all (K := fun _ => ℕ) (.all (K := fun _ : J0 => ℕ)
+  .all (K := fun _ => ℕ) (sz := idS) (.all (K := fun _ : J0 => ℕ) (sz := idS)
     (.imp (.atom facRel) (.imp (Form.not (.atom euclidRel)) Form.bot)))
 
 /-- The context of Euclid's derivation. -/
@@ -95,13 +100,13 @@ def cconv {I : Type} {n : ℕ} {Δ : Fin n → Form I} (φ ψ : Form I) (d : CDe
 
 /-- The instance of a universal hypothesis reindexed along `Sigma.fst` at the bound variable, as a
 classical derivation. -/
-def instSelfC {I : Type} {n : ℕ} {K : I → Type} {X : Form (Σ i, K i)}
-    {Δ : Fin n → Form (Σ i, K i)} (d : CDeriv Δ ((Form.all (K := K) X).sub Sigma.fst)) :
+def instSelfC {I : Type} {n : ℕ} {K : I → Type} {s : ∀ i, K i → ℕ} {X : Form (Σ i, K i)}
+    {Δ : Fin n → Form (Σ i, K i)} (d : CDeriv Δ ((Form.all (K := K) (sz := s) X).sub Sigma.fst)) :
     CDeriv Δ X :=
   cconv ((X.sub fun y : (Σ x : Σ i, K i, K x.1) => (⟨y.1.1, y.2⟩ : Σ i, K i)).sub
       fun x : (Σ i, K i) => (⟨x, x.2⟩ : Σ x : Σ i, K i, K x.1)) X
-    (.allE (K := fun x : Σ i, K i => K x.1) (φ := X.sub fun y => ⟨y.1.1, y.2⟩) (fun x => x.2)
-      (cconv _ _ d))
+    (.allE (K := fun x : Σ i, K i => K x.1) (s := fun x => s x.1)
+      (φ := X.sub fun y => ⟨y.1.1, y.2⟩) (fun x => x.2) (cconv _ _ d))
 
 /-- The body of `euclidH1`: `(q prime ∧ q ∣ n! + 1) → ¬(n < q ∧ q prime) → ⊥`. -/
 abbrev euclidH1Body : Form J := .imp (.atom facRel) (.imp (Form.not (.atom euclidRel)) Form.bot)
@@ -109,17 +114,19 @@ abbrev euclidH1Body : Form J := .imp (.atom facRel) (.imp (Form.not (.atom eucli
 /-- The instance of `euclidH1` at the variables `n` and `q` of the sort context `J`. -/
 def h1At {n : ℕ} {Δ : Fin n → Form J}
     (d : CDeriv Δ ((euclidH1.sub Sigma.fst).sub Sigma.fst)) : CDeriv Δ euclidH1Body :=
-  instSelfC (cconv _ ((Form.all (K := fun _ : J0 => ℕ) euclidH1Body).sub Sigma.fst)
-    (.allE (K := fun _ : J => ℕ) (fun j => j.1.2)
-      (cconv _ (.all (K := fun _ : J => ℕ) ((Form.all (K := fun _ : J0 => ℕ) euclidH1Body).sub
+  instSelfC (cconv _ ((Form.all (K := fun _ : J0 => ℕ) (sz := idS) euclidH1Body).sub Sigma.fst)
+    (.allE (K := fun _ : J => ℕ) (s := idS) (fun j => j.1.2)
+      (cconv _ (.all (K := fun _ : J => ℕ) (sz := idS)
+          ((Form.all (K := fun _ : J0 => ℕ) (sz := idS) euclidH1Body).sub
             fun y : (Σ _ : J, ℕ) => (⟨y.1.1.1, y.2⟩ : J0))) d)))
 
 /-- **Euclid's theorem as a classical derivation.** For `n`, the prime factor `q` of `n! + 1` given
 by `euclidH0` is a prime above `n`, by reductio from `euclidH1`. -/
-def euclidDeriv : CDeriv euclidCtx (Deriv.allEx (X := fun _ => ℕ) (Y := fun _ => ℕ) euclidRel) :=
-  .allI (.exE (K := fun _ : J0 => ℕ) (φ := .atom facRel)
+def euclidDeriv : CDeriv euclidCtx
+    (Deriv.allEx (X := fun _ => ℕ) (Y := fun _ => ℕ) idS idS euclidRel) :=
+  .allI (.exE (K := fun _ : J0 => ℕ) (s := idS) (φ := .atom facRel)
     (instSelfC (cconv _ (euclidH0.sub Sigma.fst) (.hyp ⟨0, by omega⟩)))
-    (cconv (.ex (K := fun _ : J => ℕ) (.atom fun z => euclidRel ⟨z.1.1, z.2⟩)) _
+    (cconv (.ex (K := fun _ : J => ℕ) (sz := idS) (.atom fun z => euclidRel ⟨z.1.1, z.2⟩)) _
       (.exI (fun j => j.2) (cconv (.atom euclidRel) _
         (.raa (.impE (.impE (h1At (cconv _ _ (.hyp ⟨3, by omega⟩))) (.hyp ⟨1, by omega⟩))
           (.hyp ⟨0, by omega⟩)))))))
@@ -133,7 +140,8 @@ theorem facRel_minFac (x : J0) : facRel ⟨x, (x.2.factorial + 1).minFac⟩ := b
 
 /-- The realized axiom `∃ q, q prime ∧ q ∣ n! + 1`, realized by the least prime factor
 `Nat.minFac (n! + 1)`. -/
-def minFacHom : (Form.top : Form J0).dn.Hom (Form.ex (K := fun _ : J0 => ℕ) (.atom facRel)).dn where
+def minFacHom : (Form.top : Form J0).dn.Hom
+    (Form.ex (K := fun _ : J0 => ℕ) (sz := idS) (.atom facRel)).dn where
   fwd x _ := ⟨(x.2.factorial + 1).minFac, PUnit.unit⟩
   back _ _ _ := 0
   sound x _ _ _ := facRel_minFac x
@@ -141,11 +149,12 @@ def minFacHom : (Form.top : Form J0).dn.Hom (Form.ex (K := fun _ : J0 => ℕ) (.
 /-- The negative translation of `euclidH0` as a closed derivation, from the realized axiom
 `minFacHom`. -/
 def euclidH0Deriv : Deriv (Fin.elim0 : Fin 0 → Form PUnit.{1}) euclidH0.negT :=
-  .allI (.impI (.exE (K := fun _ : J0 => ℕ) (φ := .atom facRel) (ψ := Form.bot)
+  .allI (.impI (.exE (K := fun _ : J0 => ℕ) (s := idS) (φ := .atom facRel) (ψ := Form.bot)
     (.hom minFacHom 0 (fun _ _ _ => by simp [minFacHom]) (fun x _ => ⟨_, facRel_minFac x⟩) .topI)
     (Deriv.conv (ψ := Form.bot.sub Sigma.fst)
-      (.impE (Deriv.instSelf (.hyp ⟨1, by omega⟩ : Deriv _ ((Form.all (K := fun _ : J0 => ℕ)
-          (Form.not (Form.not (Form.not (.atom facRel))))).sub Sigma.fst)))
+      (.impE (Deriv.instSelf (.hyp ⟨1, by omega⟩ : Deriv _
+          ((Form.all (K := fun _ : J0 => ℕ) (sz := idS)
+            (Form.not (Form.not (Form.not (.atom facRel))))).sub Sigma.fst)))
         (.impI (.impE (.hyp ⟨0, by omega⟩) (.hyp ⟨1, by omega⟩)))))))
 
 /-- The negative translation of `euclidH1` as a closed derivation, from Euclid's lemma
@@ -205,15 +214,19 @@ theorem euclidSel_spec (x : J0) (ys : Multiset ℕ)
       simp at this
   exact (Multiset.mem_filter.mp (sup_mem_of_ne_zero _ hne)).2
 
+/-- The size of a multiset of candidates: its maximum, through `CDeriv.supSize`. -/
+abbrev mSize : ∀ _ : J0, Multiset ℕ → ℕ :=
+  CDeriv.supSize (K := fun _ : PUnit.{1} => ℕ) (L := fun _ : J0 => ℕ) idS
+
 /-- **The function extracted from Euclid's proof**, through the negative translation, Markov's
 principle and the selection `euclidSel`. -/
 def euclidExtract (n : ℕ) : ℕ :=
-  CDeriv.extract euclidRel euclidSel euclidSel_spec euclidDeriv PUnit.unit euclidW n
+  CDeriv.extract euclidRel euclidSel euclidSel_spec mSize euclidDeriv PUnit.unit euclidW n
 
 /-- **Correctness of the extracted function.** It gives a prime above its argument. -/
 theorem euclidExtract_spec (n : ℕ) : n < euclidExtract n ∧ (euclidExtract n).Prime := by
-  have h := CDeriv.extract_spec euclidRel euclidSel euclidSel_spec euclidDeriv PUnit.unit euclidW
-    euclidW_mat n
+  have h := CDeriv.extract_spec euclidRel euclidSel euclidSel_spec mSize euclidDeriv PUnit.unit
+    euclidW euclidW_mat n
   simpa only [euclidRel, euclidExtract] using h
 
 /-! ## Majorant data and the extracted bound -/
@@ -228,118 +241,104 @@ local macro "conv_maj%" : term =>
     subst e
     exact hc))
 
-variable (σ : ∀ α : Type, α → ℕ)
-
 /-- The environment of the empty sort context. -/
 abbrev R0 : ℕ → PUnit.{1} → Prop := fun _ _ => True
 
 /-- The majorant `m ↦ m! + 1` of the least prime factor of `n! + 1`. -/
-def minFacMaj (hℕ : ∀ x : ℕ, σ ℕ x = x) :
-    HomMaj σ (envExt σ R0 fun _ => ℕ) Form.top (Form.ex (K := fun _ : J0 => ℕ) (.atom facRel))
-      minFacHom :=
+def minFacMaj :
+    HomMaj (envExt R0 (K := fun _ => ℕ) idS) Form.top
+      (Form.ex (K := fun _ : J0 => ℕ) (sz := idS) (.atom facRel)) minFacHom :=
   ⟨(fun m _ => (m.factorial + 1, ()), fun _ _ _ => []), by
     intro m x hx _ _ _
     refine ⟨⟨?_, trivial⟩, fun _ _ _ y hy => ?_⟩
-    · have hx2 : x.2 ≤ m := by
-        have := hx.2
-        change σ ℕ x.2 ≤ m at this
-        rwa [hℕ] at this
-      change σ ℕ (x.2.factorial + 1).minFac ≤ m.factorial + 1
-      rw [hℕ]
+    · have hx2 : x.2 ≤ m := hx.2
+      change (x.2.factorial + 1).minFac ≤ m.factorial + 1
       exact (Nat.minFac_le (by omega)).trans
         (Nat.add_le_add_right (Nat.factorial_le hx2) 1)
     · simp [minFacHom] at hy⟩
 
 /-- The majorant data of `euclidH0Deriv`: the majorant of `minFacHom`. -/
-def euclidH0MajD (hℕ : ∀ x : ℕ, σ ℕ x = x) : Deriv.MajD σ euclidH0Deriv R0 :=
-  (((), minFacMaj σ hℕ), ((Deriv.instSelf_majD _ _ (), ((), ())), conv_maj%))
+def euclidH0MajD : Deriv.MajD euclidH0Deriv R0 :=
+  (((), minFacMaj), ((Deriv.instSelf_majD _ _ (), ((), ())), conv_maj%))
 
 /-- The majorant data of `euclidH1Deriv`: it has no term and no realized axiom. -/
-def euclidH1MajD : Deriv.MajD σ euclidH1Deriv R0 :=
+def euclidH1MajD : Deriv.MajD euclidH1Deriv R0 :=
   (((), ((), ((), ((), ())))), ())
 
 /-- The majorants of the translated hypotheses: the bounds of `euclidH0Deriv` and
 `euclidH1Deriv`. -/
-def euclidHm (hℕ : ∀ x : ℕ, σ ℕ x = x) : CtxB fun k => (euclidCtx k).negT
-  | ⟨0, _⟩ => (Deriv.bnd σ euclidH0Deriv R0 (euclidH0MajD σ hℕ) (fun k => k.elim0) 0).1
-  | ⟨1, _⟩ => (Deriv.bnd σ euclidH1Deriv R0 (euclidH1MajD σ) (fun k => k.elim0) 0).1
+def euclidHm : CtxB fun k => (euclidCtx k).negT
+  | ⟨0, _⟩ => (Deriv.bnd euclidH0Deriv R0 euclidH0MajD (fun k => k.elim0) 0).1
+  | ⟨1, _⟩ => (Deriv.bnd euclidH1Deriv R0 euclidH1MajD (fun k => k.elim0) 0).1
 
 /-- The majorants `euclidHm` majorize the witnesses `euclidW`. -/
-theorem euclidHm_maj (hℕ : ∀ x : ℕ, σ ℕ x = x) (k : Fin 2) :
-    Maj σ (euclidCtx k).negT PUnit.unit (euclidHm σ hℕ k) (euclidW k) := by
+theorem euclidHm_maj (k : Fin 2) :
+    Maj (euclidCtx k).negT PUnit.unit (euclidHm k) (euclidW k) := by
   match k with
   | ⟨0, _⟩ =>
-    exact (Deriv.bnd_sound euclidH0Deriv R0 (fun _ _ _ _ _ => trivial) (euclidH0MajD σ hℕ)
+    exact (Deriv.bnd_sound euclidH0Deriv R0 (fun _ _ _ _ _ => trivial) euclidH0MajD
       (fun k => k.elim0) 0 PUnit.unit trivial (fun k => k.elim0) fun k => k.elim0).1
   | ⟨1, _⟩ =>
-    exact (Deriv.bnd_sound euclidH1Deriv R0 (fun _ _ _ _ _ => trivial) (euclidH1MajD σ)
+    exact (Deriv.bnd_sound euclidH1Deriv R0 (fun _ _ _ _ _ => trivial) euclidH1MajD
       (fun k => k.elim0) 0 PUnit.unit trivial (fun k => k.elim0) fun k => k.elim0).1
 
 /-- The majorant data of `instSelfC`: the majorant `id` of the bound variable. -/
-def instSelfC_majData {I : Type} {n : ℕ} {K : I → Type} {X : Form (Σ i, K i)}
-    {Δ : Fin n → Form (Σ i, K i)} (d : CDeriv Δ ((Form.all (K := K) X).sub Sigma.fst))
-    (R : ℕ → I → Prop) (D : CDeriv.MajData σ d (envExt σ R K)) :
-    CDeriv.MajData σ (instSelfC d) (envExt σ R K) :=
-  ((Deriv.sndTermMaj R, (D, conv_maj%)), conv_maj%)
+def instSelfC_majData {I : Type} {n : ℕ} {K : I → Type} {s : ∀ i, K i → ℕ}
+    {X : Form (Σ i, K i)} {Δ : Fin n → Form (Σ i, K i)}
+    (d : CDeriv Δ ((Form.all (K := K) (sz := s) X).sub Sigma.fst))
+    (R : ℕ → I → Prop) (D : CDeriv.MajData d (envExt R s)) :
+    CDeriv.MajData (instSelfC d) (envExt R s) :=
+  ((Deriv.sndTermMaj s R, (D, conv_maj%)), conv_maj%)
+
+/-- The environment of the variables `n` and `q`. -/
+abbrev R2 : ℕ → J → Prop :=
+  envExt (envExt R0 (K := fun _ => ℕ) idS) (K := fun _ : J0 => ℕ) idS
 
 /-- The majorant data of `h1At`. -/
 def h1At_majData {n : ℕ} {Δ : Fin n → Form J}
     (d : CDeriv Δ ((euclidH1.sub Sigma.fst).sub Sigma.fst))
-    (D : CDeriv.MajData σ d (envExt σ (envExt σ R0 fun _ => ℕ) fun _ => ℕ)) :
-    CDeriv.MajData σ (h1At d) (envExt σ (envExt σ R0 fun _ => ℕ) fun _ => ℕ) :=
-  instSelfC_majData σ _ _ ((⟨id, fun _ _ h => h.1.2⟩, (D, conv_maj%)), conv_maj%)
+    (D : CDeriv.MajData d R2) :
+    CDeriv.MajData (h1At d) R2 :=
+  instSelfC_majData _ _ ((⟨id, fun _ _ h => h.1.2⟩, (D, conv_maj%)), conv_maj%)
 
 /-- The majorant data of `euclidDeriv`: the majorant `id` of each instantiated variable. -/
-def euclidMajData : CDeriv.MajData σ euclidDeriv R0 :=
-  (instSelfC_majData σ _ R0 ((), conv_maj%),
-    ((Deriv.sndTermMaj _, (((h1At_majData σ _ ((), conv_maj%), ()), ()), conv_maj%)),
+def euclidMajData : CDeriv.MajData euclidDeriv R0 :=
+  (instSelfC_majData _ R0 ((), conv_maj%),
+    ((Deriv.sndTermMaj idS _, (((h1At_majData _ ((), conv_maj%), ()), ()), conv_maj%)),
       conv_maj%))
 
-/-- The majorant data of Markov's principle and of the selection, for a size that reads a
-multiset of numbers as its maximum: the selection has the majorant `id`. -/
-def euclidPi2Maj (hℕ : ∀ x : ℕ, σ ℕ x = x) (hM : ∀ s : Multiset ℕ, σ (Multiset ℕ) s = s.sup) :
-    CDeriv.Pi2Maj σ euclidRel euclidSel euclidSel_spec R0 :=
-  CDeriv.Pi2Maj.ofSize euclidRel euclidSel euclidSel_spec
-    (fun _ ms B h => by
-      rw [hM]
-      exact Multiset.sup_le.mpr fun k hk => by simpa only [hℕ] using h k hk)
-    id
-    (fun x ys B h => by
-      change σ (Multiset ℕ) ys ≤ B at h
-      change σ ℕ (euclidSel x ys) ≤ B
-      rw [hM] at h
-      rw [hℕ]
-      exact (Multiset.sup_mono (Multiset.filter_subset _ _)).trans h)
-    R0
+/-- The selection is bounded by the maximum of the candidates. -/
+theorem euclidSel_le (x : J0) (ys : Multiset ℕ) (B : ℕ) (h : mSize x ys ≤ B) :
+    euclidSel x ys ≤ B := by
+  change (ys.map id).sup ≤ B at h
+  rw [Multiset.map_id] at h
+  exact (Multiset.sup_mono (Multiset.filter_subset _ _)).trans h
+
+/-- The majorant data of Markov's principle and of the selection at the maximum size of a multiset
+of numbers: the selection has the majorant `id`. -/
+def euclidPi2Maj : CDeriv.Pi2Maj euclidRel euclidSel euclidSel_spec mSize idS idS R0 :=
+  CDeriv.Pi2Maj.ofSup euclidRel euclidSel euclidSel_spec id
+    (fun x ys B h => euclidSel_le x ys B h) R0
 
 /-- **The bound extracted from Euclid's proof** by the monotone interpretation of the extracted
 derivation `CDeriv.pi2`. -/
-def euclidBound (hℕ : ∀ x : ℕ, σ ℕ x = x) (hM : ∀ s : Multiset ℕ, σ (Multiset ℕ) s = s.sup) :
-    ℕ →o ℕ :=
-  pi2Bound (Deriv.bnd σ (CDeriv.pi2 euclidRel euclidSel euclidSel_spec euclidDeriv) R0
-    (CDeriv.pi2MajD euclidRel euclidSel euclidSel_spec euclidDeriv R0 (euclidMajData σ)
-      (euclidPi2Maj σ hℕ hM)) (euclidHm σ hℕ) 0).1
+def euclidBound : ℕ →o ℕ :=
+  pi2Bound (Deriv.bnd (CDeriv.pi2 euclidRel euclidSel euclidSel_spec mSize euclidDeriv) R0
+    (CDeriv.pi2MajD euclidRel euclidSel euclidSel_spec mSize euclidDeriv R0 euclidMajData
+      euclidPi2Maj) euclidHm 0).1
 
 /-- **The extracted function is bounded by the extracted bound.** -/
-theorem euclidExtract_le (hℕ : ∀ x : ℕ, σ ℕ x = x)
-    (hM : ∀ s : Multiset ℕ, σ (Multiset ℕ) s = s.sup) (n : ℕ) :
-    euclidExtract n ≤ euclidBound σ hℕ hM n := by
-  have h := (CDeriv.extract_costMaj' euclidRel euclidSel euclidSel_spec euclidDeriv R0
-    (fun _ _ _ _ _ => trivial) (euclidMajData σ) (euclidPi2Maj σ hℕ hM) (euclidHm σ hℕ) 0
-    PUnit.unit trivial euclidW (euclidHm_maj σ hℕ)).2 n
-  change σ ℕ (euclidExtract n) ≤ euclidBound σ hℕ hM (σ ℕ n) at h
-  rwa [hℕ, hℕ] at h
+theorem euclidExtract_le (n : ℕ) : euclidExtract n ≤ euclidBound n :=
+  (CDeriv.extract_costMaj' euclidRel euclidSel euclidSel_spec mSize euclidDeriv R0
+    (fun _ _ _ _ _ => trivial) euclidMajData euclidPi2Maj euclidHm 0
+    PUnit.unit trivial euclidW euclidHm_maj).2 n
 
 /-- **Bound extraction of Euclid's theorem.** Every `n` has a prime above `n` and at most the
 extracted bound at `n`. -/
-theorem euclid_exists_le (hℕ : ∀ x : ℕ, σ ℕ x = x)
-    (hM : ∀ s : Multiset ℕ, σ (Multiset ℕ) s = s.sup) (n : ℕ) :
-    ∃ p, p ≤ euclidBound σ hℕ hM n ∧ n < p ∧ p.Prime := by
+theorem euclid_exists_le (n : ℕ) : ∃ p, p ≤ euclidBound n ∧ n < p ∧ p.Prime := by
   obtain ⟨y, hy, hp⟩ := CDeriv.exists_le_extract_pi2Bound' euclidRel euclidSel euclidSel_spec
-    euclidDeriv R0 (fun _ _ _ _ _ => trivial) (euclidMajData σ) (euclidPi2Maj σ hℕ hM)
-    (euclidHm σ hℕ) 0 PUnit.unit trivial euclidW (euclidHm_maj σ hℕ) euclidW_mat n
-  change σ ℕ y ≤ euclidBound σ hℕ hM (σ ℕ n) at hy
-  rw [hℕ, hℕ] at hy
+    mSize euclidDeriv R0 (fun _ _ _ _ _ => trivial) euclidMajData euclidPi2Maj
+    euclidHm 0 PUnit.unit trivial euclidW euclidHm_maj euclidW_mat n
   exact ⟨y, hy, hp⟩
 
 end CatCrypt.Container.DNLogic.Euclid

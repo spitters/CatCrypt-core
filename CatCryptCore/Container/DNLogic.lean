@@ -13,9 +13,11 @@ public import Mathlib.Data.ENat.Monoid
 
 The formulas (`Form`) of positive many-sorted intuitionistic logic over Lean sorts have atoms
 `I → Prop`, `⊤`, `∧`, `→`, `∨`, the quantifiers `∀`, `∃` over a family of sorts
-`K : I → Type u`, and an explicit substitution `Form.sub` along a map of sort contexts. A formula
-is interpreted twice: by its truth value `Form.eval`, and by a Dialectica predicate `Form.dn` of
-the Gödel fibration of the Diller–Nahm category, through the connectives of
+`K : I → Type u`, and an explicit substitution `Form.sub` along a map of sort contexts. Each
+quantifier carries, as an implicit field, a size `∀ i, K i → ℕ` of its sorts: the truth value, the
+Diller–Nahm meaning and the use counts ignore it, and only the monotone interpretation reads it.
+A formula is interpreted twice: by its truth value `Form.eval`, and by a Dialectica predicate
+`Form.dn` of the Gödel fibration of the Diller–Nahm category, through the connectives of
 `Container/GodelFibration.lean`.
 
 Derivations (`Deriv`) are natural deduction derivations with hypotheses, as data: the rules of
@@ -141,10 +143,12 @@ inductive Form : Type u → Type (u + 1)
   | imp {I : Type u} (φ ψ : Form I) : Form I
   /-- Disjunction. -/
   | or {I : Type u} (φ ψ : Form I) : Form I
-  /-- Universal quantification over a family of sorts. -/
-  | all {I : Type u} {K : I → Type u} (φ : Form (Σ i, K i)) : Form I
-  /-- Existential quantification over a family of sorts. -/
-  | ex {I : Type u} {K : I → Type u} (φ : Form (Σ i, K i)) : Form I
+  /-- Universal quantification over a family of sorts, with a size on each sort. Only the
+  monotone interpretation reads the size. -/
+  | all {I : Type u} {K : I → Type u} {sz : ∀ i, K i → ℕ} (φ : Form (Σ i, K i)) : Form I
+  /-- Existential quantification over a family of sorts, with a size on each sort. Only the
+  monotone interpretation reads the size. -/
+  | ex {I : Type u} {K : I → Type u} {sz : ∀ i, K i → ℕ} (φ : Form (Σ i, K i)) : Form I
   /-- Substitution along a map of sort contexts. -/
   | sub {I J : Type u} (h : J → I) (φ : Form I) : Form J
 
@@ -601,33 +605,43 @@ inductive Deriv : {I : Type u} → {n : ℕ} → (Fin n → Form I) → Form I �
   | orE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {φ ψ χ : Form I} (d : Deriv Γ (.or φ ψ))
       (e₁ : Deriv (consF φ Γ) χ) (e₂ : Deriv (consF ψ Γ) χ) : Deriv Γ χ
   /-- `∀`-introduction: a derivation over the extended sort context. -/
-  | allI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      (d : Deriv (fun k => (Γ k).sub Sigma.fst) φ) : Deriv Γ (.all φ)
+  | allI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      (d : Deriv (fun k => (Γ k).sub Sigma.fst) φ) : Deriv Γ (.all (sz := s) φ)
   /-- `∀`-elimination at a term `t`. -/
-  | allE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      (t : ∀ i, K i) (d : Deriv Γ (.all φ)) : Deriv Γ (φ.sub fun i => ⟨i, t i⟩)
+  | allE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      (t : ∀ i, K i) (d : Deriv Γ (.all (sz := s) φ)) : Deriv Γ (φ.sub fun i => ⟨i, t i⟩)
   /-- `∃`-introduction at a term `t`. -/
-  | exI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      (t : ∀ i, K i) (d : Deriv Γ (φ.sub fun i => ⟨i, t i⟩)) : Deriv Γ (.ex φ)
+  | exI {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      (t : ∀ i, K i) (d : Deriv Γ (φ.sub fun i => ⟨i, t i⟩)) : Deriv Γ (.ex (sz := s) φ)
   /-- `∃`-elimination: the body becomes the hypothesis at position `0` over the extended sort
   context. -/
-  | exE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {φ : Form (Σ i, K i)}
-      {ψ : Form I} (d : Deriv Γ (.ex φ))
+  | exE {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {s : ∀ i, K i → ℕ}
+      {φ : Form (Σ i, K i)}
+      {ψ : Form I} (d : Deriv Γ (.ex (sz := s) φ))
       (e : Deriv (consF φ fun k => (Γ k).sub Sigma.fst) (ψ.sub Sigma.fst)) : Deriv Γ ψ
-  /-- The axiom of choice: `∀ k ∃ l, φ` gives `∃ f ∀ k, φ (k, f k)`. -/
+  /-- The axiom of choice: `∀ k ∃ l, φ` gives `∃ f ∀ k, φ (k, f k)`. The size `sF` of the
+  functions is free. -/
   | ac {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} {L : (Σ i, K i) → Type u}
-      {φ : Form (Σ x : Σ i, K i, L x)} (d : Deriv Γ (.all (.ex φ))) :
-      Deriv Γ (.ex (K := fun i => ∀ k : K i, L ⟨i, k⟩)
-        (.all (K := fun p => K p.1) (φ.sub fun y => ⟨⟨y.1.1, y.2⟩, y.1.2 y.2⟩)))
+      {sK : ∀ i, K i → ℕ} {sL : ∀ x, L x → ℕ} {sF : ∀ i, (∀ k : K i, L ⟨i, k⟩) → ℕ}
+      {φ : Form (Σ x : Σ i, K i, L x)} (d : Deriv Γ (.all (sz := sK) (.ex (sz := sL) φ))) :
+      Deriv Γ (.ex (K := fun i => ∀ k : K i, L ⟨i, k⟩) (sz := sF)
+        (.all (K := fun p => K p.1) (sz := fun p => sK p.1)
+          (φ.sub fun y => ⟨⟨y.1.1, y.2⟩, y.1.2 y.2⟩)))
   /-- Independence of a universal premise, for inhabited sorts of the existential. -/
   | ip {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K L : I → Type u} (p : (Σ i, K i) → Prop)
+      {sK : ∀ i, K i → ℕ} {sL : ∀ i, L i → ℕ}
       {ψ : Form (Σ i, L i)} (hL : ∀ i, Nonempty (L i))
-      (d : Deriv Γ (.imp (.all (.atom p)) (.ex ψ))) :
-      Deriv Γ (.ex (.imp ((Form.all (.atom p)).sub Sigma.fst) ψ))
-  /-- Markov's principle, Diller–Nahm form: finitely many candidates suffice. -/
+      (d : Deriv Γ (.imp (.all (sz := sK) (.atom p)) (.ex (sz := sL) ψ))) :
+      Deriv Γ (.ex (sz := sL) (.imp ((Form.all (sz := sK) (.atom p)).sub Sigma.fst) ψ))
+  /-- Markov's principle, Diller–Nahm form: finitely many candidates suffice. The size `sM` of
+  the finite multisets of candidates is free. -/
   | markov {I : Type u} {n : ℕ} {Γ : Fin n → Form I} {K : I → Type u} (p : (Σ i, K i) → Prop)
-      (q : I → Prop) (d : Deriv Γ (.imp (.all (.atom p)) (.atom q))) :
-      Deriv Γ (.ex (K := fun i => Multiset (K i))
+      {sK : ∀ i, K i → ℕ} {sM : ∀ i, Multiset (K i) → ℕ}
+      (q : I → Prop) (d : Deriv Γ (.imp (.all (sz := sK) (.atom p)) (.atom q))) :
+      Deriv Γ (.ex (K := fun i => Multiset (K i)) (sz := sM)
         (.atom fun x => (∀ k ∈ x.2, p ⟨x.1, k⟩) → q x.1))
   /-- A realized axiom: a true entailment given by a morphism `f` of the Diller–Nahm meanings
   whose backward map demands at most `N` counter-witnesses of the premise. -/
@@ -1081,7 +1095,7 @@ theorem bounds_resp {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) (T :
       ⟨fun k c hc' => (ih δ i w hc hw).1 k _ hc', (ih δ i w hc hw).2 (t i)⟩
   | exI t d ih =>
     exact fun δ i w hc hw => ⟨fun k c hc' => (ih δ i w hc hw).1 k _ hc', (ih δ i w hc hw).2⟩
-  | @exE _ _ Γ K φ _ d e ihd ihe =>
+  | @exE _ _ Γ K _ φ _ d e ihd ihe =>
     intro δ i w hc hw
     obtain ⟨hcd, hce, hfd⟩ := hc
     obtain ⟨hd₁, hd₂⟩ := ihd δ i w hcd hw
@@ -1201,7 +1215,7 @@ theorem cfree_uses_of {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) (T
     exact ih δ (by cases δ <;> exact hδ)
   | allE t d ih => exact fun δ hδ => ih δ hδ
   | exI t d ih => exact fun δ hδ => ih δ hδ
-  | @exE _ _ Γ K φ _ d e ihd ihe =>
+  | @exE _ _ Γ K _ φ _ d e ihd ihe =>
     intro δ hδ
     have hδ' : ctxCfree (fun k => (Γ k).sub (Sigma.fst : (Σ i, K i) → _)) δ := by
       cases δ <;> exact hδ
@@ -1255,7 +1269,7 @@ theorem coherent_of {Γ : Fin n → Form I} {φ : Form I} (d : Deriv Γ φ) (T :
     exact ih δ (by cases δ <;> exact hδ)
   | allE t d ih => exact fun δ hδ => ih δ hδ
   | exI t d ih => exact fun δ hδ => ih δ hδ
-  | @exE _ _ Γ K φ _ d e ihd ihe =>
+  | @exE _ _ Γ K _ φ _ d e ihd ihe =>
     intro δ hδ
     have hδ' : ctxCfree (fun k => (Γ k).sub (Sigma.fst : (Σ i, K i) → _)) δ := by
       cases δ <;> exact hδ
@@ -1316,30 +1330,36 @@ section Oracle
 
 variable {X : I → Type u} {Y : (Σ i, X i) → Type u} {a : (Σ x : Σ i, X i, Y x) → Prop}
   {X' : I → Type u} {Z : (Σ i, X' i) → Type u} {r : (Σ x : Σ i, X' i, Z x) → Prop}
+  {sX : ∀ i, X i → ℕ} {sY : ∀ x, Y x → ℕ} {sX' : ∀ i, X' i → ℕ} {sZ : ∀ x, Z x → ℕ}
 
-/-- The formula `∀ x, ∃ y, a (x, y)`. -/
-abbrev allEx (a : (Σ x : Σ i, X i, Y x) → Prop) : Form I :=
-  .all (K := X) (.ex (K := Y) (.atom a))
+/-- The formula `∀ x, ∃ y, a (x, y)`, with the sizes `sX` and `sY` of its quantifiers. -/
+abbrev allEx (sX : ∀ i, X i → ℕ) (sY : ∀ x, Y x → ℕ) (a : (Σ x : Σ i, X i, Y x) → Prop) : Form I :=
+  .all (K := X) (sz := sX) (.ex (K := Y) (sz := sY) (.atom a))
+
+/-- The hypothesis of the oracle programs of this section. -/
+local notation "𝒜" => allEx sX sY a
+/-- The conclusion of the oracle programs of this section. -/
+local notation "ℛ" => allEx sX' sZ r
 
 /-- The witness of the hypothesis `∀ x, ∃ y, a (x, y)` given by an oracle `g`. -/
 def oracleW (a : (Σ x : Σ i, X i, Y x) → Prop) (g : ∀ i (x : X i), Y ⟨i, x⟩) (i : I) :
-    (ctx fun _ : Fin 1 => allEx a).W i :=
+    (ctx fun _ : Fin 1 => allEx sX sY a).W i :=
   fun _ x => ⟨g i x, PUnit.unit⟩
 
 /-- The program of a derivation of `∀ x', ∃ z, r (x', z)` from `∀ x, ∃ y, a (x, y)`: the answer
 at `x'` computed with the oracle `g`. -/
-def program (d : Deriv (fun _ : Fin 1 => allEx a) (allEx r)) (g : ∀ i (x : X i), Y ⟨i, x⟩)
+def program (d : Deriv (fun _ : Fin 1 => 𝒜) ℛ) (g : ∀ i (x : X i), Y ⟨i, x⟩)
     (i : I) (x' : X' i) : Z ⟨i, x'⟩ :=
   (d.realize.fwd i (oracleW a g i) x').1
 
 /-- The arguments at which the program of a derivation consults the oracle to answer `x'`. -/
-def queries (d : Deriv (fun _ : Fin 1 => allEx a) (allEx r)) (g : ∀ i (x : X i), Y ⟨i, x⟩)
+def queries (d : Deriv (fun _ : Fin 1 => 𝒜) ℛ) (g : ∀ i (x : X i), Y ⟨i, x⟩)
     (i : I) (x' : X' i) : Multiset (X i) :=
   (d.realize.back i (oracleW a g i) ⟨x', PUnit.unit⟩).map fun c => c.2.1
 
 /-- **Query bound.** The program of a derivation consults the oracle at most `useCount d 0`
 times. -/
-theorem queries_card_le (d : Deriv (fun _ : Fin 1 => allEx a) (allEx r))
+theorem queries_card_le (d : Deriv (fun _ : Fin 1 => 𝒜) ℛ)
     (g : ∀ i (x : X i), Y ⟨i, x⟩) (i : I) (x' : X' i) :
     (((d.queries g i x').card : ℕ) : ℕ∞) ≤ d.useCount 0 := by
   refine le_trans (le_of_eq ?_) (d.card_back_le 0 i (oracleW a g i) ⟨x', PUnit.unit⟩)
@@ -1347,7 +1367,7 @@ theorem queries_card_le (d : Deriv (fun _ : Fin 1 => allEx a) (allEx r))
 
 /-- **Correctness from the queries.** The answer of the program at `x'` satisfies `r` whenever
 the oracle satisfies `a` at the queries. -/
-theorem query_sound (d : Deriv (fun _ : Fin 1 => allEx a) (allEx r))
+theorem query_sound (d : Deriv (fun _ : Fin 1 => 𝒜) ℛ)
     (g : ∀ i (x : X i), Y ⟨i, x⟩) (i : I) (x' : X' i)
     (h : ∀ x ∈ d.queries g i x', a ⟨⟨i, x⟩, g i x⟩) :
     r ⟨⟨i, x'⟩, d.program g i x'⟩ :=
@@ -1355,13 +1375,13 @@ theorem query_sound (d : Deriv (fun _ : Fin 1 => allEx a) (allEx r))
     h y.2.1 (Multiset.mem_map_of_mem _ hy)
 
 /-- The price of the queries of the program at `x'`, under a price `t` of an oracle call. -/
-def queryPrice (d : Deriv (fun _ : Fin 1 => allEx a) (allEx r)) (g : ∀ i (x : X i), Y ⟨i, x⟩)
+def queryPrice (d : Deriv (fun _ : Fin 1 => 𝒜) ℛ) (g : ∀ i (x : X i), Y ⟨i, x⟩)
     (t : ∀ i, X i → ℕ) (i : I) (x' : X' i) : ℕ :=
   ((d.queries g i x').map (t i)).sum
 
 /-- **Price bound.** When each oracle call costs at most `T`, the queries of the program cost at
 most `useCount d 0 * T`: the time of the program is its own time plus this price. -/
-theorem queryPrice_le (d : Deriv (fun _ : Fin 1 => allEx a) (allEx r))
+theorem queryPrice_le (d : Deriv (fun _ : Fin 1 => 𝒜) ℛ)
     (g : ∀ i (x : X i), Y ⟨i, x⟩) (t : ∀ i, X i → ℕ) (T : ℕ) (ht : ∀ i x, t i x ≤ T) (i : I)
     (x' : X' i) : ((d.queryPrice g t i x' : ℕ) : ℕ∞) ≤ d.useCount 0 * T := by
   have hs : d.queryPrice g t i x' ≤ (d.queries g i x').card * T := by
@@ -1406,13 +1426,15 @@ demand bound. -/
 
 /-- Unfolding equation of `useCount` at the axiom of choice: the use counts of its premise. -/
 @[simp] theorem useCount_ac {K : I → Type u} {L : (Σ i, K i) → Type u}
-    {φ : Form (Σ x : Σ i, K i, L x)} (d : Deriv Γ (.all (.ex φ))) (k : Fin n) :
-    (ac d).useCount k = d.useCount k := rfl
+    {sK : ∀ i, K i → ℕ} {sL : ∀ x, L x → ℕ} {sF : ∀ i, (∀ k : K i, L ⟨i, k⟩) → ℕ}
+    {φ : Form (Σ x : Σ i, K i, L x)} (d : Deriv Γ (.all (sz := sK) (.ex (sz := sL) φ)))
+    (k : Fin n) : (ac (sF := sF) d).useCount k = d.useCount k := rfl
 
 /-- Unfolding equation of `useCount` at `∃`-elimination: the uses in the body, plus the uses of
 the eliminated witness times its uses in the derivation of the existential. -/
-@[simp] theorem useCount_exE {K : I → Type u} {φ : Form (Σ i, K i)} {ψ : Form I}
-    (d : Deriv Γ (.ex φ)) (e : Deriv (consF φ fun k => (Γ k).sub Sigma.fst) (ψ.sub Sigma.fst))
+@[simp] theorem useCount_exE {K : I → Type u} {s : ∀ i, K i → ℕ} {φ : Form (Σ i, K i)}
+    {ψ : Form I} (d : Deriv Γ (.ex (sz := s) φ))
+    (e : Deriv (consF φ fun k => (Γ k).sub Sigma.fst) (ψ.sub Sigma.fst))
     (k : Fin n) : (exE d e).useCount k = e.useCount k.succ + e.useCount 0 * d.useCount k := rfl
 
 end UseCountEquations
@@ -1483,12 +1505,17 @@ theorem uses_conv_keep {φ ψ : Form I} (d : Deriv Γ φ) (h : φ.dn = ψ.dn)
     ((conv d h hev).uses δ HomDem.keep).2 = cast e (d.uses δ HomDem.keep).2 :=
   HomDem.keep_map _ _ e (hR _)
 
+variable {K : I → Type u} {sz : ∀ i, K i → ℕ}
+
+/-- The hypothesis `∀ x, ¬ X x` of the translated `∃`-introduction, at the size `sz`. -/
+local notation:max "∀¬ " X:max => Form.all (sz := sz) (Form.not X)
+
 /-- The cut of the negative translation of an `∃`-introduction at the term `t`: the hypothesis
 `∀ x, ¬ X x`, instantiated at `t` and converted to `¬ X t`, applied to a derivation `e` of
 `X t`. -/
-def exICut {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K i) {Δ : Fin n → Form I}
-    (e : Deriv (consF (.all (Form.not X)) Δ) (X.sub fun i => ⟨i, t i⟩)) :
-    Deriv (consF (.all (Form.not X)) Δ) Form.bot :=
+def exICut (X : Form (Σ i, K i)) (t : ∀ i, K i) {Δ : Fin n → Form I}
+    (e : Deriv (consF (∀¬ X) Δ) (X.sub fun i => ⟨i, t i⟩)) :
+    Deriv (consF (∀¬ X) Δ) Form.bot :=
   .impE (conv (ψ := Form.not (X.sub fun i => (⟨i, t i⟩ : Σ i, K i)))
     (.allE t (.hyp ⟨0, Nat.succ_pos _⟩))) e
 
@@ -1496,13 +1523,13 @@ def exICut {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K i) {Δ : Fin 
 declared to demand at most `N` counter-witnesses of `X x`, the cut uses hypothesis `k` as often
 as the instantiation does plus `N` times the uses of `k` by `e`, under any choice `S` of premise
 demands. -/
-theorem uses_exICut_sel {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K i) {Δ : Fin n → Form I}
-    (e : Deriv (consF (.all (Form.not X)) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
+theorem uses_exICut_sel (X : Form (Σ i, K i)) (t : ∀ i, K i) {Δ : Fin n → Form I}
+    (e : Deriv (consF (∀¬ X) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
     (δ : ∀ k, (Δ k).Dem) (S : PremDem.{u}) (k : Fin (n + 1)) :
-    ((exICut X t e).uses (some (consD ((none, N, ()) : (Form.all (Form.not X)).Dem) δ))
+    ((exICut X t e).uses (some (consD ((none, N, ()) : (∀¬ X).Dem) δ))
         HomDem.keep S).1 k =
       1 * (if k = 0 then 1 else 0) +
-        N * (e.uses (some (consD ((none, N, ()) : (Form.all (Form.not X)).Dem) δ))
+        N * (e.uses (some (consD ((none, N, ()) : (∀¬ X).Dem) δ))
           HomDem.keep S).1 k := by
   have hm := HomDem.keep_map
     (homOfEq (P := ((Form.not X).sub fun i => (⟨i, t i⟩ : Σ i, K i)).dn)
@@ -1514,25 +1541,25 @@ theorem uses_exICut_sel {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K 
 
 /-- **Use counts of the cut of an `∃`-introduction**, with no premise demands: `uses_exICut_sel`
 at `PremDem.free`. -/
-theorem uses_exICut {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K i) {Δ : Fin n → Form I}
-    (e : Deriv (consF (.all (Form.not X)) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
+theorem uses_exICut (X : Form (Σ i, K i)) (t : ∀ i, K i) {Δ : Fin n → Form I}
+    (e : Deriv (consF (∀¬ X) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
     (δ : ∀ k, (Δ k).Dem) (k : Fin (n + 1)) :
-    ((exICut X t e).uses (some (consD ((none, N, ()) : (Form.all (Form.not X)).Dem) δ))
+    ((exICut X t e).uses (some (consD ((none, N, ()) : (∀¬ X).Dem) δ))
         HomDem.keep).1 k =
       1 * (if k = 0 then 1 else 0) +
-        N * (e.uses (some (consD ((none, N, ()) : (Form.all (Form.not X)).Dem) δ))
+        N * (e.uses (some (consD ((none, N, ()) : (∀¬ X).Dem) δ))
           HomDem.keep).1 k :=
   uses_exICut_sel X t e N δ PremDem.free k
 
 /-- The cut of an `∃`-introduction has finite use counts when the declared demand `N` and the use
 counts of `e` are finite, under any choice `S` of premise demands. -/
-theorem uses_exICut_lt_top_sel {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K i)
+theorem uses_exICut_lt_top_sel (X : Form (Σ i, K i)) (t : ∀ i, K i)
     {Δ : Fin n → Form I}
-    (e : Deriv (consF (.all (Form.not X)) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
+    (e : Deriv (consF (∀¬ X) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
     (δ : ∀ k, (Δ k).Dem) (S : PremDem.{u}) (k : Fin (n + 1)) (hN : N < ⊤)
-    (he : (e.uses (some (consD ((none, N, ()) : (Form.all (Form.not X)).Dem) δ))
+    (he : (e.uses (some (consD ((none, N, ()) : (∀¬ X).Dem) δ))
       HomDem.keep S).1 k < ⊤) :
-    ((exICut X t e).uses (some (consD ((none, N, ()) : (Form.all (Form.not X)).Dem) δ))
+    ((exICut X t e).uses (some (consD ((none, N, ()) : (∀¬ X).Dem) δ))
         HomDem.keep S).1 k < ⊤ := by
   rw [uses_exICut_sel]
   refine ENat.add_lt_top.2 ⟨?_, WithTop.mul_lt_top hN he⟩
@@ -1540,13 +1567,13 @@ theorem uses_exICut_lt_top_sel {K : I → Type u} (X : Form (Σ i, K i)) (t : �
 
 /-- The cut of an `∃`-introduction has finite use counts when the declared demand `N` and the use
 counts of `e` are finite, with no premise demands. -/
-theorem uses_exICut_lt_top {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K i)
+theorem uses_exICut_lt_top (X : Form (Σ i, K i)) (t : ∀ i, K i)
     {Δ : Fin n → Form I}
-    (e : Deriv (consF (.all (Form.not X)) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
+    (e : Deriv (consF (∀¬ X) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
     (δ : ∀ k, (Δ k).Dem) (k : Fin (n + 1)) (hN : N < ⊤)
-    (he : (e.uses (some (consD ((none, N, ()) : (Form.all (Form.not X)).Dem) δ))
+    (he : (e.uses (some (consD ((none, N, ()) : (∀¬ X).Dem) δ))
       HomDem.keep).1 k < ⊤) :
-    ((exICut X t e).uses (some (consD ((none, N, ()) : (Form.all (Form.not X)).Dem) δ))
+    ((exICut X t e).uses (some (consD ((none, N, ()) : (∀¬ X).Dem) δ))
         HomDem.keep).1 k < ⊤ :=
   uses_exICut_lt_top_sel X t e N δ PremDem.free k hN he
 
@@ -1554,19 +1581,19 @@ theorem uses_exICut_lt_top {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i,
 premise demand `N` (with no demand on `X`) on the premise `∀ x, ¬ X x` of the `→`-introduction
 around the cut of an `∃`-introduction, `N` and the use counts of `e` are finite, the
 `→`-introduction uses each hypothesis finitely often and its premise finitely often. -/
-theorem uses_impI_exICut_lt_top {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K i)
+theorem uses_impI_exICut_lt_top (X : Form (Σ i, K i)) (t : ∀ i, K i)
     {Δ : Fin n → Form I}
-    (e : Deriv (consF (.all (Form.not X)) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
+    (e : Deriv (consF (∀¬ X) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
     (δ : ∀ k, (Δ k).Dem) (S : PremDem.{u})
-    (hS : S.sel (Form.all (Form.not X)) = some ((none, N, ()) : (Form.all (Form.not X)).Dem))
+    (hS : S.sel (∀¬ X) = some ((none, N, ()) : (∀¬ X).Dem))
     (hN : N < ⊤)
-    (he : ∀ k, (e.uses (some (consD ((none, N, ()) : (Form.all (Form.not X)).Dem) δ))
+    (he : ∀ k, (e.uses (some (consD ((none, N, ()) : (∀¬ X).Dem) δ))
       HomDem.keep S).1 k < ⊤) :
-    (∀ k, ((impI (exICut X t e)).uses (some δ) HomDem.keep S).1 k < ⊤) ∧
-      ((impI (exICut X t e)).uses (some δ) HomDem.keep S).2.2.1 < ⊤ := by
-  have hδ : (some δ).map (consD ((S.sel (Form.all (Form.not X))).getD
-      (Form.all (Form.not X)).demTop)) =
-      some (consD (φ := Form.all (Form.not X)) (none, N, ()) δ) := by
+    (∀ k, ((impI (exICut (sz := sz) X t e)).uses (some δ) HomDem.keep S).1 k < ⊤) ∧
+      ((impI (exICut (sz := sz) X t e)).uses (some δ) HomDem.keep S).2.2.1 < ⊤ := by
+  have hδ : (some δ).map (consD ((S.sel (∀¬ X)).getD
+      (∀¬ X).demTop)) =
+      some (consD (φ := ∀¬ X) (none, N, ()) δ) := by
     rw [hS]
     rfl
   simp only [uses]
@@ -1576,24 +1603,24 @@ theorem uses_impI_exICut_lt_top {K : I → Type u} (X : Form (Σ i, K i)) (t : �
 
 /-- The `→`-introduction around the cut of an `∃`-introduction is coherent under the choice `S`
 of the premise demand `N` when `e` is coherent and its demand is counter-free. -/
-theorem coherent_impI_exICut {K : I → Type u} (X : Form (Σ i, K i)) (t : ∀ i, K i)
+theorem coherent_impI_exICut (X : Form (Σ i, K i)) (t : ∀ i, K i)
     {Δ : Fin n → Form I}
-    (e : Deriv (consF (.all (Form.not X)) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
+    (e : Deriv (consF (∀¬ X) Δ) (X.sub fun i => ⟨i, t i⟩)) (N : ℕ∞)
     (δ : ∀ k, (Δ k).Dem) (S : PremDem.{u})
-    (hS : S.sel (Form.all (Form.not X)) = some ((none, N, ()) : (Form.all (Form.not X)).Dem))
-    (he : e.Coherent (some (consD ((none, N, ()) : (Form.all (Form.not X)).Dem) δ))
+    (hS : S.sel (∀¬ X) = some ((none, N, ()) : (∀¬ X).Dem))
+    (he : e.Coherent (some (consD ((none, N, ()) : (∀¬ X).Dem) δ))
       HomDem.keep S)
     (hf : (X.sub fun i => (⟨i, t i⟩ : Σ i, K i)).cfree
-      (e.uses (some (consD ((none, N, ()) : (Form.all (Form.not X)).Dem) δ))
+      (e.uses (some (consD ((none, N, ()) : (∀¬ X).Dem) δ))
         HomDem.keep S).2 = true) :
-    (impI (exICut X t e)).Coherent (some δ) HomDem.keep S := by
+    (impI (exICut (sz := sz) X t e)).Coherent (some δ) HomDem.keep S := by
   have hm := HomDem.keep_map
     (homOfEq (P := ((Form.not X).sub fun i => (⟨i, t i⟩ : Σ i, K i)).dn)
       (Q := (Form.not (X.sub fun i => (⟨i, t i⟩ : Σ i, K i))).dn) rfl)
     ((none, N, ()) : (Form.not X).Dem) rfl (fun _ _ hw => hw)
-  have hδ : (some δ).map (consD ((S.sel (Form.all (Form.not X))).getD
-      (Form.all (Form.not X)).demTop)) =
-      some (consD (φ := Form.all (Form.not X)) (none, N, ()) δ) := by
+  have hδ : (some δ).map (consD ((S.sel (∀¬ X)).getD
+      (∀¬ X).demTop)) =
+      some (consD (φ := ∀¬ X) (none, N, ()) δ) := by
     rw [hS]
     rfl
   simp only [Coherent]
