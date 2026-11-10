@@ -499,7 +499,7 @@ def shapeRep (t τ Γ : Expr) (h : Term) (extra : Array Term) : TermElabM (Expr 
 
 /-- The elaborator of `free_theorem`. -/
 @[command_elab freeTheorem] def elabFreeTheorem : CommandElab := fun stx => do
-  let doc? := stx[0].getOptional?
+  let doc? :=stx[0].getOptional?
   let nameStx := stx[2]
   let bs : Array Syntax := stx[3].getArgs
   let reflect := !stx[5].isNone
@@ -522,7 +522,9 @@ def shapeRep (t τ Γ : Expr) (h : Term) (extra : Array Term) : TermElabM (Expr 
       let c ← liftCoreM <| realizeGlobalConstNoOverload stx[6]
       pure (mkCIdent (c ++ `d))
     else pure ⟨stx[6]⟩
-  let (declName, _) ← mkDeclName (← getCurrNamespace) {} nameStx.getId
+  let isPub := (← getScope).isPublic
+  let (declName, _) ← withExporting (isExporting := isPub) <|
+    mkDeclName (← getCurrNamespace) {} nameStx.getId
   let (type, value) ← liftTermElabM do
     elabBinders (bs.map fun b => (⟨b⟩ : TSyntax ``Parser.Term.bracketedBinder)) fun xs => do
       let t ← elabTerm tStx none
@@ -551,7 +553,8 @@ def shapeRep (t τ Γ : Expr) (h : Term) (extra : Array Term) : TermElabM (Expr 
         throwError "free_theorem: the statement or the proof has unassigned metavariables"
       return (ty, pf)
   let lps := (collectLevelParams (collectLevelParams {} type) value).params.toList
-  liftCoreM <| addDecl <| .thmDecl { name := declName, levelParams := lps, type, value }
+  liftCoreM <| withExporting (isExporting := isPub) <|
+    addDecl <| .thmDecl { name := declName, levelParams := lps, type, value }
   if let some doc := doc? then
     liftTermElabM <| addDocString declName (binders := mkNullNode bs)
       (⟨doc⟩ : TSyntax ``Parser.Command.docComment)
