@@ -18,9 +18,10 @@ Applications of the command `free_theorem` to definitions of the workspace, in i
 
 * Non-interference. The message decoding and encoding of ML-KEM (`MLKEM512Instance.compress1`,
   `MLKEM512Instance.decompress1`) are reflected by `reflect_d`, and their free theorems are
-  refused: `Compress₁` compares the natural number `x.val` of the secret coefficient, whose
-  primitive `natLt` costs the length of its arguments, and `Decompress₁` branches on the secret
-  bit. The refusals are checked here.
+  refused: `Compress₁` reads the secret coefficient into the natural number `x.val` (`finToNat`),
+  a public type, and the comparison `natLt` that follows costs the length of that number in D's
+  cost model, which depends on its value; `Decompress₁` branches on the secret bit. The refusals
+  are checked here.
 * Commutation with a homomorphism. The Montgomery ladder of the key agreement
   (`CatCrypt.Crypto.ECC.ladderFold`) over a generic group, as the term `ladderT` of D: it
   commutes with every homomorphism at equal cost, and its number of steps, two group operations
@@ -37,6 +38,8 @@ Applications of the command `free_theorem` to definitions of the workspace, in i
 
 * `Prim.respB_secret_of_cost` — a primitive of constant cost with a secret result respects the
   relation of the secret types;
+* `Prim.respB_of_pub_arg` — a primitive on a public argument type respects the relation of the
+  secret types when the result relation is reflexive;
 * `ladderSpec_addOps` — the ladder over the operations of an additive group is
   `CatCrypt.Crypto.ECC.ladderFold`;
 * `ladderT_eval`, `ladderT_cost`, `ladderT_commute` — the ladder in D: its value, its number of
@@ -79,19 +82,30 @@ theorem Prim.respB_secret_of_cost {Sec : FTy → Prop} {a : Ty} {f : FTy} (p : P
     Prim.bnot.RespB (BRel.secret Sec) :=
   Prim.respB_secret_of_cost _ hb fun _ _ => rfl
 
+/-- A primitive on a public argument type respects the relation of the secret types when its
+result relation is reflexive at the result type: related arguments are equal, so the results
+and the costs are equal. -/
+@[resp_b] theorem Prim.respB_of_pub_arg {Sec : FTy → Prop} {a b : Ty} (ha : a.Pub Sec)
+    (hb : ∀ x : Val b, Ty.relB (BRel.secret Sec) b x x) (p : Prim a b) :
+    p.RespB (BRel.secret Sec) := by
+  intro u v huv
+  obtain rfl := (ha.relB_iff u v).1 huv
+  exact ⟨hb _, rfl⟩
+
 namespace FreeThmApps
 
 open GenericGroup
 
 /-! ## Timing non-interference of the ML-KEM message coding: refusals
 
-With the coefficients and the bits secret, `Compress₁` is refused at the comparison `natLt` of
-the natural number `x.val`, whose cost depends on its length. With the bits secret,
+With the coefficients and the bits secret, `Compress₁` is refused at the read `finToNat` of the
+secret coefficient into a natural number, a public type; the comparison `natLt` that follows
+costs the length of that number. With the bits secret,
 `Decompress₁` is refused at its branch on the bit. -/
 
 /--
 error: resp_b: no registered lemma closes the obligation
-  Prim.RespB (BRel.secret Sec) Prim.natLt
+  Prim.RespB (BRel.secret Sec) (Prim.finToNat 3328)
 -/
 #guard_msgs in
 free_theorem compress1_ni {Sec : FTy → Prop} (hs : Sec (.fin 3328)) (hb : Sec .bool)
