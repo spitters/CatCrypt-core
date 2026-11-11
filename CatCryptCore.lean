@@ -913,6 +913,10 @@ public import CatCryptCore.Crypto.OTExtension.IKNPWake
 public import CatCryptCore.Crypto.OTExtension.IKNPWakeShape
 public import CatCryptCore.Crypto.OTExtension.IKNPPVW
 public import CatCryptCore.Crypto.ZK.SigmaUCZKTimed
+public import CatCryptCore.Hax.RustM
+public import CatCryptCore.Hax.RustPanicFree
+public import CatCryptCore.Crypto.UCMonad.Transformers
+public import CatCryptCore.Crypto.UCMonad.RustMBridge
 
 /-! # CatCrypt Core — umbrella
 
