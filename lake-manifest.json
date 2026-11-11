@@ -18,10 +18,10 @@
     {
       "configFile": "lakefile.lean",
       "inherited": false,
-      "inputRev": "lean-upgrade-4.35",
+      "inputRev": "master",
       "manifestFile": "lake-manifest.json",
       "name": "«hax-lean»",
-      "rev": "8482a3104d69e59a9b61859823eebc36403dc495",
+      "rev": "245f7688a4da9d7014cb9f11183133e9710bf71a",
       "scope": "",
       "subDir": null,
       "type": "git",
