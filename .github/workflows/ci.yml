@@ -73,15 +73,13 @@ jobs:
           use-github-cache: true
       # Axiom audit: every declaration in a module under `CatCryptCore/` (the umbrella, the
       # examples root, the tactic tests and the time-certificate companions) may depend only
-      # on Lean's three standard axioms, `Lean.ofReduceBool` and `Lean.trustCompiler`, the
-      # auxiliary axioms Lean 4.35 adds for each `native_decide` (names containing
-      # `._native.native_decide.ax_`; native_decide is accepted), and the three Curve25519
-      # trust edges of `CatCryptCore/Crypto/KeyAgreement/Curve25519.lean`. The tool
-      # (leanprover-community/axiom-audit, the version lean-action v1.7.1 pins) reads the
-      # compiled environment, so it also catches an axiom declared through a macro or reached
-      # through a dependency. Its allowlist takes exact names only, so its JSON report is
-      # filtered for the native_decide auxiliaries. The earlier textual guard
-      # (`git grep '^ *axiom '`) matched a docstring line beginning with the word.
+      # on Lean's three standard axioms and the three Curve25519 trust edges of
+      # `CatCryptCore/Crypto/KeyAgreement/Curve25519.lean`. native_decide is outside the
+      # audit: its axioms (`Lean.ofReduceBool`, `Lean.trustCompiler`, and the per-use
+      # `._native.native_decide.ax_*` of Lean 4.35) are neither checked nor reported; a
+      # native_decide matters only as build time. The tool (leanprover-community/axiom-audit,
+      # the version lean-action v1.7.1 pins) reads the compiled environment, so it also
+      # catches an axiom declared through a macro or reached through a dependency.
       - name: Axiom audit of every module under CatCryptCore/
         run: |
           work="$(mktemp -d "${RUNNER_TEMP:-/tmp}/axiom-audit-all.XXXXXX")"
@@ -94,7 +92,7 @@ jobs:
             > "$work/audit.json" || true
           jq -e '.audited > 0' "$work/audit.json" > /dev/null
           bad=$(jq -r '[.violations[] | {decl, axioms: [.axioms[] | select(test("\\._native\\.native_decide\\.ax_") | not)]} | select(.axioms | length > 0)]' "$work/audit.json")
-          echo "audited $(jq .audited "$work/audit.json") declarations; axioms used: $(jq -c .axiomsUsed "$work/audit.json" | cut -c1-400)"
+          echo "audited $(jq .audited "$work/audit.json") declarations; axioms used (native_decide aside): $(jq -c '[.axiomsUsed[] | select(test("native_decide|^Lean\\.(ofReduceBool|trustCompiler)$") | not)]' "$work/audit.json")"
           if [ "$(jq 'length' <<<"$bad")" != 0 ]; then
             echo "::error::declarations depending on an axiom outside the allowlist"
             jq -r '.[] | "\(.decl): \(.axioms | join(", "))"' <<<"$bad" | head -50
