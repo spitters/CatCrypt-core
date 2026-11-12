@@ -1444,8 +1444,8 @@ end Deriv
 /-! ## Conversion between formulas of equal meaning, and atoms from two atoms
 
 A formula and its substitution pushed through the connectives have the same Diller–Nahm
-meaning; `Deriv.conv` passes between them along the identity of that meaning, as a realized
-axiom demanding one counter-witness, so that a hypothesis reindexed by `∀`- or
+meaning; `Deriv.conv` passes between them along the identity of that meaning, as a
+realized axiom demanding one counter-witness, so that a hypothesis reindexed by `∀`- or
 `∃`-introduction can be eliminated. `Deriv.atom₂` concludes an atom from two atoms, demanding
 one counter-witness of each: its use counts are the sums of those of its premises. -/
 

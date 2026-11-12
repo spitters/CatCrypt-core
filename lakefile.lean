@@ -40,7 +40,7 @@ require nominalLean from git
 -- hax-lean: the runtime and typed AST of haxpipeT extractions (`HaxLean.Runtime`), which the
 -- extraction bridges and the fold lemmas of `CatCryptCore.Hax.FoldRange` read.
 require «hax-lean» from git
-  "https://github.com/spitters/hax-lean.git" @ "lean-upgrade-4.35"
+  "https://github.com/spitters/hax-lean.git" @ "master"
 
 -- QuantumFoundations: the quantum-information library shared with VCVio; `CPComp` is its
 -- `SubInstrument` on `Fin d`. Pinned to a commit of `main`.
