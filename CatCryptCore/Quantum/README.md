@@ -10,8 +10,7 @@ Stinespring dilation), the quantum distances and the QROM are listed in the
 [top-level README](https://github.com/spitters/CatCrypt-core/blob/main/README.md). This page
 describes the order-theoretic and categorical structure of quantum programs and reactive quantum
 systems, and the quantum UC layer built on it. The circuit compiler, dynamic circuits and the ZX
-category that use this structure are in the CatCrypt repository
-([quantum README](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Quantum/README.md)).
+category that use this structure are in the CatCrypt development repository, which is not public.
 
 ## Selinger's order on subinstruments
 
@@ -37,8 +36,8 @@ On `Unit`-valued instruments the order implies the Löwner order of the programs
 
 The quantum while loop is the supremum of its bounded unfoldings in this order, and a dynamic
 circuit's loop is the least fixed point of its unfolding
-([`CPComp.qwhile_eq_ωSup`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Quantum/Loop/WhileOmega.lean),
-[`DCircuit.denoteCP_whileBit_le_of_prefixed`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Quantum/DynCircuit.lean)).
+(`CPComp.qwhile_eq_ωSup` and `DCircuit.denoteCP_whileBit_le_of_prefixed`, in the development
+repository).
 Properties of such suprema are proved by Scott induction for predicates closed under suprema of
 chains
 ([`ωSup_iterateChain_induction`, `OrderHom.lfp_scott_induction`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/ForMathlib/Order/ScottInduction.lean)),
@@ -70,7 +69,7 @@ and step equivalence is a congruence for it
 Together they give the traced symmetric monoidal category
 ([`QSysCat.tracedCategory`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QSysCat.lean)).
 The quantum while loop is this trace applied to the system of its guard and body
-([`CPComp.loopbackω_whileSys_step`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Quantum/Loop/WhileTrace.lean)).
+(`CPComp.loopbackω_whileSys_step`, in the development repository).
 
 ## The tensor `⊗` by framing
 
@@ -167,7 +166,7 @@ testing equivalence through the bit boundary
 The instances are the compiled-step map of classical systems, the classical lift into quantum
 systems ([`liftObsPreserving`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/TransportAlong.lean))
 and the quantum compiled step
-([`qcompiledObsPreserving`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Quantum/QCompiledStepTransport.lean)).
+(`qcompiledObsPreserving`, in the development repository).
 The tactic `transport_along P` reduces a goal about the images to the goal about the sources.
 
 ## Quantum UC
@@ -186,7 +185,7 @@ The real world of the reactive one-time pad is the loop of a quantum party progr
 [party language](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/Party/README.md)).
 A quantum party whose steps are QPL programs is realized at distance `0` by the party running
 the compiled circuits, with simulators and bounds transported
-([`QRealizesSim.ofCompile`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Quantum/QCompiledStep.lean)).
+(`QRealizesSim.ofCompile`, in the development repository).
 
 ## Composition law for quantum realization
 
