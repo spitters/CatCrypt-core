@@ -5,9 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Tactic.TypeStar
-public import Mathlib.Data.Nat.Notation
-public import Mathlib.Algebra.Group.Defs
 public import Mathlib.Algebra.Group.Nat.Defs
 public import Mathlib.Order.Defs.PartialOrder
 

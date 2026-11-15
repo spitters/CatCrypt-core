@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Category.XCategoricalModel
 public import CatCryptCore.XDijkstra.Rel.XRelSpecMonad
 
 @[expose] public section

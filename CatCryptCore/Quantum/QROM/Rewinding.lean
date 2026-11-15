@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QROM.FiatShamir
-public import CatCryptCore.ForMathlib.Matrix.ProjectorRewinding
+import CatCryptCore.ForMathlib.Matrix.ProjectorRewinding
 
 /-!
 # The binary rewinding extractor for the interactive Fiat–Shamir game

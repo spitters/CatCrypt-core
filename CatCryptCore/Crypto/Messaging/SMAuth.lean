@@ -93,6 +93,16 @@ idealK` (`smAuthHopGame_eq_cka`), so (`acdAuthSM_truncGame_le_cka`)
 
   `Pr[smAuthTruncGame k A] ≤ Adv_CKA(smAuthCKARed k A) + Pr[smAuthHopGame k (unifKeyRoot R) A]`.
 
+## Associated data of the AEAD
+
+`acdAuthSMAD C R G D adOf adDec` takes an AEAD `D : AEADDef W Ct AD` with its own type of
+associated data: encryption from the sender state `x` uses `adOf x ad` (`acdSMAD`), decryption
+by the receiver in state `x` at the position `j` uses `adDec x j ad`. `acdAuthSM C R G D` is
+`acdAuthSMAD` at `AD = W` with the associated data of the message in both, and `acdRecvDec`
+takes the AEAD at any type `AD`. The hop machinery (`acdDeliverAns`, `acdDeliverBad`,
+`smAuthHopStep`, `smAuthCKAImpl`, `smAuthCKARed`) is stated at `AD = W`, the associated data of
+the AEAD of `CatCryptCore.Crypto.Messaging.SMCorrupt`.
+
 ## Main definitions
 
 * `SMAuthScheme`, `SMAuthQuery`, `SMAuthAns`, `SMLogEntry`, `SMAuthAux`, `smAuthOracleAt`,
@@ -101,7 +111,8 @@ idealK` (`smAuthHopGame_eq_cka`), so (`acdAuthSM_truncGame_le_cka`)
 * `smAuthImpl`, `smAuthRed` — the reduction to the corruption game
 * `smAuthBadAt`, `smAuthFlagOracle`, `smAuthFlagRun`, `smAuthBadGame`, `smAuthTruncOracle`,
   `smAuthTruncGame` — the forgery event at an epoch and its truncated game
-* `acdAuthSM` — the ACD construction with the decryption of the receiving chain
+* `acdAuthSMAD`, `acdAuthSM` — the ACD construction with the decryption of the receiving chain,
+  with associated data of the AEAD in its own type and at the associated data of the message
 * `smOracleOfAt`, `acdRecvDec`, `acdDeliverAns`, `acdDeliverBad`, `smAuthCut`,
   `smAuthHopStep`, `smAuthHopOracle`, `smAuthHopGame` — the truncated forgery game with a root
   step at the epoch `k`
@@ -712,19 +723,56 @@ end UntilBad
 
 section ACD
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [Fintype RK] [Nonempty RK]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand]
+  [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
 
-/-- **The ACD construction with decryption**: `acdSM C R G D` with the decryption of the
-ciphertext at the position `j` under the key at the position `j` of the receiving chain. -/
+/-- **The ACD construction with decryption and associated data of the AEAD in `AD`**:
+`acdSMAD C R G D adOf` with the decryption, by a receiver in state `x`, of the ciphertext at
+the position `j` with associated data `ad` under the key at the position `j` of the receiving
+chain and with associated data `adDec x j ad` of the AEAD. -/
+noncomputable def acdAuthSMAD (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (adOf : SMPartySt Sc RK Sa → W → AD) (adDec : SMPartySt Sc RK Sa → ℕ → W → AD) :
+    SMAuthScheme (SMPartySt Sc RK Sa) Msg Rand W Ct (SMPartySt Sc RK Sa) :=
+  { toSMScheme := acdSMAD C R G D adOf
+    dec := fun x j ad c => x.rcv.bind fun sa => D.decrypt (chainKey G sa j) c (adDec x j ad) }
+
+/-- **The ACD construction with decryption**: `acdAuthSMAD` with the associated data of the
+message as the associated data of the AEAD, in encryption and in decryption. -/
 noncomputable def acdAuthSM (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) :
     SMAuthScheme (SMPartySt Sc RK Sa) Msg Rand W Ct (SMPartySt Sc RK Sa) :=
-  { toSMScheme := acdSM C R G D
-    dec := fun x j ad c => x.rcv.bind fun sa => D.decrypt (chainKey G sa j) c ad }
+  acdAuthSMAD C R G D (fun _ ad => ad) fun _ _ ad => ad
 
 variable [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] [DecidableEq RK]
   [DecidableEq Key] [DecidableEq W] [DecidableEq Ct]
+
+/-- **Authenticity of the ACD construction with associated data in `AD` up to integrity.** For
+the AEAD `D : AEADDef W Ct AD`, encryption with associated data `f ad` and decryption with
+associated data `adDec x j ad`, a CKA correct along `J` with a sound explicit-randomness sending
+algorithm, and `2 ≤ ΔFS`, `1 ≤ ΔPCS`, the authenticity advantage of every adversary `A` is at
+most its integrity advantage plus the bound of `acdSMAD_corruptAdvantage_le` at the reduction
+`smAuthRed ΔFS ΔPCS A`, relabelled by `toSMAD f`. -/
+theorem acdAuthSMAD_authAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (f : W → AD)
+    (adDec : SMPartySt Sc RK Sa → ℕ → W → AD) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (hPCS : 1 ≤ ΔPCS) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    (acdAuthSMAD C R G D (fun _ => f) adDec).authAdvantage ΔFS ΔPCS A ≤
+      (acdAuthSMAD C R G D (fun _ => f) adDec).intAdvantage ΔFS ΔPCS A +
+        (∑ b : Bool, CKA_Corrupt_Advantage C ΔFS ΔPCS
+            (smcCKARed R G D b ((smAuthRed ΔFS ΔPCS A).toSMAD f)) +
+          ∑ b : Bool, PRFPRNG_Advantage R
+            (smcRootRed C R G D ΔFS ΔPCS b initP ((smAuthRed ΔFS ΔPCS A).toSMAD f)) +
+          FSAEAD_Corrupt_Advantage G D
+            (smcFSRed C R G D ΔFS ΔPCS initP ((smAuthRed ΔFS ΔPCS A).toSMAD f))) := by
+  have h := acdSMAD_corruptAdvantage_le C hS hJ initP hinit hJi R G D f hFS hPCS
+    (smAuthRed ΔFS ΔPCS A)
+  refine (SMAuthScheme.authAdvantage_le (acdAuthSMAD C R G D (fun _ => f) adDec) ΔFS ΔPCS
+    A).trans ?_
+  exact add_le_add_right h _
 
 /-- **Authenticity of the ACD construction up to integrity.** For a CKA correct along `J` with
 a sound explicit-randomness sending algorithm, and `2 ≤ ΔFS`, `1 ≤ ΔPCS`, the authenticity
@@ -746,10 +794,9 @@ theorem acdAuthSM_authAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
             (smcRootRed C R G D ΔFS ΔPCS b initP (smAuthRed ΔFS ΔPCS A).toSM) +
           FSAEAD_Corrupt_Advantage G D
             (smcFSRed C R G D ΔFS ΔPCS initP (smAuthRed ΔFS ΔPCS A).toSM)) := by
-  have h := acdSM_corruptAdvantage_le C hS hJ initP hinit hJi R G D hFS hPCS
-    (smAuthRed ΔFS ΔPCS A)
-  refine (SMAuthScheme.authAdvantage_le (acdAuthSM C R G D) ΔFS ΔPCS A).trans ?_
-  exact add_le_add_right h _
+  have h := acdAuthSMAD_authAdvantage_le C hS hJ initP hinit hJi R G D id (fun _ _ ad => ad)
+    hFS hPCS A
+  rwa [SMSchemeAdv.toSMAD_id] at h
 
 end ACD
 
@@ -773,10 +820,11 @@ noncomputable def smOracleOfAt (C : CKADef Sc Msg Key) [CKACoins C Rand]
   | .corrupt p => smOracleOf C R G D ΔFS ΔPCS t ideal root s (.corrupt p)
 
 /-- The decryption of the ACD construction from the local state `l`: the ciphertext `c` with
-associated data `ad` at the position `j` under the key at the position `j` of the receiving
-chain of `p`. -/
-def acdRecvDec (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (l : SMLoc RK Sa) (p : CKAParty)
-    (j : ℕ) (ad : W) (c : Ct) : Option W :=
+associated data `ad` of the AEAD `D`, whose associated data have the type `AD`, at the position
+`j` under the key at the position `j` of the receiving chain of `p`. At `AD = W` it is the
+decryption of the ACD construction with the associated data of the message. -/
+def acdRecvDec {AD : Type} (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (l : SMLoc RK Sa)
+    (p : CKAParty) (j : ℕ) (ad : AD) (c : Ct) : Option W :=
   (l.rcv p).bind fun sa => D.decrypt (chainKey G sa j) c ad
 
 /-- The answer of the hybrid `k + 1` to a delivery to `p` at the epoch counters `sh`: from the
@@ -1137,8 +1185,8 @@ theorem smAuthHop_acd_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
       rfl
     | deliver p j ad c =>
       simp [smAuthHopStep, smAuthFlagOracle, smAuthOracleAt, smAuthBadAt, acdDeliverAns,
-        acdDeliverBad, acdRecvDec, acdAuthSM, PMF.pure_map, smAuthAcdEmb, SMSt.toScheme_ck_t,
-        SMSt.toScheme_ck_st, ckaShadow]
+        acdDeliverBad, acdRecvDec, acdAuthSM, acdAuthSMAD, PMF.pure_map, smAuthAcdEmb,
+        SMSt.toScheme_ck_t, SMSt.toScheme_ck_st, ckaShadow]
       rfl
   · simp [hx, PMF.pure_map, smAuthAcdEmb]
 
@@ -1186,7 +1234,7 @@ theorem acdAuthSM_truncGame_eq_hop (C : CKADef Sc Msg Key) [CKACoins C Rand]
     smAuthTruncGame (acdAuthSM C R G D) ΔFS ΔPCS k A =
       smAuthHopGame C R G D ΔFS ΔPCS k (realRoot R) A := by
   have hI : (acdAuthSM C R G D).init = (acdSM C R G D).init := rfl
-  simp only [smAuthTruncGame, smAuthHopGame, hI, acdSM, hinit, sample_eq_liftPMF,
+  simp only [smAuthTruncGame, smAuthHopGame, hI, acdSM, acdSMAD, hinit, sample_eq_liftPMF,
     SPComp.bind_assoc, SPComp.pure_bind, liftPMF_bind_liftPMF]
   refine congrArg _ (congrArg _ (funext fun t => ?_))
   refine PMF.bind_congr_support _ _ _ fun i hi => congrArg _ (funext fun rk => ?_)
@@ -1204,7 +1252,7 @@ theorem acdAuthSM_truncGame_eq_hop (C : CKADef Sc Msg Key) [CKACoins C Rand]
       s.1.2.safe ΔFS ΔPCS k = false)
     (fun s => s.2) (SMAuthAns.dec none) hfr _ _).symm ?_
   rw [← SMSt.toScheme_smInit]
-  have h := OracleAdv.run_map_state_inv _
+  have h := OracleAdv.run_map_state_of_inv _
     (fun s d => (smAuthTruncOracle (acdAuthSM C R G D) ΔFS ΔPCS t false
       (fun e => decide (e < k + 1)) k s d).map (smAuthCut ΔFS ΔPCS k))
     smAuthAcdEmb (fun s => ACDInv C R J s.1.1)

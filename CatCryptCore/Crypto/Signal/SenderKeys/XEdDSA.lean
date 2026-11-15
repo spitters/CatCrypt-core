@@ -5,8 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Signal.SenderKeys.SecurityTimed
 public import CatCryptCore.Crypto.Signal.Zkgroup.XEdDSA
+public import CatCryptCore.Crypto.Signal.SenderKeys.Games
 
 /-!
 # Sender Keys authenticity with XEdDSA signatures in the random-oracle model

@@ -76,6 +76,11 @@ public import CatCryptCore.Examples.HashedElGamalTimed
 public import CatCryptCore.Examples.KEMDEMTimed
 public import CatCryptCore.Examples.OTTimed
 public import CatCryptCore.Examples.PRGTimed
+public import CatCryptCore.Examples.CyclicGroupDDHTimed
+public import CatCryptCore.Examples.ElGamalDDHKeyMsgTimed
+public import CatCryptCore.Examples.EncodedMask
+public import CatCryptCore.Examples.GroupParamCommGroup
+public import CatCryptCore.Examples.SigmaCompositions
 
 /-! # CatCrypt Core examples
 

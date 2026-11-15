@@ -7,6 +7,8 @@ module
 
 public import CatCryptCore.Crypto.AKE.PQXDHPassiveHops
 public import CatCryptCore.Crypto.Assumptions.DDHSampled
+import CatCryptCore.Tactics.Basic
+import Mathlib.CategoryTheory.Category.Init
 
 /-!
 # PQXDH key indistinguishability with the hybrid values drawn by key generation

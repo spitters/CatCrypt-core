@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QROM.CompressedOracle
-public import CatCryptCore.Quantum.QROM.MeasureReprogram
+import CatCryptCore.Quantum.QROM.MeasureReprogram
 
 /-!
 # The per-query compressed oracle and the database bound

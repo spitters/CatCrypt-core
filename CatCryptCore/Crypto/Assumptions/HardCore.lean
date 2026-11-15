@@ -6,9 +6,9 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Advantage
-public import CatCryptCore.Crypto.GeneralForkingLemma
-public import CatCryptCore.Crypto.HybridArgument
-public import CatCryptCore.Relational.DeadSample
+import CatCryptCore.Crypto.GeneralForkingLemma
+import CatCryptCore.Crypto.HybridArgument
+import CatCryptCore.Relational.DeadSample
 
 /-!
 # Hard-core functions of a trapdoor permutation

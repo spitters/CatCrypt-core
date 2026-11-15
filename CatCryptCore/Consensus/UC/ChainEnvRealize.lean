@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Consensus.UC.ChainEnv
+import CatCryptCore.NonUniform.UnaryRules
 
 @[expose] public section
 set_option autoImplicit false

@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Consensus.UC.FTree
-public import CatCryptCore.Consensus.FinalityValidity
+import CatCryptCore.Consensus.FinalityValidity
 public import CatCryptCore.Consensus.FinalityUpdated
 
 @[expose] public section

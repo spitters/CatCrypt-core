@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Complexity.D.LinkDt
-public import CatCryptCore.Container.DillerNahm
 
 /-!
 # The interpretation of D in the Diller–Nahm category

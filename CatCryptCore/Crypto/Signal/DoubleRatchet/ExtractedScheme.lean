@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedCorrespondence
 public import CatCryptCore.Crypto.Messaging.SMScheme
+public import CatCryptCore.Crypto.Messaging.SMPrekey
 
 /-!
 # The extracted double ratchet as a secure-messaging scheme
@@ -136,9 +137,10 @@ def drOpen (x : Session_T) (sk pk : Array Int) : Session_T :=
 
 /-! ## The scheme -/
 
-/-- The initial session of a party: the root key `rk`, no chain keys, the key pair `(sk, pk)`
-and the remote public value `rpk`. -/
-def drInitSession (rk sk pk rpk : Array Int) : Session_T := Session rk none none 0 0 sk pk rpk 0
+/-- The initial session of a party: the responder initialisation `ratchet_init_responder` of the
+crate at the root key `rk`, the key pair `(sk, pk)` and the remote public value `rpk`, a session
+with no chain keys and zero counters. -/
+def drInitSession (rk sk pk rpk : Array Int) : Session_T := ratchet_init_responder rk sk pk rpk
 
 /-- The corruption answers of the extracted scheme: root key, sending and receiving chain
 keys (`none` for an absent chain), secret key, public key and remote public value. -/
@@ -222,7 +224,7 @@ theorem drExtracted_sim (h : DrHom G R F D ptLen encR encG encSk decE encS encW 
       (acdSM (dhCKAOf G decE) R F D) (drRel encR encG encSk decE encS) encG encC
       (drEncLeak encR encG encSk decE encS) (drEncInit encR encG encSk decE encS) where
   init := by
-    simp only [drExtractedSM, acdSM, dhCKAOf, SPComp.bind_assoc, SPComp.pure_bind]
+    simp only [drExtractedSM, acdSM, acdSMAD, dhCKAOf, SPComp.bind_assoc, SPComp.pure_bind]
     rfl
   init_rel x := ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
   ratchet x' x r hx := by
@@ -235,22 +237,23 @@ theorem drExtracted_sim (h : DrHom G R F D ptLen encR encG encSk decE encS encW 
     | none =>
       refine ⟨⟨?_, ?_, ?_, rfl, rfl, rfl⟩, rfl⟩
       · simp only [drExtractedSM, drOpen, hr, Option.map_none, «Session.recv_ck»,
-          «Session.root_key», «Session.remote_pk», establish_enc h, acdSM, CKACoins.sendR]
+          «Session.root_key», «Session.remote_pk», establish_enc h, acdSM, acdSMAD,
+          CKACoins.sendR]
       · simp only [drExtractedSM, drOpen, hr, Option.map_none, «Session.recv_ck»,
           «Session.root_key», «Session.send_ck», «Session.remote_pk», establish_enc h, acdSM,
-          CKACoins.sendR, Option.map_some]
+          acdSMAD, CKACoins.sendR, Option.map_some]
       · simp only [drExtractedSM, drOpen, hr, Option.map_none, «Session.recv_ck»,
-          «Session.root_key», «Session.remote_pk», establish_enc h, acdSM]
+          «Session.root_key», «Session.remote_pk», establish_enc h, acdSM, acdSMAD]
     | some sa =>
       refine ⟨⟨?_, ?_, ?_, rfl, rfl, rfl⟩, rfl⟩
       · simp only [drExtractedSM, drOpen, hr, Option.map_some, «Session.recv_ck»,
-          sessionRatchetStep, acdSM, CKACoins.sendR, Session, «Session.root_key»,
+          sessionRatchetStep, acdSM, acdSMAD, CKACoins.sendR, Session, «Session.root_key»,
           «Session.remote_pk», dh_enc h, kdf_rk_enc h]
       · simp only [drExtractedSM, drOpen, hr, Option.map_some, «Session.recv_ck»,
-          sessionRatchetStep, acdSM, CKACoins.sendR, Session, «Session.root_key»,
+          sessionRatchetStep, acdSM, acdSMAD, CKACoins.sendR, Session, «Session.root_key»,
           «Session.send_ck», «Session.remote_pk», dh_enc h, kdf_rk_enc h]
       · simp only [drExtractedSM, drOpen, hr, Option.map_some, «Session.recv_ck»,
-          sessionRatchetStep, acdSM, Session]
+          sessionRatchetStep, acdSM, acdSMAD, Session]
   recv x' x T hx := by
     obtain ⟨hrk, hsnd, hrcv, hsk, hpk, hrpk⟩ := hx
     obtain ⟨a, b, c, d, e, f, i, j, k⟩ := x'
@@ -258,10 +261,10 @@ theorem drExtracted_sim (h : DrHom G R F D ptLen encR encG encSk decE encS encW 
       «Session.my_pk», «Session.remote_pk»] at hrk hsnd hrcv hsk hpk hrpk
     subst hrk hsk
     refine ⟨?_, hsnd, ?_, rfl, hpk, rfl⟩
-    · simp only [drExtractedSM, sessionRecvStep, acdSM, dhCKAOf, Session, «Session.root_key»,
-        «Session.my_sk», dh_enc h, kdf_rk_enc h]
-    · simp only [drExtractedSM, sessionRecvStep, acdSM, dhCKAOf, Session, «Session.root_key»,
-        «Session.my_sk», «Session.recv_ck», dh_enc h, kdf_rk_enc h, Option.map_some]
+    · simp only [drExtractedSM, sessionRecvStep, acdSM, acdSMAD, dhCKAOf, Session,
+        «Session.root_key», «Session.my_sk», dh_enc h, kdf_rk_enc h]
+    · simp only [drExtractedSM, sessionRecvStep, acdSM, acdSMAD, dhCKAOf, Session,
+        «Session.root_key», «Session.my_sk», «Session.recv_ck», dh_enc h, kdf_rk_enc h, Option.map_some]
   send x' x m hx := by
     obtain ⟨hrk, hsnd, hrcv, hsk, hpk, hrpk⟩ := hx
     obtain ⟨a, b, c, d, e, f, i, j, k⟩ := x'
@@ -270,16 +273,79 @@ theorem drExtracted_sim (h : DrHom G R F D ptLen encR encG encSk decE encS encW 
     subst hsnd
     cases hx : x.snd with
     | none =>
-      simp only [drExtractedSM, acdSM, hx, Option.map_none, session_send_none]
+      simp only [drExtractedSM, acdSM, acdSMAD, hx, Option.map_none, session_send_none]
       exact Option.Rel.none
     | some sa =>
-      simp only [drExtractedSM, acdSM, hx, Option.map_some,
+      simp only [drExtractedSM, acdSM, acdSMAD, hx, Option.map_some,
         session_send_enc (inst := keyGhost inst) h.ghost]
       refine Option.Rel.some ⟨⟨hrk, rfl, hrcv, hsk, hpk, hrpk⟩, h.aead_eq _ _ _⟩
   expose x' x hx := by
     obtain ⟨hrk, hsnd, hrcv, hsk, hpk, hrpk⟩ := hx
-    simp only [drExtractedSM, acdSM, drExpose, drEncLeak, hrk, hsnd, hrcv, hsk, hpk, hrpk, id]
+    simp only [drExtractedSM, acdSM, acdSMAD, drExpose, drEncLeak, hrk, hsnd, hrcv, hsk, hpk,
+      hrpk, id]
   idealCt := rfl
+
+/-! ## The extracted double ratchet at the signed-prekey pair -/
+
+section Pair
+
+variable [Inhabited Sk]
+
+/-- **The initial session of the initiator at the signed-prekey pair** of `y` at the root key
+`rk`: the key pair of the default secret key and the remote public value `g ^ decE y`, the
+signed prekey of the responder. -/
+def drPairAlice (encR : RK → Array Int) (encG : G → Array Int) (encSk : Sk → Array Int)
+    (decE : Sk → CG.Exp) (rk : RK) (y : Sk) : Session_T :=
+  drInitSession (encR rk) (encSk default) (encG (CG.pow (decE default))) (encG (CG.pow (decE y)))
+
+/-- **The initial session of the responder at the signed-prekey pair** of `y` at the root key
+`rk`: the key pair `(y, g ^ decE y)` of the signed prekey and the remote public value
+`g ^ decE y`. -/
+def drPairBob (encR : RK → Array Int) (encG : G → Array Int) (encSk : Sk → Array Int)
+    (decE : Sk → CG.Exp) (rk : RK) (y : Sk) : Session_T :=
+  drInitSession (encR rk) (encSk y) (encG (CG.pow (decE y))) (encG (CG.pow (decE y)))
+
+/-- **The keyed initialisation of the extracted double ratchet at the signed-prekey pair** of
+`y`: the public value `g ^ decE y`, the initiator in `drPairAlice` and the responder in
+`drPairBob` at the root key `rk`. -/
+noncomputable def drExtractedIniPair (encR : RK → Array Int) (encG : G → Array Int)
+    (encSk : Sk → Array Int) (decE : Sk → CG.Exp) (rk : RK) (y : Sk) :
+    SPComp (Array Int × Session_T × Session_T) :=
+  SPComp.pure (encG (CG.pow (decE y)), drPairAlice encR encG encSk decE rk y,
+    drPairBob encR encG encSk decE rk y)
+
+variable (RK) in
+/-- **The extracted double ratchet at the signed-prekey pair** of `y`: the scheme
+`drExtractedSM` with the initialisation `drExtractedIniPair` at a uniform root key. -/
+noncomputable def drExtractedSMPair (ptLen : Int) (encR : RK → Array Int)
+    (encG : G → Array Int) (encSk : Sk → Array Int) (decE : Sk → CG.Exp) (encW : W → Array Int)
+    (encC : Ct → Array Int) (y : Sk) : SMScheme Session_T (Array Int) Sk W (Array Int) DrLeak :=
+  { drExtractedSM RK ptLen encR encG encSk decE encW encC with
+    init := SPComp.bind (SPComp.sample RK) fun rk => drExtractedIniPair encR encG encSk decE rk y }
+
+/-- **The gated extracted double ratchet simulates the gated ACD construction at the
+signed-prekey pair.** Under `DrHom`, the gate `(drExtractedSMPair … y).gateB` of the extracted
+scheme at the pair of `y` simulates `(acdSM ((dhCKAOf G decE).atInit (dhPairInit decE y)) R F
+D).gateB` along `drRel` with equal opening flags, with corruption answers encoded by
+`drEncLeak` under `some`. The steps are those of `drExtracted_sim`; the initialisations agree
+because `drPairAlice` and `drPairBob` are the encodings by `drEncInit` of the party states of
+`dhPairInit decE y` with no chain keys. -/
+theorem drExtracted_sim_pair (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC)
+    (y : Sk) :
+    (drExtractedSMPair RK ptLen encR encG encSk decE encW encC y).gateB.Sim
+      (acdSM ((dhCKAOf G decE).atInit (dhPairInit decE y)) R F D).gateB
+      (fun x' x => drRel encR encG encSk decE encS x'.1 x.1 ∧ x'.2 = x.2) encG encC
+      (Option.map (drEncLeak encR encG encSk decE encS))
+      (fun x => (drEncInit encR encG encSk decE encS x.1, x.2)) := by
+  have hs := drExtracted_sim (RK := RK) h
+  refine SMScheme.Sim.gateB
+    { init := ?_, init_rel := hs.init_rel, ratchet := hs.ratchet, recv := hs.recv,
+      send := hs.send, expose := hs.expose, idealCt := hs.idealCt }
+  simp only [drExtractedSMPair, drExtractedIniPair, acdSM, acdSMAD, CKADef.atInit,
+    SPComp.bind_assoc, SPComp.pure_bind]
+  rfl
+
+end Pair
 
 section Bounds
 

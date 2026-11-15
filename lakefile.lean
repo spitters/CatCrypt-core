@@ -37,8 +37,8 @@ lean_lib CatCryptCoreTest where
 require nominalLean from git
   "https://github.com/spitters/nominal-lean" @ "lean-upgrade-4.35"
 
--- hax-lean: the runtime and typed AST of haxpipeT extractions (`HaxLean.Runtime`), which the
--- extraction bridges and the fold lemmas of `CatCryptCore.Hax.FoldRange` read.
+-- hax-lean: the runtime and typed AST of haxpipeT extractions (`HaxLean.Runtime`) and the
+-- fold lemmas (`HaxLean.FoldRange`), which the extraction bridges read.
 require «hax-lean» from git
   "https://github.com/spitters/hax-lean.git" @ "master"
 

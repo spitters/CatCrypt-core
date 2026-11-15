@@ -6,10 +6,9 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Party.Derived
-public import CatCryptCore.Crypto.Party.Refinement
-public import CatCryptCore.Crypto.Party.UnwindingTransfer
+import CatCryptCore.Crypto.Party.UnwindingTransfer
 public import CatCryptCore.Crypto.Party.Timed
-public import CatCryptCore.Tactics.PartyDerive
+import CatCryptCore.Tactics.PartyDerive
 public import CatCryptCore.Crypto.OTExtension.IKNPWakeShape
 
 /-!

@@ -5,9 +5,10 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Prob.BirthdayBound
 public import CatCryptCore.Crypto.OracleCollision
-public import CatCryptCore.Consensus.PoSNSB.Prob.Slots
+import Mathlib.MeasureTheory.Covering.Besicovitch
+import Mathlib.Analysis.SpecialFunctions.Trigonometric.Arctan
+import Mathlib.Analysis.SpecialFunctions.Bernstein
 
 /-!
 # PoS-NSB: collisions of a random oracle queried adaptively

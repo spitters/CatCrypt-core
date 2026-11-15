@@ -5,10 +5,14 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Lean.Elab.Command
 public import Cslib.Foundations.Data.PFunctor.Free
 public import PolyFun.PFunctor.Basic
 public import CatCryptCore.Container.Code
+public meta import Mathlib.Tactic.Basic
+public meta import Aesop.BuiltinRules
+public meta import Std.Do.Triple.SpecLemmas
+public meta import Mathlib.Tactic.ToDual
+public meta import Mathlib.Tactic.Simps
 
 /-!
 # The polynomial-functor signature of an inductive program type

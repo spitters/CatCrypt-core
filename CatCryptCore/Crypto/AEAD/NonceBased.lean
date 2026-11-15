@@ -9,6 +9,7 @@ public import CatCryptCore.Crypto.Constructions.ECBCPRF
 public import CatCryptCore.ForMathlib.PMFSupport
 public import CatCryptCore.ForMathlib.PMFUniform
 public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Crypto.OracleAdversaryStateMap
 public import CatCryptCore.Tactics.QueryBound
 
 /-!
@@ -132,33 +133,6 @@ theorem uniform_tag_apply {HK T : Type} [Fintype HK] [Nonempty HK] [AddCommGroup
   simp [PMF.uniformFintype_apply]
 
 end Helpers
-
-/-! ## Invariants and state maps of oracle runs -/
-
-namespace OracleAdv
-
-variable {D D₀ R R₀ α : Type}
-
-/-- A map `f` of oracle states that commutes with every oracle call from states
-satisfying an invariant preserved by the oracle commutes with every run from
-such a state. -/
-theorem run_map_state_of_inv {S S' : Type} (O : S → D → PMF (R × S))
-    (O' : S' → D → PMF (R × S')) (f : S → S') (Inv : S → Prop)
-    (hinv : ∀ s d x, Inv s → x ∈ (O s d).support → Inv x.2)
-    (hO : ∀ s d, Inv s → (O s d).map (Prod.map id f) = O' (f s) d)
-    (A : CatCrypt.Crypto.OracleAdv D R α) (s : S) (hs : Inv s) :
-    (CatCrypt.Crypto.OracleAdv.run O A s).map (Prod.map id f) =
-      CatCrypt.Crypto.OracleAdv.run O' A (f s) := by
-  induction A generalizing s with
-  | ret a => simp [PMF.pure_map]
-  | rand p k ih =>
-    simp only [CatCrypt.Crypto.OracleAdv.run_rand, PMF.map_bind, ih _ s hs]
-  | query d k ih =>
-    simp only [CatCrypt.Crypto.OracleAdv.run_query, PMF.map_bind]
-    rw [← hO s d hs, PMF.bind_map]
-    exact PMF.bind_congr_support _ _ _ fun x hx => ih x.1 x.2 (hinv s d x hs hx)
-
-end OracleAdv
 
 /-! ## The construction -/
 
@@ -658,7 +632,7 @@ theorem run_simOracle_map {α : Type} (S : StreamMAC K N AD Blk HK T) (ℓ : ℕ
         (Prod.map id (hkMap S)) =
       OracleAdv.run (hkOracle HK ℓ) A ([], []) :=
   OracleAdv.run_map_state_of_inv _ _ (hkMap S) (SimInv S)
-    (fun st d x hs hx => simInv_step S ℓ st d x hs hx) (fun st d hs => simOracle_rf_map S ℓ st d hs)
+    (fun st d hs x hx => simInv_step S ℓ st d x hs hx) (fun st d hs => simOracle_rf_map S ℓ st d hs)
     A ([], []) (simInv_nil S)
 
 omit [DecidableEq AD] [DecidableEq T] in

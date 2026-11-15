@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Anon.Signalling
-public import CatCryptCore.Crypto.ROProgramming
 public import CatCryptCore.Crypto.UCConcrete
 
 /-!

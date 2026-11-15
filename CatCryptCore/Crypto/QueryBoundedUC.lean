@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.MonadCostModel
 public import CatCryptCore.Crypto.CompUCEquivalence
+import CatCryptCore.Crypto.ForkingLemma
 
 /-!
 # Query-bounded computational UC for `SPComp`

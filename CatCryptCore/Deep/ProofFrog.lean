@@ -5,9 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Deep.RawCode
 public import CatCryptCore.Deep.Eval
-public import CatCryptCore.Relational.Rules
+import CatCryptCore.Relational.Rules
 
 /-!
 # Deep Embedding: ProofFrog-Style Transformations

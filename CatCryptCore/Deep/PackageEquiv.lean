@@ -5,8 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Deep.Eval
-public import CatCryptCore.Deep.Package
 public import CatCryptCore.Deep.Bridge
 public import CatCryptCore.Crypto.Advantage
 

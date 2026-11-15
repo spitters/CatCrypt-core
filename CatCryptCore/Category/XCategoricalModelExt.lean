@@ -5,10 +5,11 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Category.XCategoricalModel
-public import CatCryptCore.XDijkstra.XPullback
 public import CatCryptCore.XDijkstra.XFrameHet
 public import CatCryptCore.XDijkstra.XStdWP
+import Mathlib.Tactic.Continuity.Init
+import Mathlib.Basic.ENNReal.Real
+import Mathlib.Data.Finset.Attr
 
 /-!
 # `XCategoricalModelExt`: reindexing, the heterogeneous frame and the `Std.WP` bridge

@@ -5,7 +5,10 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Analysis.MeanInequalitiesPow
+import Mathlib.Analysis.MeanInequalitiesPow
+public import Mathlib.Basic.ENNReal.Basic
+public import Mathlib.Data.Fintype.Card
+public import Mathlib.Algebra.BigOperators.Group.Finset.Defs
 
 /-!
 # Uniform averages in `ℝ≥0∞`

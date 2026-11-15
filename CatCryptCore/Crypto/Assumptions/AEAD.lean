@@ -11,13 +11,15 @@ public import CatCryptCore.Crypto.PRPPRFSwitching
 /-!
 # AEAD (Authenticated Encryption with Associated Data) Security
 
-This file defines security notions for AEAD schemes over a type `W` of keys,
-plaintexts and associated data and a ciphertext type `C`.
+This file defines security notions for AEAD schemes over a plaintext type `W`,
+a ciphertext type `C`, an associated-data type `AD` and a key type `Kt`. The
+types `C`, `AD` and `Kt` default to `W`. A nonce and a header enter as
+associated data (`AD := N × Hd`).
 
 ## Games
 
 * `AEAD_Advantage` — single-sample real-or-random game: the adversary sees one
-  ciphertext, either `encrypt key pt ad` under a uniform key or a uniform
+  ciphertext, either `encrypt key pt ad` under a uniform key in `Kt` or a uniform
   ciphertext. The adversary sees a single sample, so the supremum of this
   advantage over all adversaries is a statistical distance (an
   information-theoretic quantity).
@@ -75,22 +77,25 @@ open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open scoped ENNReal
 
 variable {W : Type} [SampleableType W] {C : Type} [SampleableType C] {AD : Type}
+  {Kt : Type} [SampleableType Kt]
 
 /-! ## AEAD Definition -/
 
-/-- Abstract AEAD scheme with keys and plaintexts in `W`, ciphertexts in `C`
-(default `W`) and associated data in `AD` (default `W`).
+/-- Abstract AEAD scheme with plaintexts in `W`, ciphertexts in `C`
+(default `W`), associated data in `AD` (default `W`) and keys in `Kt`
+(default `W`).
 
 - `encrypt key plaintext ad` → ciphertext
 - `decrypt key ciphertext ad` → `some plaintext`, or `none` on rejection -/
-structure AEADDef (W : Type) [SampleableType W] (C : Type := W) (AD : Type := W) where
+structure AEADDef (W : Type) [SampleableType W] (C : Type := W) (AD : Type := W)
+    (Kt : Type := W) where
   /-- AEAD encryption: (key, plaintext, associated_data) → ciphertext.
   Models `aes_ccm_encrypt_tag_8` in lakers' `Crypto` trait. -/
-  encrypt : W → W → AD → C
+  encrypt : Kt → W → AD → C
   /-- AEAD decryption: (key, ciphertext, associated_data) → plaintext, or
   `none` when the ciphertext is rejected.
   Models `aes_ccm_decrypt_tag_8` in lakers' `Crypto` trait. -/
-  decrypt : W → C → AD → Option W
+  decrypt : Kt → C → AD → Option W
 
 /-! ## Single-sample real-or-random game -/
 
@@ -99,9 +104,9 @@ real encryption from random. -/
 abbrev AEAD_Adversary (C : Type) := C → SPComp Bool
 
 /-- AEAD real game: sample random key, encrypt the adversary's chosen plaintext. -/
-noncomputable def AEAD_Game_Real (D : AEADDef W C AD) (pt : W) (ad : AD)
+noncomputable def AEAD_Game_Real (D : AEADDef W C AD Kt) (pt : W) (ad : AD)
     (A : AEAD_Adversary C) : SPComp Bool := do
-  let key ← SPComp.sample W
+  let key ← SPComp.sample Kt
   let ct := D.encrypt key pt ad
   A ct
 
@@ -112,14 +117,14 @@ noncomputable def AEAD_Game_Ideal (A : AEAD_Adversary C) : SPComp Bool := do
 
 /-- Advantage in distinguishing one encryption of `pt` under a uniform key from
 a uniform ciphertext. -/
-noncomputable def AEAD_Advantage (D : AEADDef W C AD) (pt : W) (ad : AD)
+noncomputable def AEAD_Advantage (D : AEADDef W C AD Kt) (pt : W) (ad : AD)
     (A : AEAD_Adversary C) : ℝ≥0∞ :=
   Advantage (AEAD_Game_Real D pt ad A) (AEAD_Game_Ideal A)
 
 /-! ## IsPure Proofs -/
 
 omit [SampleableType C] in
-theorem AEAD_Game_Real_isPure (D : AEADDef W C AD) (pt : W) (ad : AD)
+theorem AEAD_Game_Real_isPure (D : AEADDef W C AD Kt) (pt : W) (ad : AD)
     (A : AEAD_Adversary C) (hA : ∀ x, SPComp.IsPure (A x)) :
     SPComp.IsPure (AEAD_Game_Real D pt ad A) := by
   unfold AEAD_Game_Real
@@ -160,7 +165,7 @@ abbrev AEAD_CCA_Adversary (W C : Type) (AD : Type := W) :=
   OracleAdv (AEAD_CCA_Query W C AD) (AEAD_CCA_Answer W C) Bool
 
 /-- The real oracles under `key`: `encrypt key` and `decrypt key`. -/
-noncomputable def aeadRealOracle (D : AEADDef W C AD) (key : W) :
+noncomputable def aeadRealOracle (D : AEADDef W C AD Kt) (key : Kt) :
     Unit → AEAD_CCA_Query W C AD → PMF (AEAD_CCA_Answer W C × Unit)
   | _, .inl (pt, ad) => PMF.pure (.inl (D.encrypt key pt ad), ())
   | _, .inr (ct, ad) => PMF.pure (.inr (D.decrypt key ct ad), ())
@@ -187,9 +192,9 @@ noncomputable def aeadIdealOracle [DecidableEq AD] :
 
 /-- Real authenticated-encryption game: sample a key, run `A` against
 `aeadRealOracle D key`. -/
-noncomputable def AEAD_CCA_Game_Real (D : AEADDef W C AD)
+noncomputable def AEAD_CCA_Game_Real (D : AEADDef W C AD Kt)
     (A : AEAD_CCA_Adversary W C AD) : SPComp Bool :=
-  liftPMF ((PMF.uniformFintype W).bind fun key =>
+  liftPMF ((PMF.uniformFintype Kt).bind fun key =>
     (OracleAdv.run (aeadRealOracle D key) A ()).map Prod.fst)
 
 /-- Ideal authenticated-encryption game: run `A` against `aeadIdealOracle`
@@ -200,7 +205,7 @@ noncomputable def AEAD_CCA_Game_Ideal [DecidableEq AD] (A : AEAD_CCA_Adversary W
 
 /-- Advantage of `A` in distinguishing the real encryption and decryption
 oracles of `D` from the ideal ones. -/
-noncomputable def AEAD_CCA_Advantage [DecidableEq AD] (D : AEADDef W C AD)
+noncomputable def AEAD_CCA_Advantage [DecidableEq AD] (D : AEADDef W C AD Kt)
     (A : AEAD_CCA_Adversary W C AD) : ℝ≥0∞ :=
   Advantage (AEAD_CCA_Game_Real D A) (AEAD_CCA_Game_Ideal A)
 
@@ -218,7 +223,7 @@ noncomputable def AEAD_CPA_to_CCA (pt : W) (ad : AD) (A : C → PMF Bool) :
 For a single-sample adversary given by the distribution `A ct` of its guess,
 the single-sample advantage equals the advantage of `AEAD_CPA_to_CCA pt ad A`
 in the authenticated-encryption game. -/
-theorem AEAD_CPA_le_CCA [DecidableEq AD] (D : AEADDef W C AD) (pt : W) (ad : AD)
+theorem AEAD_CPA_le_CCA [DecidableEq AD] (D : AEADDef W C AD Kt) (pt : W) (ad : AD)
     (A : C → PMF Bool) :
     AEAD_Advantage D pt ad (fun ct => liftPMF (A ct)) ≤
     AEAD_CCA_Advantage D (AEAD_CPA_to_CCA pt ad A) := by
@@ -244,16 +249,17 @@ theorem AEAD_CPA_le_CCA [DecidableEq AD] (D : AEADDef W C AD) (pt : W) (ad : AD)
 /-! ## Keyed AEAD game (key-dependent messages)
 
 `AEAD_Keyed_Advantage` is the single-sample real-or-random game in which the
-plaintext and associated data depend on the key via `pt ad : W → W`. The
+plaintext and associated data depend on the key via `pt : Kt → W` and
+`ad : Kt → AD`. The
 adversary sees the ciphertext only. Standard `AEAD_Advantage` does not imply
 `AEAD_Keyed_Advantage`; key-dependent-message security in general needs
 additional assumptions (Black–Rogaway–Shrimpton, SAC 2003). -/
 
 /-- AEAD keyed real game: sample a key and output the ciphertext of the
 key-dependent plaintext and associated data. -/
-noncomputable def aead_keyed_real (D : AEADDef W C AD)
-    (pt : W → W) (ad : W → AD) : SPComp C :=
-  SPComp.bind (SPComp.sample W) (fun key =>
+noncomputable def aead_keyed_real (D : AEADDef W C AD Kt)
+    (pt : Kt → W) (ad : Kt → AD) : SPComp C :=
+  SPComp.bind (SPComp.sample Kt) (fun key =>
     SPComp.pure (D.encrypt key (pt key) (ad key)))
 
 /-- AEAD keyed ideal game: a uniform ciphertext. -/
@@ -262,12 +268,13 @@ noncomputable def aead_keyed_ideal : SPComp C :=
 
 /-- Advantage in distinguishing the ciphertext of key-dependent plaintext and
 associated data from a uniform ciphertext. -/
-noncomputable def AEAD_Keyed_Advantage (D : AEADDef W C AD) (pt : W → W) (ad : W → AD)
+noncomputable def AEAD_Keyed_Advantage (D : AEADDef W C AD Kt) (pt : Kt → W)
+    (ad : Kt → AD)
     (A : C → SPComp Bool) : ENNReal :=
   AdvantageA (aead_keyed_real D pt ad) aead_keyed_ideal A
 
 omit [SampleableType C] in
-theorem aead_keyed_real_isPure (D : AEADDef W C AD) (pt : W → W) (ad : W → AD) :
+theorem aead_keyed_real_isPure (D : AEADDef W C AD Kt) (pt : Kt → W) (ad : Kt → AD) :
     SPComp.IsPure (aead_keyed_real D pt ad) := by
   unfold aead_keyed_real
   apply SPComp.bind_isPure (SPComp.sample_isPure _); intro _

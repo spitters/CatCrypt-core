@@ -5,9 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Quantum.ChoiKraus
+import CatCryptCore.Quantum.ChoiKraus
 public import CatCryptCore.Quantum.PartialTrace
-public import Mathlib.Analysis.InnerProductSpace.PiL2
 
 @[expose] public section
 

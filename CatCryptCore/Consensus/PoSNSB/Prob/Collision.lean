@@ -7,6 +7,8 @@ module
 
 public import CatCryptCore.Consensus.PoSNSB.Prob.Reduction
 public import CatCryptCore.Crypto.Assumptions.CRCoins
+public import CatCryptCore.Consensus.PoSNSB.Prob.Hash
+import CatCryptCore.NonUniform.UnaryRules
 
 /-!
 # PoS-NSB: hash collisions reduce to collision resistance

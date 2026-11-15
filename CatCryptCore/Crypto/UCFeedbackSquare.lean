@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Crypto.UCFeedbackLaws
 public import CatCryptCore.Crypto.UCFuelPad
-public import CatCryptCore.Crypto.UCSquare
 
 /-!
 # Feedback through a simulator, and the truncation of feedback

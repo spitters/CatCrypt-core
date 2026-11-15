@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QRealizesMem
-public import CatCryptCore.Crypto.UCMonad.LocalOpFunctorial
+import CatCryptCore.Crypto.UCMonad.LocalOpFunctorial
 
 /-!
 # Realization from a bound on the steps

@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QROM.Rewinding
-public import CatCryptCore.ForMathlib.ENNRealAverage
+import CatCryptCore.ForMathlib.ENNRealAverage
 public import CatCryptCore.Crypto.FiatShamirROM.Game
 
 /-!

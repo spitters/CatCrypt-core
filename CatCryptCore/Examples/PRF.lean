@@ -18,6 +18,7 @@ public import CatCryptCore.Tactics.AutoMetrics
 public import CatCryptCore.ForMathlib.PMFSupport
 public import CatCryptCore.ForMathlib.PMFUniform
 public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Crypto.OracleAdversaryStateMap
 public import CatCryptCore.Tactics.QueryBound
 
 /-!
@@ -181,7 +182,7 @@ random function after a lazy random injection is a lazy random function; it is
 proved through a joint lazy oracle `rfrpOracle` whose table maps onto the
 table of the random function on every state, and onto the pair of tables of
 the composite oracle on every state satisfying the invariant `RfrpInv`
-(`run_map_state_of_inv`).
+(`OracleAdv.run_map_state_of_inv`).
 -/
 
 section Cascade
@@ -221,27 +222,6 @@ theorem isQueryBound_mapAns (f : R → R') {A : OracleAdv D R' α} {q : ℕ}
   induction A generalizing q <;> cases q <;> first | exact hA.elim | query_bound
 
 end MapAns
-
-/-- Running against `O` along a state invariant: if `I` holds initially, every
-transition of `O` from a state satisfying `I` stays in `I`, and the state map
-`f` commutes with one call of `O` from every state satisfying `I`, then `f`
-commutes with the whole run. -/
-theorem run_map_state_of_inv {D R α S S' : Type} (O : S → D → PMF (R × S))
-    (O' : S' → D → PMF (R × S')) (f : S → S') (I : S → Prop)
-    (hI : ∀ s d, I s → ∀ z ∈ (O s d).support, I z.2)
-    (hO : ∀ s d, I s → (O s d).map (Prod.map id f) = O' (f s) d)
-    (A : OracleAdv D R α) (s : S) (hs : I s) :
-    (OracleAdv.run O A s).map (Prod.map id f) = OracleAdv.run O' A (f s) := by
-  induction A generalizing s with
-  | ret a => simp [PMF.pure_map]
-  | rand p k ih =>
-    simp only [OracleAdv.run_rand, PMF.map_bind]
-    exact congrArg _ (funext fun b => ih b s hs)
-  | query d k ih =>
-    rw [OracleAdv.run_query, PMF.map_bind,
-      PMF.bind_congr_support _ _ _ (fun z hz => ih z.1 z.2 (hI s d hs z hz)), OracleAdv.run_query,
-      ← hO s d hs, PMF.bind_map]
-    rfl
 
 /-! ## Lookup in association lists -/
 
@@ -478,8 +458,8 @@ theorem run_compOracle_rfOracle (A : OracleAdv D D Bool) :
     (OracleAdv.run (compOracle rfOracle) A ([], [])).map Prod.fst =
       (OracleAdv.run rfOracle A []).map Prod.fst := by
   have h₁ := OracleAdv.run_map_state rfrpOracle rfOracle _ rfrpOracle_map_rf A []
-  have h₂ := run_map_state_of_inv rfrpOracle (compOracle rfOracle) _ RfrpInv rfrpOracle_inv
-    rfrpOracle_map_comp A [] ⟨List.nodup_nil, List.nodup_nil⟩
+  have h₂ := OracleAdv.run_map_state_of_inv rfrpOracle (compOracle rfOracle) _ RfrpInv
+    rfrpOracle_inv rfrpOracle_map_comp A [] ⟨List.nodup_nil, List.nodup_nil⟩
   simp only [List.map_nil] at h₁ h₂
   rw [← h₁, ← h₂, PMF.map_comp, PMF.map_comp]
   rfl

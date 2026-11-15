@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Consensus.PoSNSB.Prob
 public import CatCryptCore.Consensus.UC.Chain
 
 /-!

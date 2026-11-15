@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.UCLevels
 public import CatCryptCore.Crypto.DummyAdversary
 public import CatCryptCore.Crypto.UCAdmClass.SPCompInstance
 

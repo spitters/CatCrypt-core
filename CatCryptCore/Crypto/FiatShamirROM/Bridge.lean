@@ -7,7 +7,7 @@ module
 
 public import CatCryptCore.Crypto.FiatShamirROM.Game
 public import CatCryptCore.Examples.Sigma
-public import CatCryptCore.ForMathlib.PMFSupport
+import CatCryptCore.ForMathlib.PMFSupport
 
 /-!
 # Σ-protocols with explicit randomness as `Examples.Sigma` protocols

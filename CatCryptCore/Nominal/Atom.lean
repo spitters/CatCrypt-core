@@ -5,7 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Nominal.Atom
+import Mathlib.Data.Finset.Attr
+import Mathlib.Tactic.SetLike
+import Mathlib.Tactic.Finiteness.Attr
 
 /-!
 # `CatCryptCore.Nominal.Atom` (shim)

@@ -125,7 +125,10 @@ the bound of the companion at fresh arguments, a value of `Fin n` by `n`, the le
 built by `List.ofFn`, `map` or `zip` by its equation or by a theorem tagged `@[length_bound]`,
 a length by an invariant, the length of a list defined by cases whose cases are list literals
 by the longest literal (`lengthByCases?`); a premise `∀ y ∈ M.map f, P y` read at the members
-of `M`); for every length `l.length` of the leaf, the instance of each
+of `M`); for every application `f a` of a cost companion with a majorant, the hypotheses
+`∀ ys, f ys ≤ M ys.length` and `Monotone M` (`CatCrypt.Core.CostMaj`), the bound `f a ≤ M b`
+with `b` the bound of the length of the list in `a` by the length rules above
+(`hasMajorant`); for every length `l.length` of the leaf, the instance of each
 theorem tagged `@[length_bound]` at it (`addLengthFacts`). A summand
 `m₁` of the left side that is a `match` and a summand `m₂` of the right side that is a `match`
 of the same matcher on the same discriminants are compared by cases
@@ -892,6 +895,23 @@ def lengthByCases? (e : Expr) : MetaM (Option (Expr × Expr)) := do
     s.restore
     return none
 
+/-- Whether `ty` is a membership `a ∈ L`. -/
+def isMemProp (ty : Expr) : Bool := ty.isAppOfArity ``Membership.mem 5
+
+/-- Close the membership `mid : a ∈ L` by a hypothesis of the context of the same type. -/
+def closeMemByContext (mid : MVarId) : MetaM Bool := mid.withContext do
+  if ← mid.isAssigned then return true
+  let ty ← instantiateMVars (← mid.getType)
+  if ty.hasExprMVar then return false
+  for ld in (← getLCtx) do
+    if ld.isImplementationDetail then continue
+    let s ← saveState
+    if ← isDefEq ty ld.type then
+      mid.assign ld.toExpr
+      return true
+    s.restore
+  return false
+
 mutual
 
 /-- Close the proposition `mid` from the context: a local hypothesis whose type unifies with
@@ -956,7 +976,10 @@ closed by `closeByContext` (a premise
 `∀ y, fCost y ≤ ?k` on a cost companion argument by the bound of the body of `fCost` at fresh
 `y`; when the bound of the instance is not free of `xs`, again with the premise bound free of
 `xs` as well), followed by the bound of its right side; an atom by a local hypothesis
-`∀ y, g y ≤ c` (a cost companion, or a length bounded by an invariant); an application `M s` of a
+`∀ y, g y ≤ c` (a cost companion, or a length bounded by an invariant), whose propositional
+premises, when it has any, are memberships `a ∈ L` closed by hypotheses of the context (the
+member-length hypothesis `∀ x ∈ L, (ρ x).length ≤ n` at a member `a` with `a ∈ L` in the
+context, `closeMemByContext`); an application `M s` of a
 function with a hypothesis `Monotone M` (a majorant of a cost companion, `CatCrypt.Core.CostMaj`)
 by `M` at the bound of `s`, and, when no local bound is free of `xs`, a local bound `M s` that reads
 them bounded in this way; a length of a list
@@ -1061,12 +1084,16 @@ partial def boundFree? (xs : Array FVarId) (e : Expr) (fuel : Nat) :
     let st ← saveState
     let (ms, _, body) ← forallMetaTelescopeReducing (← instantiateMVars ld.type)
     let some (l, b) := natLe? body | st.restore; continue
-    if l.getAppFn.isMVar || (← ms.anyM fun m => do isProp (← inferType m)) then
-      st.restore; continue
+    if l.getAppFn.isMVar then st.restore; continue
+    -- propositional premises: only memberships `a ∈ L`, closed by a hypothesis of the context
+    let props ← ms.filterM fun m => do isProp (← inferType m)
+    let memOnly ← props.allM fun m => do return isMemProp (← instantiateMVars (← inferType m))
+    unless memOnly do st.restore; continue
     if ← withReducible (isDefEq l e) then
+      let ok ← props.allM fun m => closeMemByContext m.mvarId!
       let b ← instantiateMVars b
       let pf ← instantiateMVars (mkAppN ld.toExpr ms)
-      unless b.hasExprMVar || pf.hasExprMVar || xs.any b.containsFVar do
+      unless !ok || b.hasExprMVar || pf.hasExprMVar || xs.any b.containsFVar do
         return some (b, pf)
     st.restore
   if e.isAppOfArity ``List.length 2 then
@@ -1194,12 +1221,35 @@ def addLengthFacts (g : MVarId) (fuel : Nat := 64) : MetaM MVarId := g.withConte
       work := appsOf ty work
   return g
 
+/-- Whether the application `s` of a local function `f` has a majorant in the context: a
+hypothesis `∀ ys, f ys ≤ M t` with `M` a local function and a hypothesis `Monotone M`
+(`CatCrypt.Core.CostMaj`, the majorant of a cost companion along the length of a list). -/
+def hasMajorant (s : Expr) : MetaM Bool := do
+  let .fvar f := s.getAppFn | return false
+  let lctx ← getLCtx
+  let monos := lctx.foldl (init := #[]) fun acc ld =>
+    if !ld.isImplementationDetail && ld.type.isAppOfArity ``Monotone 5 then
+      acc.push ld.type.appArg! else acc
+  if monos.isEmpty then return false
+  lctx.anyM fun ld => do
+    if ld.isImplementationDetail then return false
+    forallTelescopeReducing (← instantiateMVars ld.type) fun _ body => do
+      let some (l, r) := natLe? body | return false
+      unless l.getAppFn == .fvar f && l.getAppNumArgs == s.getAppNumArgs do return false
+      let M := r.getAppFn
+      return M.isFVar && monos.contains M
+
 /-- Registered costs: for every subterm `f.timedCost a` of the target, the instance at `a` of
 `f.timedCost_eq` (an equation) or `f.timedCost_le` (a bound), with its premises closed by
 `closeByContext`, is added to the context. For a target `l ≤ B`, each such cost that mentions
 a variable not occurring in `B` (a bound value, a cost companion, a function of the scheme;
 types and instances excepted) also gets its bound free of those variables (`boundFree?`), the
-form in which `derive_time_bound` states it. -/
+form in which `derive_time_bound` states it. The same holds for an application `f a` of a local
+function with a majorant hypothesis `∀ ys, f ys ≤ M (ys …).length` and `Monotone M`
+(`hasMajorant`): it gets the bound `f a ≤ M b`, where `b` bounds the length of the list in `a`
+by the length rules (`List.length_replicate`, `List.length_map`, `@[length_bound]`, …) and
+`M (…).length ≤ M b` follows from `Monotone M` (the clause of `boundFree?` for a monotone
+function). -/
 def addCostFacts (g : MVarId) : MetaM MVarId := g.withContext do
   let tgt ← instantiateMVars (← g.getType)
   let mut g := g
@@ -1233,12 +1283,13 @@ def addCostFacts (g : MVarId) : MetaM MVarId := g.withContext do
       added := added.push pty
       let (_, g') ← (← g.assert `hc pty pf).intro1P
       g := g'
-  -- each registered cost bounded free of the variables that the bound does not mention
+  -- each registered cost, and each application of a function with a majorant, bounded free of
+  -- the variables that the bound does not mention
   let some (_, rhs) := natLe? tgt | return g
   let keep := (collectFVars {} (← instantiateMVars rhs)).fvarSet
   for s in appsOf tgt #[] do
-    let some n := s.getAppFn.constName? | continue
-    unless n.lastComponentAsString == "timedCost" do continue
+    let isCost := s.getAppFn.constName?.any (·.lastComponentAsString == "timedCost")
+    unless isCost || (← hasMajorant s) do continue
     let avoid ← (collectFVars {} s).fvarIds.filterM fun f => do
       if keep.contains f then return false
       let ty ← whnfR (← instantiateMVars (← f.getType))

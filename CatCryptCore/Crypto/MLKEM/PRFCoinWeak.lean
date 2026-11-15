@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.MLKEM.PRFBadTableKeyed
-public import CatCryptCore.Crypto.MLKEM.FIPS203QROMQuantumMLWE
+public import CatCryptCore.Crypto.MLKEM.PRFKEMChain
 
 /-!
 # The averaged KEM bound without a coin hypothesis

@@ -13,6 +13,7 @@ public import CatCryptCore.Crypto.OracleAdversaryFree
 public import CatCryptCore.Crypto.OracleAdversaryPotential
 public import CatCryptCore.ForMathlib.ListLength
 public import CatCryptCore.Tactics.DeriveTimeBound.Basic
+public import CatCryptCore.Tactics.StdCostsMem
 
 /-!
 # The time theorem of a costed computation tree
@@ -170,6 +171,8 @@ The charges are bounded free of the cost companions and of the values bound in t
 `bfree?`, the clauses of `AutoTime.boundFree?` with a dependent `if` bounded by the maximum of
 its branches (`dite_le_max_of`) and the premise of a registered cost lemma `f.timedCost_le`
 closed by the same procedure; a registered cost is bounded by `f.timedCost_eq`, `f.timedCost_le`
+then by the bound `f.timedCost_le_mem` whose premise bounds the per-element cost on the members
+scanned only, closed under the membership of its binder (`CatCryptCore.Tactics.StdCostsMem`),
 and then by the bound `f.timedCost_le_index` linear in an index (`costBoundLemmas`: the read
 `List.getD` of a list at a uniform index `↑i : Fin n`, bounded by `n` when the length of the
 list has no bound); the final comparison with a stated bound, and the normalised form
@@ -252,7 +255,9 @@ tree, by `M_fCost` at its bound (`rewriteMajorants`, and the clause of `AutoTime
 function with a `Monotone` hypothesis): the bound is monotone in the majorant, at the bounds of the
 lengths found by the length rules below, so it composes without a case analysis on the arguments
 (the monotone functional interpretation, Kohlenbach, *Applied Proof Theory*, Ch. 6). Tests in
-`DeriveTimeBoundMajTest`.
+`DeriveTimeBoundMajTest`. With the option `derive_time_bound.majorantForm` (the default), the
+command states this majorant form as `R.timeBound_timed_maj` beside the uniform time theorem and
+proves the uniform one from it at the constant majorants (`uniformOfMajorant`).
 
 **Length hypotheses.** Class: a charge, or a premise `∀ s, c s ≤ ?k` of a registered cost lemma
 (the test of `List.find?.timedCost_le`), to be bounded free of a variable `x` on which it depends
@@ -289,27 +294,45 @@ inside the premise, so the bound of a search is a polynomial in the bound `n` of
 **Rule.** A node `simulateHat ε ι impl A s₀` (or `simulate impl A s₀`, read with `ε = ι = id`)
 of a costed tree of oracle adversaries, whose simulated tree `A` exposes no node, is bounded by
 the potential corollary `OracleAdv.Timed.timeBound_simulateHat_potLe`
-(`OracleAdversaryPotential.lean`). The potential is read off the type `Ŝ` of the state: the cost
-companion `c s : K → ℕ` of the state (the component of function type into `ℕ`, through the pairs
-of `Ŝ`, that `derive_timed` gives a costed table), and the potential `Pot n s` states that it is
-at most `n` at every point, `∀ k, c s k ≤ n` (`potentialOf`; `∀ _ : Unit, 0 ≤ n` for a state
-without a companion, whose step then has a uniform cost). The facts of one step are derived by
-the rules of a step, at a fresh state `s`, query `d` and bound `M` under the hypothesis
-`Pot M s`, with `s` and `d` among the values to avoid:
+(`OracleAdversaryPotential.lean`). The potential is read off the type `Ŝ` of the state, walked
+through its pairs and structure fields (`stateAtoms`); its atoms at a bound `n` are
 
-1. the time of `impl s d` is bounded by the fold rule; each read `c s k` of the companion is
-   bounded by `M` (the clause of `bfree?` for a hypothesis `∀ k, c s k ≤ M`, the clause of the
-   cost companion of a binder), so the bound is free of `s` and `d`; it is read as `a + b * M`
-   with `a` free of `M` and `b` a numeral (`affineLe`: sums, products by numerals, maxima and
-   the branches of `if`s, by the lemmas `affine_*`);
+* a companion atom `∀ k, π s k ≤ n` for the cost companion `π s : K → ℕ` of each costed closure
+  `(K → Y) × (K → ℕ)` (the costed table of `derive_timed`); a component of type `K → ℕ` outside
+  such a pair is data;
+* a length atom `(π s).length ≤ n` for each list component `π s`;
+* a member-length atom `∀ x ∈ π s, (ρ x).length ≤ n` for each list component `ρ x` of the
+  members of a list component (one level of nesting, `listPaths`).
+
+The potential `Pot n s` is their conjunction (`potentialOf`; `∀ _ : Unit, 0 ≤ n` for a state
+without atoms, whose step then has a uniform cost): `n` bounds every companion value and every
+length, the max norm. For a state with one companion and no list it is `∀ k, c s k ≤ n`. The
+facts of one step are derived by the rules of a step, at a fresh state `s`, query `d` and bound
+`M`, each atom of `Pot M s` a hypothesis of its own, with `s` and `d` among the values to
+avoid:
+
+1. the time of `impl s d` is bounded by the fold rule; each read `c s k` of a companion and
+   each length `(π s).length` is bounded by `M` (the clause of `bfree?` for a local hypothesis),
+   and a length `(ρ a).length` of a member `a` scanned by a registered cost by `M` (the bound
+   `f.timedCost_le_mem` of the scan, whose premise is closed under `a ∈ π s` by the
+   member-length atom); the bound is free of `s` and `d`. It is read as `a + b * M` with `a`
+   free of `M` and `b` a numeral (`affineLe`: sums, products by numerals, maxima and the
+   branches of `if`s, by the lemmas `affine_*`), else as a quadratic form
+   `c₀ + c₁ * M + c₂ * (M * M)` with coefficients free of `M` (`polyLe`, the lemmas `poly_*`: a
+   nested scan, or a scan whose per-element cost is a companion bound);
 2. the growth: every leaf `s'` of `impl s d` has `Pot (M + g) s'`, by the leaf-length rule with
-   the leaf clause `growthLeaf` (the companion of `s'` at a fresh point bounded free of the
-   values bound in the step, then by `M` plus a constant, `affine_le_self_add`; `g` is the
-   maximum of the constants) and the bind clause `growthBind` (at `A'.bind f` the potential of
-   the values of `A'` at `M + g₁`, proved by the same rule, and the continuation under it,
-   `OracleAdv.Timed.allRet_bind`); a table write `Function.update T d (some h)` with the
-   companion `fun x => 2 + if x = d then 0 else 1 + c s x` grows by `3`, a read by `0`;
-3. the bound `n₀` of the companion of the initial state at a fresh point, by `bfree?`.
+   the leaf clause `growthLeaf` (each companion of `s'` at a fresh point, each length and each
+   member length bounded free of the values bound in the step, then by `M` plus a constant,
+   `affine_le_self_add`; `g` is the maximum of the constants) and the bind clause `growthBind`
+   (at `A'.bind f` the potential of the values of `A'` at `M + g₁`, proved by the same rule,
+   and the continuation under its atoms, `OracleAdv.Timed.allRet_bind`); a table write
+   `Function.update T d (some h)` with the companion `fun x => 2 + if x = d then 0 else
+   1 + c s x` grows by `3`, a read by `0`; a `cons` grows a length by `1`, a `filter` by `0`
+   (`@[length_bound]`); a member-length atom is reduced through `[]`, `::`, `++`, `map` and
+   `filter` to the members of the lists of `s` (`memForallSplit?`), bounded by the hypothesis
+   under the membership (`AutoTime.boundFree?`), and to the new members;
+3. the bound `n₀` of the atoms of the initial state, the maximum of the bound of each atom by
+   `bfree?` (`0` for a statement over the members of an empty list).
 
 The simulated tree `A` contributes its time `T`, by the rule on its image, and its query bound
 `q`: a hypothesis of the context, the theorem `N.isQueryBound_erase` of a callee, and for a
@@ -318,7 +341,10 @@ query bound (`OracleAdv.Timed.isQueryBound_of_timeBound`). The bound of the node
 `T + q * (a + b * (n₀ + q * g))`, written `T + q * (c₀ + c₁ * q)` when its coefficients are
 numerals (`T + q * c₀` for a step of uniform cost): for the logged lazily sampled random
 oracle `withLog roOracle` from the empty table, `a = 4`, `b = 1`, `g = 3`, `n₀ = 1`, so
-`T + q * (5 + 3 * q)`.
+`T + q * (5 + 3 * q)`. For a quadratic step the node is bounded by the amortized corollary
+`OracleAdv.Timed.timeBound_simulateHat_amortized` at the demand
+`C n = c₀ + c₁ * n + c₂ * (n * n)`, monotone (`poly_monotone`), followed by
+`Container.Clocked.iter_potStep_cost_le`: the bound is `T + q * C (n₀ + q * g)`, cubic in `q`.
 
 **Query counts.** A binder tree of oracle adversaries that is simulated and has no query bound
 in the context is recorded by the rule (`FoldCx.queryRef`), and the theorem is stated again
@@ -326,13 +352,15 @@ with a second bound variable `q_A` for it and the hypothesis
 `∀ ys, (A ys).erase.IsQueryBound q_A` (`withBounds` with `qs`, `emitFoldTimeBound`).
 
 **Fragment and refusal.** A node is refused, the message naming it with the bound or the
-component found, when the step is not bounded free of `s` and `d` under `Pot M s` (a cost that
-reads the state other than through its companion), when its bound is not affine in `M` with a
-numeral coefficient (a product of two reads of the companion), when a companion at a leaf is
-not bounded by `M` plus a constant (a companion scaled at a step), and when the state has
-several cost companions. A step of a costed table read at the query, whose fresh queries write
+component found, when the step is not bounded free of `s` and `d` under the atoms of `Pot M s`
+(a cost that reads the state other than through its atoms: a value stored in a list, a list
+nested two levels deep, a list inside an `Option` or a sum), when its bound is neither affine in
+`M` with a numeral coefficient nor quadratic in `M` (a product of three reads of the atoms), and
+when an atom at a leaf is not bounded by `M` plus a constant (a companion scaled at a step, a
+list appended to itself). A step of a costed table read at the query, whose fresh queries write
 the table, has this form; the bound is quadratic in `q` exactly when the step reads the table
-(`b > 0`) and writes it (`g > 0`).
+(`b > 0`) and writes it (`g > 0`), and a step that scans a list of lists whose members it reads
+is cubic in `q`.
 
 **Standalone tactic.** `time_fold` runs the rule on a goal
 `wpFold (OpSpec.chargeUnder c allows) x (fun _ => 0) ≤ B` or
@@ -357,7 +385,9 @@ hypotheses `∀ ys, f ys ≤ t` its cost companions.
 * `closeLeafLen` — the leaf-length rule, with its leaf and bind clauses as parameters
   (`LeafRule`, `BindRule`)
 * `affineLe` — the affine bound of a cost in one atom
-* `potentialOf`, `growthLeaf`, `growthBind`, `foldSimulation?` — the simulation rule
+* `polyLe` — the quadratic bound of a cost in one atom
+* `stateAtoms`, `potentialOf`, `growthLeaf`, `growthBind`, `memForallSplit?`,
+  `foldSimulation?` — the simulation rule
 * `costBoundLemmas` — the registered bounds of a cost read by `bfree?`
 * `useHypAt`, `emitUseTimeBound` — the use bound of a binder, the theorem with query count and
   the use bound `R.useBound_timed`
@@ -378,6 +408,89 @@ flattening, bounded by the length of their source (`AutoTime.boundFree?`, `addLe
 attribute [length_bound] List.length_filter_le List.length_filterMap_le List.length_take
   List.length_flatMap_le_mul List.length_flatten_le_mul
 
+/-! ### Quadratic bounds in one atom and statements over the members of a list -/
+
+/-- A term free of `X` is bounded by the quadratic form with its bound as constant term. -/
+theorem poly_const {e a : ℕ} (X : ℕ) (h : e ≤ a) : e ≤ a + 0 * X + 0 * (X * X) := by
+  simpa using h
+
+/-- `X` is bounded by the quadratic form `0 + 1 * X + 0 * X²`. -/
+theorem poly_self (X : ℕ) : X ≤ 0 + 1 * X + 0 * (X * X) := by simp
+
+/-- Quadratic bounds add coefficient by coefficient. -/
+theorem poly_add {e₁ e₂ a₀ a₁ a₂ b₀ b₁ b₂ X : ℕ} (h₁ : e₁ ≤ a₀ + a₁ * X + a₂ * (X * X))
+    (h₂ : e₂ ≤ b₀ + b₁ * X + b₂ * (X * X)) :
+    e₁ + e₂ ≤ (a₀ + b₀) + (a₁ + b₁) * X + (a₂ + b₂) * (X * X) := by
+  rw [Nat.add_mul, Nat.add_mul]; omega
+
+/-- The maximum of two terms is bounded by the coefficientwise maximum of their bounds. -/
+theorem poly_max {e₁ e₂ a₀ a₁ a₂ b₀ b₁ b₂ X : ℕ} (h₁ : e₁ ≤ a₀ + a₁ * X + a₂ * (X * X))
+    (h₂ : e₂ ≤ b₀ + b₁ * X + b₂ * (X * X)) :
+    max e₁ e₂ ≤ max a₀ b₀ + max a₁ b₁ * X + max a₂ b₂ * (X * X) := by
+  have := Nat.mul_le_mul_right X (le_max_left a₁ b₁)
+  have := Nat.mul_le_mul_right X (le_max_right a₁ b₁)
+  have := Nat.mul_le_mul_right (X * X) (le_max_left a₂ b₂)
+  have := Nat.mul_le_mul_right (X * X) (le_max_right a₂ b₂)
+  have := le_max_left a₀ b₀
+  have := le_max_right a₀ b₀
+  omega
+
+/-- A product by a factor bounded free of `X` scales the coefficients. -/
+theorem poly_mul_left {e₁ e₂ k b₀ b₁ b₂ X : ℕ} (h₁ : e₁ ≤ k)
+    (h₂ : e₂ ≤ b₀ + b₁ * X + b₂ * (X * X)) :
+    e₁ * e₂ ≤ k * b₀ + k * b₁ * X + k * b₂ * (X * X) := by
+  calc e₁ * e₂ ≤ k * (b₀ + b₁ * X + b₂ * (X * X)) := Nat.mul_le_mul h₁ h₂
+    _ = _ := by ring
+
+/-- A product by a factor bounded free of `X` on the right scales the coefficients. -/
+theorem poly_mul_right {e₁ e₂ k a₀ a₁ a₂ X : ℕ} (h₁ : e₁ ≤ a₀ + a₁ * X + a₂ * (X * X))
+    (h₂ : e₂ ≤ k) : e₁ * e₂ ≤ a₀ * k + a₁ * k * X + a₂ * k * (X * X) := by
+  calc e₁ * e₂ ≤ (a₀ + a₁ * X + a₂ * (X * X)) * k := Nat.mul_le_mul h₁ h₂
+    _ = _ := by ring
+
+/-- The product of two affine bounds is a quadratic bound. -/
+theorem poly_mul_lin {e₁ e₂ a₀ a₁ b₀ b₁ X : ℕ} (h₁ : e₁ ≤ a₀ + a₁ * X + 0 * (X * X))
+    (h₂ : e₂ ≤ b₀ + b₁ * X + 0 * (X * X)) :
+    e₁ * e₂ ≤ a₀ * b₀ + (a₀ * b₁ + a₁ * b₀) * X + a₁ * b₁ * (X * X) := by
+  calc e₁ * e₂ ≤ (a₀ + a₁ * X + 0 * (X * X)) * (b₀ + b₁ * X + 0 * (X * X)) :=
+        Nat.mul_le_mul h₁ h₂
+    _ = _ := by ring
+
+/-- The quadratic form is monotone in its coefficients. -/
+theorem poly_mono {a₀ a₁ a₂ b₀ b₁ b₂ : ℕ} (X : ℕ) (h₀ : a₀ ≤ b₀) (h₁ : a₁ ≤ b₁) (h₂ : a₂ ≤ b₂) :
+    a₀ + a₁ * X + a₂ * (X * X) ≤ b₀ + b₁ * X + b₂ * (X * X) := by
+  have := Nat.mul_le_mul_right X h₁
+  have := Nat.mul_le_mul_right (X * X) h₂
+  omega
+
+/-- The quadratic form is monotone in its argument. -/
+theorem poly_monotone (c₀ c₁ c₂ : ℕ) : Monotone fun n => c₀ + c₁ * n + c₂ * (n * n) :=
+  fun _ _ h => Nat.add_le_add (Nat.add_le_add_left (Nat.mul_le_mul_left _ h) _)
+    (Nat.mul_le_mul_left _ (Nat.mul_le_mul h h))
+
+/-- A statement holds at every member of the empty list. -/
+theorem forall_mem_nil' {α : Type*} (P : α → Prop) : ∀ x ∈ ([] : List α), P x := by simp
+
+/-- A statement at the head and at every member of the tail holds at every member. -/
+theorem forall_mem_cons' {α : Type*} {P : α → Prop} {a : α} {l : List α} (h₁ : P a)
+    (h₂ : ∀ x ∈ l, P x) : ∀ x ∈ a :: l, P x :=
+  List.forall_mem_cons.mpr ⟨h₁, h₂⟩
+
+/-- A statement at every member of two lists holds at every member of their concatenation. -/
+theorem forall_mem_append' {α : Type*} {P : α → Prop} {l₁ l₂ : List α} (h₁ : ∀ x ∈ l₁, P x)
+    (h₂ : ∀ x ∈ l₂, P x) : ∀ x ∈ l₁ ++ l₂, P x :=
+  List.forall_mem_append.mpr ⟨h₁, h₂⟩
+
+/-- A statement at the images of the members of `l` holds at every member of `l.map f`. -/
+theorem forall_mem_map' {α β : Type*} {P : α → Prop} {f : β → α} {l : List β}
+    (h : ∀ b ∈ l, P (f b)) : ∀ x ∈ l.map f, P x :=
+  List.forall_mem_map.mpr h
+
+/-- A statement at every member of `l` holds at every member of `l.filter p`. -/
+theorem forall_mem_filter' {α : Type*} {P : α → Prop} {p : α → Bool} {l : List α}
+    (h : ∀ x ∈ l, P x) : ∀ x ∈ l.filter p, P x :=
+  fun x hx => h x (List.mem_of_mem_filter hx)
+
 open Lean Meta Elab Term Command CatCrypt.Core CatCrypt.Tactics.TimeFold
 
 meta section
@@ -389,6 +502,15 @@ register_option derive_time_bound.majorants : Bool := {
   descr := "derive_time_bound states a cost companion with a list argument through a monotone \
     majorant in the length of its last list argument (CatCrypt.Core.CostMaj) instead of a uniform \
     bound"
+}
+
+/-- Whether `derive_time_bound` also states the majorant form `R.timeBound_timed_maj` and proves
+`R.timeBound_timed` from it at the constant majorant (option `derive_time_bound.majorantForm`). -/
+register_option derive_time_bound.majorantForm : Bool := {
+  defValue := true
+  descr := "derive_time_bound states the majorant form R.timeBound_timed_maj of a time theorem \
+    with a cost companion with a list argument, and proves the uniform form R.timeBound_timed \
+    from it at the constant majorant"
 }
 
 
@@ -1349,14 +1471,17 @@ def omegaEq (l r : Expr) : TermElabM Expr := do
   instantiateMVars mv
 
 /-- The bounds of the registered cost `f.timedCost` read by `bfree?`: `f.timedCost_eq` and
-`f.timedCost_le` (`AutoTime.costLemmas`), then the bound `f.timedCost_le_index` linear in an
-index argument (`List.getD.timedCost_le_index` of `StdCosts`), which bounds a read at an index
-bounded free of the list (a uniform index `↑i` of `Fin n`) when the length of the list has no
-bound. -/
+`f.timedCost_le` (`AutoTime.costLemmas`), then the bound `f.timedCost_le_mem` whose premise
+bounds the cost of the function argument on the members of the list only
+(`List.all.timedCost_le_mem` of `StdCostsMem`, closed under the hypothesis `a ∈ l` of its
+binder), then the bound `f.timedCost_le_index` linear in an index argument
+(`List.getD.timedCost_le_index` of `StdCosts`), which bounds a read at an index bounded free of
+the list (a uniform index `↑i` of `Fin n`) when the length of the list has no bound. -/
 def costBoundLemmas (n : Name) : MetaM (Array Expr) := do
-  let idx := Name.str n.getPrefix (n.lastComponentAsString ++ "_le_index")
-  let more ← if (← getEnv).contains idx then pure #[← mkConstWithFreshMVarLevels idx]
-    else pure #[]
+  let sfx (s : String) : Name := Name.str n.getPrefix (n.lastComponentAsString ++ s)
+  let env ← getEnv
+  let more ← (#[sfx "_le_mem", sfx "_le_index"].filter env.contains).mapM
+    mkConstWithFreshMVarLevels
   return (← CatCrypt.Tactics.AutoTime.costLemmas n) ++ more
 
 mutual
@@ -2158,6 +2283,98 @@ def closeNat (e : Expr) : TermElabM (Expr × Expr) := do
     try return (en, ← arithLe e en) catch _ => pure ()
   return (e, ← mkAppM ``Nat.le_refl #[e])
 
+/-- The quadratic form `c₀ + c₁ * X + c₂ * (X * X)` of the coefficients `cs`. -/
+def mkPoly (cs : Array Expr) (X : Expr) : Expr :=
+  mkAddN (mkAddN cs[0]! (mkMulN cs[1]! X)) (mkMulN cs[2]! (mkMulN X X))
+
+/-- Whether the closed natural number `c` evaluates to `0`. -/
+def isZeroCoeff (c : Expr) : MetaM Bool := return (← evalNat c) == some 0
+
+/-- **The quadratic bound of a cost in one atom.** Coefficients `c₀ c₁ c₂`, free of `X` and of the
+variables `elim`, and a proof of `e ≤ c₀ + c₁ * X + c₂ * (X * X)`: a term free of `X` by its bound
+free of `elim` (`bfree?`, `poly_const`); `X` itself (`poly_self`); a sum, a maximum, an `if` and
+an `if h :` coefficient by coefficient (`poly_add`, `poly_max`); a product by a factor free of
+`X` (`poly_mul_left`, `poly_mul_right`) and a product of two affine bounds (`poly_mul_lin`). A
+product of degree above two, or any other term that mentions `X`, is reported. `affineLe` is the
+case of a numeral `c₁` and `c₂ = 0`. -/
+partial def polyLe (X : Expr) (elim : Array FVarId) (e : Expr) : MetaM (Array Expr × Expr) := do
+  let e := (← instantiateMVars e).headBeta
+  match e with
+  | .mdata _ b => return ← polyLe X elim b
+  | .letE _ _ v b _ => return ← polyLe X elim (b.instantiate1 v)
+  | _ => pure ()
+  let keep := #[X.fvarId!]
+  let z := mkNatLit 0
+  let done (cs : Array Expr) (pf : Expr) : MetaM (Array Expr × Expr) := do
+    return (cs, ← hintLe pf (mkNatLe e (mkPoly cs X)))
+  let free (t : Expr) : MetaM (Expr × Expr) := do
+    let some r ← bfree? elim t
+      | throwError "no bound of{indentExpr t}\nfree of the values bound in the step"
+    return r
+  unless mentionsAny keep e do
+    let (a, pa) ← free e
+    return ← done #[a, z, z] (← mkAppM ``poly_const #[X, pa])
+  if ← withNewMCtxDepth (withReducible (isDefEq e X)) then
+    return ← done #[z, mkNatLit 1, z] (mkApp (mkConst ``poly_self) X)
+  let coeffwise (p q : Array Expr) (f : Expr → Expr → MetaM Expr) : MetaM (Array Expr) :=
+    (List.range 3).toArray.mapM fun i => f p[i]! q[i]!
+  if e.isAppOfArity ``HAdd.hAdd 6 then
+    let (p, h₁) ← polyLe X elim (e.getArg! 4)
+    let (q, h₂) ← polyLe X elim (e.getArg! 5)
+    return ← done (← coeffwise p q fun a b => pure (mkAddN a b)) (← mkAppM ``poly_add #[h₁, h₂])
+  if e.isAppOfArity ``Max.max 4 then
+    let (p, h₁) ← polyLe X elim (e.getArg! 2)
+    let (q, h₂) ← polyLe X elim (e.getArg! 3)
+    return ← done (← coeffwise p q mkMaxN) (← mkAppM ``poly_max #[h₁, h₂])
+  if e.isAppOfArity ``HMul.hMul 6 then
+    let (l, r) := (e.getArg! 4, e.getArg! 5)
+    if !mentionsAny keep l then
+      let (k, hk) ← free l
+      let (q, h₂) ← polyLe X elim r
+      return ← done (q.map (mkMulN k ·)) (← mkAppM ``poly_mul_left #[hk, h₂])
+    if !mentionsAny keep r then
+      let (k, hk) ← free r
+      let (p, h₁) ← polyLe X elim l
+      return ← done (p.map (mkMulN · k)) (← mkAppM ``poly_mul_right #[h₁, hk])
+    let (p, h₁) ← polyLe X elim l
+    let (q, h₂) ← polyLe X elim r
+    unless (← isZeroCoeff p[2]!) && (← isZeroCoeff q[2]!) do
+      throwError "the product{indentExpr e}\nhas degree above two in{indentExpr X}"
+    let h₁ ← hintLe h₁ (mkNatLe l (mkPoly #[p[0]!, p[1]!, z] X))
+    let h₂ ← hintLe h₂ (mkNatLe r (mkPoly #[q[0]!, q[1]!, z] X))
+    let cs := #[mkMulN p[0]! q[0]!, mkAddN (mkMulN p[0]! q[1]!) (mkMulN p[1]! q[0]!),
+      mkMulN p[1]! q[1]!]
+    return ← done cs (← mkAppM ``poly_mul_lin #[h₁, h₂])
+  if e.isAppOfArity ``ite 5 || e.isAppOfArity ``dite 5 then
+    let isD := e.isAppOfArity ``dite 5
+    let c := e.getArg! 1
+    let branch (ty br : Expr) : MetaM (Array Expr × Expr) := do
+      unless isD do return ← polyLe X elim br
+      withLocalDeclD `h ty fun h => do
+        let (p, pf) ← polyLe X (elim.push h.fvarId!) (br.beta #[h])
+        return (p, ← mkLambdaFVars #[h] pf)
+    let (p, h₁) ← branch c (e.getArg! 3)
+    let (q, h₂) ← branch (mkNot c) (e.getArg! 4)
+    let (B₁, B₂) := (mkPoly p X, mkPoly q X)
+    let pm := if isD then
+        mkAppN (mkConst ``dite_le_max_of)
+          #[c, e.getArg! 2, e.getArg! 3, e.getArg! 4, B₁, B₂, h₁, h₂]
+      else
+        mkAppN (mkConst ``CatCrypt.Tactics.AutoTime.ite_le_max_of)
+          #[c, e.getArg! 2, e.getArg! 3, e.getArg! 4, B₁, B₂, h₁, h₂]
+    let pmax ← mkAppM ``poly_max #[← mkAppM ``Nat.le_refl #[B₁], ← mkAppM ``Nat.le_refl #[B₂]]
+    return ← done (← coeffwise p q mkMaxN) (← mkAppM ``Nat.le_trans #[pm, pmax])
+  throwError "the term{indentExpr e}\nreads the state other than through{indentExpr X}"
+
+/-- `polyLe` followed by the closed form of each coefficient (`closeNat`, `poly_mono`). -/
+def polyLeClosed (X : Expr) (elim : Array FVarId) (e : Expr) :
+    TermElabM (Array Expr × Expr) := do
+  let (cs, pf) ← polyLe X elim e
+  let cl ← cs.mapM closeNat
+  let mono ← mkAppM ``poly_mono #[X, cl[0]!.2, cl[1]!.2, cl[2]!.2]
+  let cs' := cl.map (·.1)
+  return (cs', ← hintLe (← mkAppM ``Nat.le_trans #[pf, mono]) (mkNatLe e (mkPoly cs' X)))
+
 /-! ## The leaf-length rule -/
 
 /-- The bound of the value `l : ℕ` at a leaf, free of the variables `avoid`, with the proof of
@@ -2193,12 +2410,30 @@ def leafLenLeaf : LeafRule := fun av l r => do
   return (b, r, fun d => mkAppM ``Nat.le_trans #[pf, d])
 
 /-- The leaf invariant `ty = AllRet Q t` unfolded at a constructor of `t`: the definition of the
-invariant applied once and its match reduced (`Q a` at a leaf, `∀ o, AllRet Q (k o)` at a node);
+invariant applied once and its match reduced (`Q a` at a leaf, an inequality, a statement under
+binders or a conjunction of the atoms of a potential; `∀ o, AllRet Q (k o)` at a node);
 `none` when `t` exposes no constructor. -/
 def unfoldAllRet? (ty : Expr) : MetaM (Option Expr) := do
   let some ty' ← withDefault (unfoldDefinition? ty) | return none
   let ty' ← whnfCore ty'.headBeta
-  if ty'.isForall || (CatCrypt.Tactics.AutoTime.natLe? ty').isSome then return some ty'
+  if ty'.isForall || (CatCrypt.Tactics.AutoTime.natLe? ty').isSome ||
+      ty'.isAppOfArity ``And 2 then return some ty'
+  return none
+
+/-- A goal `∀ x ∈ L, P x` over the members of a list `L` built by `[]`, `::`, `++`, `map` or
+`filter`, reduced to the goals over the members of its sources (`forall_mem_nil'`,
+`forall_mem_cons'`, `forall_mem_append'`, `forall_mem_map'`, `forall_mem_filter'`); `none` when
+`ty` is not such a statement or `L` is built otherwise. -/
+def memForallSplit? (g : MVarId) (ty : Expr) : MetaM (Option (Array MVarId)) := do
+  let .forallE _ _ (.forallE _ hty _ _) _ := ty | return none
+  unless hty.isAppOfArity ``Membership.mem 5 do return none
+  for lem in [``forall_mem_nil', ``forall_mem_cons', ``forall_mem_append', ``forall_mem_map',
+      ``forall_mem_filter'] do
+    let s ← saveState
+    try
+      let gs ← g.apply (← mkConstWithFreshMVarLevels lem)
+      return some (← gs.filterM fun gi => return !(← gi.isAssigned)).toArray
+    catch _ => s.restore
   return none
 
 /-- **The leaf-length rule.** A goal `AllRet (fun v => e v ≤ ?ℓ) t` of a kind `k` (its leaf
@@ -2209,14 +2444,24 @@ pair is the tree of the pair `y` after its head is unfolded (a head definition t
 pair, `delay c x` read as `(c + x.1, x.2)`, included); a bind of the kind is read by the clause
 `bind` when given, else it is the invariant of every continuation (`FoldKind.allRetBind`); an
 `if`, an `if h :` and a `match` (of trees or of pairs) are split; any other tree has its head
-unfolded. The bounds avoid every variable introduced below `l₀`. -/
+unfolded. A conjunction is split, and a statement `∀ x ∈ L, P x` over the members of a list
+built by `[]`, `::`, `++`, `map` or `filter` is reduced to statements over its sources
+(`memForallSplit?`). The bounds avoid every variable introduced below `l₀`. -/
 partial def leafLenGoal (k : FoldKind) (avoid : Array FVarId) (l₀ : LocalContext) (g : MVarId)
     (leaves : IO.Ref (Array (MVarId × Expr))) (fuel : Nat := 64)
     (leaf : LeafRule := leafLenLeaf) (bind : Option BindRule := none) : TermElabM Unit := do
   if fuel == 0 then throwError "the leaf-length rule exhausted its depth"
   g.withContext do
   let ty ← whnfR (← instantiateMVars (← g.getType))
+  -- a conjunction (the atoms of a potential): each conjunct
+  if ty.isAppOfArity ``And 2 then
+    for gi in ← g.apply (mkConst ``And.intro) do
+      leafLenGoal k avoid l₀ gi leaves (fuel - 1) leaf bind
+    return
   if ty.isForall then
+    if let some gs ← memForallSplit? g ty then
+      for gi in gs do leafLenGoal k avoid l₀ gi leaves (fuel - 1) leaf bind
+      return
     let (_, g') ← g.intro1
     return ← leafLenGoal k avoid l₀ g' leaves (fuel - 1) leaf bind
   if let some (l, r) := CatCrypt.Tactics.AutoTime.natLe? ty then
@@ -2303,32 +2548,139 @@ def closeLeafLen (k : FoldKind) (avoid : Array FVarId) (mid : MVarId) (ℓ : MVa
 
 /-! ## The simulation rule: the potential of a state and its growth -/
 
-/-- The cost companions of a value `v` of type `V`: its components `π v : K → ℕ`, read through
-the pairs of `V` (the companion of a costed table in the state of a handler). -/
-partial def companionPaths (v V : Expr) : MetaM (Array Expr) := do
+/-- The domain `K` of a costed closure `(K → Y) × (K → ℕ)` with first component of type `A` and
+second of type `B` (the convention of `derive_timed`); `none` for any other pair. -/
+def companionDom? (A B : Expr) : MetaM (Option Expr) := do
+  let .forallE _ K b _ ← whnfR B | return none
+  if b.hasLooseBVars || !(← whnfR b).isConstOf ``Nat then return none
+  let .forallE _ K' _ _ ← whnfR A | return none
+  unless ← isDefEq K K' do return none
+  return some K
+
+/-- The fields of a value `v : V` of a structure type other than a class, with their types;
+fields that are proofs are left out. -/
+def structFields? (v V : Expr) : MetaM (Option (Array (Expr × Expr))) := do
+  let some S := V.getAppFn.constName? | return none
+  let env ← getEnv
+  unless isStructure env S && !isClass env S do return none
+  let mut out := #[]
+  for f in getStructureFields env S do
+    let p ← mkProjection v f
+    let T ← inferType p
+    unless ← isProp T do out := out.push (p, T)
+  return some out
+
+/-- The list components `ρ x` of a value `x : X`, through the pairs and the structure fields of
+`X` down to `depth` levels. -/
+partial def listPaths (x X : Expr) (depth : Nat := 3) : MetaM (Array Expr) := do
+  let X ← whnfR X
+  if X.isAppOfArity ``List 1 then return #[x]
+  if depth == 0 then return #[]
+  if X.isAppOfArity ``Prod 2 then
+    return (← listPaths (← mkAppM ``Prod.fst #[x]) (X.getArg! 0) (depth - 1)) ++
+      (← listPaths (← mkAppM ``Prod.snd #[x]) (X.getArg! 1) (depth - 1))
+  let some fs ← structFields? x X | return #[]
+  fs.foldlM (init := #[]) fun acc (p, T) => return acc ++ (← listPaths p T (depth - 1))
+
+/-- **The atoms of the potential** of a value `v : V` at the bound `n`, read through the pairs
+and the structure fields of `V`: a companion atom `∀ k, π v k ≤ n` for the second component of
+a costed closure `(K → Y) × (K → ℕ)`; a length atom `(π v).length ≤ n` for a list component; a
+member-length atom `∀ x ∈ π v, (ρ x).length ≤ n` for each list component `ρ x` of the members
+of a list component (`listPaths`). Any other component is data. -/
+partial def stateAtoms (n v V : Expr) (depth : Nat := 4) : MetaM (Array Expr) := do
   let V ← whnfR V
   if V.isAppOfArity ``Prod 2 then
-    return (← companionPaths (← mkAppM ``Prod.fst #[v]) (V.getArg! 0)) ++
-      (← companionPaths (← mkAppM ``Prod.snd #[v]) (V.getArg! 1))
-  if let .forallE _ _ b _ := V then
-    if !b.hasLooseBVars && (← whnfR b).isConstOf ``Nat then return #[v]
-  return #[]
+    let (A, B) := (V.getArg! 0, V.getArg! 1)
+    if let some K ← companionDom? A B then
+      let p ← mkAppM ``Prod.snd #[v]
+      return #[← withLocalDeclD `k K fun k => do mkForallFVars #[k] (mkNatLe (mkApp p k) n)]
+    return (← stateAtoms n (← mkAppM ``Prod.fst #[v]) A depth) ++
+      (← stateAtoms n (← mkAppM ``Prod.snd #[v]) B depth)
+  if V.isAppOfArity ``List 1 then
+    let len := mkNatLe (← mkAppM ``List.length #[v]) n
+    let α := V.appArg!
+    let mems ← withLocalDeclD `x α fun x => do
+      (← listPaths x α).mapM fun ρ => do
+        withLocalDeclD `hx (← mkAppM ``Membership.mem #[v, x]) fun hx => do
+          mkForallFVars #[x, hx] (mkNatLe (← mkAppM ``List.length #[ρ]) n)
+    return #[len] ++ mems
+  if depth == 0 then return #[]
+  let some fs ← structFields? v V | return #[]
+  fs.foldlM (init := #[]) fun acc (p, T) => return acc ++ (← stateAtoms n p T (depth - 1))
 
-/-- The potential `fun n v => ∀ k, π v k ≤ n` of the values of type `V`, `π v` the cost
-companion of `v` (`companionPaths`): "the companion of `v` is at most `n` at every point";
-`fun n v => ∀ _ : Unit, 0 ≤ n` when `v` has none. A value with several companions is refused. -/
+/-- The atoms of the potential of `v : V` at `n` (`stateAtoms`), or the single atom
+`∀ _ : Unit, 0 ≤ n` when `v` has none. -/
+def potAtoms (n v V : Expr) : MetaM (Array Expr) := do
+  let atoms ← stateAtoms n v V
+  unless atoms.isEmpty do return atoms
+  return #[← withLocalDeclD `k (mkConst ``Unit) fun k => do
+    mkForallFVars #[k] (mkNatLe (mkNatLit 0) n)]
+
+/-- The conjunction `p₁ ∧ (p₂ ∧ … pₘ)` of a nonempty array. -/
+def mkConj (ps : Array Expr) : Expr := ps.pop.foldr mkAnd ps.back!
+
+/-- The proofs of the `m` conjuncts of a proof `h` of `mkConj ps`, `ps.size = m`. -/
+partial def conjProjs (h : Expr) (m : Nat) : MetaM (Array Expr) := do
+  if m ≤ 1 then return #[h]
+  return #[← mkAppM ``And.left #[h]] ++ (← conjProjs (← mkAppM ``And.right #[h]) (m - 1))
+
+/-- The potential `fun n v => A₁ ∧ … ∧ Aₘ` of the values of type `V`, the conjunction of the atoms
+of `v` at `n` (`potAtoms`): `n` bounds every cost companion and every length, the max norm. For a
+value with one cost companion and no list it is `fun n v => ∀ k, π v k ≤ n`. -/
 def potentialOf (V : Expr) : MetaM Expr := do
   withLocalDeclD `n natE fun n => withLocalDeclD `v V fun v => do
-    let ps ← companionPaths v V
-    if ps.size > 1 then
-      throwError "the values of type{indentExpr V}\nhave several cost companions {ps.toList}"
-    let body ← match ps[0]? with
-      | some p => do
-        let K := (← whnfR (← inferType p)).bindingDomain!
-        withLocalDeclD `k K fun k => do mkForallFVars #[k] (mkNatLe (mkApp p k) n)
-      | none => withLocalDeclD `k (mkConst ``Unit) fun k => do
-        mkForallFVars #[k] (mkNatLe (mkNatLit 0) n)
-    mkLambdaFVars #[n, v] body
+    mkLambdaFVars #[n, v] (mkConj (← potAtoms n v V))
+
+/-- The `m` conjuncts of `P` (after beta reduction), read as `mkConj` builds them. -/
+def conjParts (P : Expr) (m : Nat) : Array Expr := Id.run do
+  let mut P := P.headBeta
+  let mut out := #[]
+  for _ in [0:m - 1] do
+    if P.isAppOfArity ``And 2 then
+      out := out.push (P.getArg! 0)
+      P := P.getArg! 1
+  return out.push P
+
+/-- The atom `p` closed by `simp` (a statement over the members of an empty list). -/
+def closeBySimp (p : Expr) : TermElabM (Option Expr) := do
+  let s ← saveState
+  try
+    let mv ← mkFreshExprMVar p
+    let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic| simp)))
+    unless gs.isEmpty do s.restore; return none
+    return some (← instantiateMVars mv)
+  catch _ => s.restore; return none
+
+/-- The value bound of an atom `∀ ks, l ≤ N` of the potential: `l` bounded free of `avoid` and
+of `ks` (`bfree?`), in closed form (`closeNat`), with the proof of `l ≤` the bound. -/
+def atomValueBound (avoid ks : Array Expr) (l : Expr) : TermElabM (Option (Expr × Expr)) := do
+  let l' ← Core.betaReduce (← reduceProjs l)
+  let some (b, p₀) ← bfree? (avoid.map (·.fvarId!) ++ ks.map (·.fvarId!)) l' | return none
+  if ks.any fun k => b.containsFVar k.fvarId! then return none
+  let (bN, hn) ← closeNat b
+  return some (bN, ← mkAppM ``Nat.le_trans #[p₀, hn])
+
+/-- The bound `nᵢ` of an atom `p` of the potential of the initial state (stated at a local bound
+`N`), free of the variables `avoid`, and the proof of `p` from a proof of `nᵢ ≤ N`: the value of
+the atom bounded by `atomValueBound`, or `0` for an atom that `simp` closes (a statement over the
+members of an empty list). -/
+def initAtomBound (avoid : Array FVarId) (p : Expr) :
+    TermElabM (Expr × (Expr → TermElabM Expr)) := do
+  let avoidE := avoid.map mkFVar
+  let b? ← forallTelescopeReducing p fun ks body => do
+    let some (l, _) := CatCrypt.Tactics.AutoTime.natLe? body | return none
+    return (← atomValueBound avoidE ks l).map (·.1)
+  if let some bN := b? then
+    return (bN, fun h => forallTelescopeReducing p fun ks body => do
+      let some (l, _) := CatCrypt.Tactics.AutoTime.natLe? body
+        | throwError "the atom{indentExpr p}"
+      let some (_, pl) ← atomValueBound avoidE ks l | throwError "the atom{indentExpr p}"
+      mkLambdaFVars ks (← hintLe (← mkAppM ``Nat.le_trans #[pl, h]) body))
+  if (← closeBySimp p).isSome then
+    return (mkNatLit 0, fun _ => do
+      let some pf ← closeBySimp p | throwError "the atom{indentExpr p}"
+      return pf)
+  throwError "no bound of the atom{indentExpr p}\nof the potential of the initial state"
 
 /-- The leaf clause of the growth of the potential at a step: a goal `l ≤ M + ?g`, `M` the bound
 of the companion of the state before the step and `l` the companion of a value at a leaf, at a
@@ -2369,13 +2721,20 @@ partial def growthBind (k : FoldKind) (M : Expr) : BindRule := fun av g allRetQ 
     (← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.AllRet #[Q₁, A])
   closeLeafLen k av hA.mvarId! g₁.mvarId! (leaf := growthLeaf M) (bind := some (growthBind k M))
   let Q := allRetQ.appArg!
+  let M₁ ← instantiateMVars (mkAddN M g₁)
+  -- the continuation under the atoms of the potential, one hypothesis each
+  let m ← withLocalDeclD `a V fun a => do return (← potAtoms M₁ a V).size
   let hfTy ← withLocalDeclD `a V fun a => do
-    withLocalDeclD `ha (← instantiateMVars (Q₁.beta #[a])) fun ha => do
-      mkForallFVars #[a, ha] (← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.AllRet
+    let atoms ← potAtoms M₁ a V
+    withLocalDeclsDND (atoms.map (`ha, ·)) fun has => do
+      mkForallFVars (#[a] ++ has) (← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.AllRet
         #[Q, ← mkAppM ``Prod.snd #[(mkApp f a).headBeta]])
   let hf ← mkFreshExprSyntheticOpaqueMVar hfTy
+  let hf' ← withLocalDeclD `a V fun a => do
+    withLocalDeclD `ha (← instantiateMVars (Q₁.beta #[a])) fun ha => do
+      mkLambdaFVars #[a, ha] (mkAppN hf (#[a] ++ (← conjProjs ha m)))
   let g' ← g.replaceTargetDefEq (mkApp allRetQ (← mkAppM ``Prod.snd #[y']))
-  g'.assign (← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.allRet_bind #[hA, hf])
+  g'.assign (← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.allRet_bind #[hA, hf'])
   return some #[hf.mvarId!]
 
 /-- The parts `(ε, ι, impl, A, s₀)` of a simulation node `simulateHat ε ι impl A s₀`, or of
@@ -2885,24 +3244,26 @@ partial def lawFold? (cx : FoldCx) (Φ x : Expr) (L : Name) (fuel : Nat) :
 /-- **The simulation clause.** The step-prefixed image `x` of a simulation
 `simulateHat ε ι impl A s₀` (or `simulate impl A s₀`) of a tree `A` that exposes no node is
 bounded by the potential corollary `OracleAdv.Timed.timeBound_simulateHat_potLe`, at the
-potential `Pot n s := ∀ k, c s k ≤ n` of the cost companion `c s` of the state
-(`potentialOf`; a state without one has a step of uniform cost):
+potential `Pot n s`, the conjunction of the atoms of the state (`potentialOf`, `stateAtoms`; a
+state without atoms has a step of uniform cost):
 
 * the time `T` of `A`, by the rule on its image, and its query bound `q` (`queryBoundOf`);
-* the time of one step `impl s d` at a fresh state `s`, query `d` and bound `M` with the
-  hypothesis `Pot M s`, by the rule with `s` and `d` among the variables to avoid, so that each
-  read `c s k` of the companion is bounded by `M` (the clause of a hypothesis `∀ k, c s k ≤ M` of
-  `bfree?`, as for a cost companion of a binder); the bound is read as `a + b * M`
-  (`affineLe`, `a` free of `M`, `b` a numeral);
+* the time of one step `impl s d` at a fresh state `s`, query `d` and bound `M` with the atoms
+  of `Pot M s` as hypotheses, by the rule with `s` and `d` among the variables to avoid, so that
+  each read of a companion, each length and each member length of the state is bounded by `M`
+  (the clause of a local hypothesis of `bfree?`, with membership premises); the bound is read as
+  `a + b * M` (`affineLe`, `a` free of `M`, `b` a numeral), else as a quadratic form in `M`
+  (`polyLeClosed`);
 * the growth: every leaf `s'` of the step has `Pot (M + g) s'`, by the leaf-length rule with the
-  clauses `growthLeaf` and `growthBind` (each companion at a leaf bounded by `M` plus a
-  constant; a bind through the potential of the values of its first program);
-* the bound `n₀` of the companion of `s₀`.
+  clauses `growthLeaf` and `growthBind` (each atom at a leaf bounded by `M` plus a constant; a
+  bind through the potential of the values of its first program);
+* the bound `n₀` of the atoms of `s₀`, the maximum of the bounds of the atoms.
 
 The bound is `T + q * (a + b * (n₀ + q * g))`, written `T + q * (c₀ + c₁ * q)` when its
-coefficients are numerals (`T + q * c₀` when `c₁ = 0`). A simulation whose step is not bounded
-in this form is refused, the
-message naming the node and the bound or the companion found. -/
+coefficients are numerals (`T + q * c₀` when `c₁ = 0`); for a quadratic step it is
+`T + q * C (n₀ + q * g)` by `OracleAdv.Timed.timeBound_simulateHat_amortized` and
+`Container.Clocked.iter_potStep_cost_le`. A simulation whose step is not bounded in these forms
+is refused, the message naming the node and the bound or the atom found. -/
 partial def foldSimulation? (cx : FoldCx) (Φ x : Expr) (fuel : Nat) :
     TermElabM (Option FoldB) := do
   let some (k, true, y) ← imageOf? x | return none
@@ -2931,12 +3292,15 @@ partial def foldSimulation? (cx : FoldCx) (Φ x : Expr) (fuel : Nat) :
     let e ← instantiateMVars e
     if e.hasFVar || e.hasMVar then return e
     return (← closeNat e).1
-  -- the facts of one step, under the potential hypothesis at a bound `M`
-  let (a, b, g, himpl) ← withLocalDeclD `M natE fun M => do
+  -- the number of atoms of the potential
+  let m ← withLocalDeclD `n natE fun n => do return (← potAtoms n s₀ (← inferType s₀)).size
+  -- the facts of one step, under the atoms of the potential at a bound `M`
+  let (aff?, cs, g, himpl) ← withLocalDeclD `M natE fun M => do
     forallBoundedTelescope (← inferType impl) (some 2) fun sd _ => do
     unless sd.size == 2 do refuse m!"the handler{indentExpr impl}\ntakes no state and query"
     let (s, d) := (sd[0]!, sd[1]!)
-    withLocalDeclD `hP (Pot.beta #[M, s]) fun hP => do
+    let atoms := conjParts (Pot.beta #[M, s]) m
+    withLocalDeclsDND (atoms.map (`hP, ·)) fun hPs => do
       let avoid := cx.avoid ++ #[s.fvarId!, d.fvarId!]
       let st := (mkAppN impl #[s, d]).headBeta
       let Bm ← mkFreshExprMVar natE
@@ -2945,13 +3309,21 @@ partial def foldSimulation? (cx : FoldCx) (Φ x : Expr) (fuel : Nat) :
       let rS ← try foldBound { cx with avoid } (← normSpec ΦS) xS (fuel - 1)
         catch ex => refuse m!"no bound of a step{indentExpr st}\n{ex.toMessageData}"
       let B ← instantiateMVars rS.bound
-      let (a, b, pB) ← try affineLe #[M.fvarId!] cx.avoid M B
-        catch ex => refuse m!"the bound of a step{indentExpr B}\nis not affine in the bound \
-          `M` of the companion of the state:\n{ex.toMessageData}"
-      let (aN, ha) ← closeNat a
-      let bM := mkMulN (mkNatLit b) M
-      let le ← mkAppM ``Nat.le_trans #[pB, ← mkAppM ``Nat.add_le_add_right #[ha, bM]]
-      unless ← isDefEq Bm (mkAddN aN bM) do refuse m!"the bound of a step"
+      -- the bound `a + b * M` with a numeral `b`, else a quadratic form in `M`
+      let (aff?, cs, le, BM) ← try
+          let (a, b, pB) ← affineLe #[M.fvarId!] cx.avoid M B
+          let (aN, ha) ← closeNat a
+          let bM := mkMulN (mkNatLit b) M
+          let le ← mkAppM ``Nat.le_trans #[pB, ← mkAppM ``Nat.add_le_add_right #[ha, bM]]
+          pure (some (aN, b), #[], le, mkAddN aN bM)
+        catch ex =>
+          try
+            let (cs, pB) ← polyLeClosed M cx.avoid B
+            pure (none, cs, pB, mkPoly cs M)
+          catch ex' => refuse m!"the bound of a step{indentExpr B}\nis not affine in the bound \
+            `M` of the potential of the state:\n{ex.toMessageData}\nnor quadratic:\n\
+            {ex'.toMessageData}"
+      unless ← isDefEq Bm BM do refuse m!"the bound of a step"
       let hStep ← mkS (← denormFold ΦS
         (← mkAppM ``PFunctor.FreeM.wpFold_le_natCast_of_le #[rS.proof, le]))
       -- the growth of the potential at a step
@@ -2968,31 +3340,64 @@ partial def foldSimulation? (cx : FoldCx) (Φ x : Expr) (fuel : Nat) :
       catch ex => refuse m!"the growth of the companion of the state at a step:\n\
         {ex.toMessageData}"
       let g ← closedNat gm
-      let pair ← mkAppM ``And.intro #[hStep, ← instantiateMVars gGoal]
-      let himpl ← mkLambdaFVars #[M, s, d, hP] (← instantiateMVars pair)
+      let pair ← instantiateMVars (← mkAppM ``And.intro #[hStep, ← instantiateMVars gGoal])
+      let body ← mkLambdaFVars hPs pair
+      let himpl ← withLocalDeclD `hP (Pot.beta #[M, s]) fun hP => do
+        mkLambdaFVars #[M, s, d, hP] (body.beta (← conjProjs hP m))
       if himpl.hasExprMVar then refuse m!"the facts of a step are not determined"
-      return (aN, b, g, himpl)
-  -- the potential of the initial state
+      return (aff?, cs, g, himpl)
+  -- the potential of the initial state: each atom bounded, `n₀` the maximum of the bounds
   let n₀m ← mkFreshExprMVar natE
-  let hs₀ ← forallTelescopeReducing (Pot.beta #[n₀m, s₀]) fun ks body => do
-    let some (l, _) := CatCrypt.Tactics.AutoTime.natLe? body
-      | refuse m!"the potential of the initial state"
-    let l' ← Core.betaReduce (← reduceProjs l)
-    let some (n₀, p₀) ← bfree? (cx.avoid ++ ks.map (·.fvarId!)) l'
-      | refuse m!"no bound of the companion of the initial state{indentExpr l'}"
-    let (n₀N, hn) ← closeNat n₀
-    unless ← isDefEq n₀m n₀N do refuse m!"the potential of the initial state"
-    mkLambdaFVars ks (← hintLe (← mkAppM ``Nat.le_trans #[p₀, hn])
-      (← instantiateMVars body))
+  let hs₀ ← if m == 1 then
+      forallTelescopeReducing (Pot.beta #[n₀m, s₀]) fun ks body => do
+        let some (l, _) := CatCrypt.Tactics.AutoTime.natLe? body
+          | refuse m!"the potential of the initial state"
+        let l' ← Core.betaReduce (← reduceProjs l)
+        let some (n₀, p₀) ← bfree? (cx.avoid ++ ks.map (·.fvarId!)) l'
+          | refuse m!"no bound of the companion of the initial state{indentExpr l'}"
+        let (n₀N, hn) ← closeNat n₀
+        unless ← isDefEq n₀m n₀N do refuse m!"the potential of the initial state"
+        mkLambdaFVars ks (← hintLe (← mkAppM ``Nat.le_trans #[p₀, hn])
+          (← instantiateMVars body))
+    else
+      let parts ← withLocalDeclD `N natE fun N => do
+        (conjParts (Pot.beta #[N, s₀]) m).mapM fun p => do
+          let (nᵢ, mk) ← initAtomBound cx.avoid p
+          withLocalDeclD `h (mkNatLe nᵢ N) fun h => do
+            return (nᵢ, ← mkLambdaFVars #[N, h] (← mk h))
+      let mut uniq : Array Expr := #[]
+      for (b, _) in parts do
+        unless uniq.contains b do uniq := uniq.push b
+      -- the maximum in closed form (a numeral when the bounds are), so that the bound of the
+      -- node takes the form `T + q * (c₀ + c₁ * q)` as for a single atom
+      let (nMax, ups) ← maxChain uniq
+      let (n₀, hn) ← closeNat nMax
+      unless ← isDefEq n₀m n₀ do refuse m!"the potential of the initial state"
+      let pfs ← parts.mapM fun (b, f) => do
+        let some j := uniq.idxOf? b | refuse m!"the potential of the initial state"
+        return f.beta #[n₀, ← mkAppM ``Nat.le_trans #[ups[j]!, hn]]
+      pfs.pop.foldrM (fun p acc => mkAppM ``And.intro #[p, acc]) pfs.back!
+  let n₀ ← instantiateMVars n₀m
   -- the initial state is passed explicitly: a potential that ignores the state does not fix it
-  let pf ← mkAppOptM ``CatCrypt.Crypto.OracleAdv.Timed.timeBound_simulateHat_potLe
-    #[none, none, none, none, none, none, none, some ε, some ι, some impl, some Pot, some a,
-      some (mkNatLit b), some g, some himpl, none, none, none, some hA, some hq,
-      some (← instantiateMVars n₀m), some s₀, some hs₀]
+  let mut pf ← match aff? with
+    | some (a, b) =>
+      mkAppOptM ``CatCrypt.Crypto.OracleAdv.Timed.timeBound_simulateHat_potLe
+        #[none, none, none, none, none, none, none, some ε, some ι, some impl, some Pot, some a,
+          some (mkNatLit b), some g, some himpl, none, none, none, some hA, some hq,
+          some n₀, some s₀, some hs₀]
+    | none => do
+      -- a quadratic step: the amortized corollary at the monotone demand `C`
+      let C ← withLocalDeclD `n natE fun n => do mkLambdaFVars #[n] (mkPoly cs n)
+      let pA ← mkAppOptM ``CatCrypt.Crypto.OracleAdv.Timed.timeBound_simulateHat_amortized
+        #[none, none, none, none, none, none, none, some ε, some ι, some impl, some Pot, some C,
+          some g, some himpl, none, none, none, some hA, some hq, some n₀, some s₀, some hs₀]
+      let hmono ← mkAppM ``poly_monotone #[cs[0]!, cs[1]!, cs[2]!]
+      let it ← mkAppM ``CatCrypt.Container.Clocked.iter_potStep_cost_le #[hmono, g, q, n₀]
+      mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound.mono
+        #[pA, ← mkAppM ``Nat.add_le_add_left #[it, T]]
   -- the bound in the form `T + q * (c₀ + c₁ * q)` when its coefficients are numerals
   let pty ← whnfR (← instantiateMVars (← inferType pf))
-  let n₁ := pty.appArg!
-  let mut pf := pf
+  let n₁ ← Core.betaReduce pty.appArg!
   let mut n := n₁
   if let some (c₀, c₁) ← simCoeffs? n₁ then
     let n' := if c₁.rawNatLit? == some 0 || c₁.nat? == some 0 then mkAddN T (mkMulN q c₀)
@@ -3322,35 +3727,27 @@ its codomain (`foldKindOfTimed?`) is that of `OracleAdv.Timed`. -/
 def isOracleTimed (c : Name) : MetaM Bool := do
   return (← foldKindOfTimed? c).any (·.timed == ``CatCrypt.Crypto.OracleAdv.Timed)
 
-/-- `derive_time_bound R.tree` states and proves `R.tree.timeBound_timed`, the time theorem of
-`R.tree.timed` (see the module docstring): by the fold rule for a costed tree of a registered
-kind (`emitFoldTimeBound`), and for a kind with a vector charge, when that fails or with
-`+queries`, with the query count beside the time (`emitUseTimeBound`), and for a kind with a vector
-charge also the use bound `R.tree.useBound_timed` when it is proved; for a costed `SPTree`
-by the fold rule first (`foldSPTreeTimeBound`), else along its bound for a pure step body (`mirrorTimeBound`), else by
-`time_bound` (`emitTimeBound`); it fails with the reasons when the theorem is not proved. -/
-syntax (name := deriveTimeBoundCmd) "derive_time_bound " ("+queries ")? ident : command
-
-@[command_elab deriveTimeBoundCmd]
-def elabDeriveTimeBound : CommandElab := fun stx => do
-  liftTermElabM do
-    let queries := !stx[1].isNone
-    let t ← realizeGlobalConstNoOverloadWithInfo stx[2]
-    let name := t ++ `timeBound_timed
-    let useName := t ++ `useBound_timed
+/-- The time theorem `name` of the costed tree `t.timed` (see `elabDeriveTimeBound`), with the use
+bound `useName` when one is given: by the fold rule for a costed tree of a registered kind
+(`emitFoldTimeBound`), and for a kind with a vector charge, when that fails or with `queries`,
+with the query count beside the time (`emitUseTimeBound`); for a costed `SPTree` by the fold rule
+first (`foldSPTreeTimeBound`), else along its bound for a pure step body (`mirrorTimeBound`), else
+by `time_bound` (`emitTimeBound`). It fails with the reasons when the theorem is not proved. -/
+def deriveTimeBoundAt (t name : Name) (useName : Option Name) (queries : Bool) :
+    TermElabM Unit := do
     if let some k ← foldKindOfTimed? (t ++ `timed) then
       if queries then
-        if let some why ← emitUseTimeBound k (t ++ `timed) name (useName := some useName) then
+        if let some why ← emitUseTimeBound k (t ++ `timed) name (useName := useName) then
           throwError "`{name}` is not proved: {why}"
         return
       let s ← saveState
       let some why ← emitFoldTimeBound k (t ++ `timed) name | do
         -- The use bound beside the time theorem, when the kind has a vector charge and the use
         -- bound is proved; the time theorem stands without it.
-        if k.useJoin.isSome then
+        if k.useJoin.isSome && useName.isSome then
           let s' ← saveState
           let r ← try
-              emitUseTimeBound k (t ++ `timed) name (useName := some useName) (timeThm := false)
+              emitUseTimeBound k (t ++ `timed) name (useName := useName) (timeThm := false)
             catch e => do
               if e.isInterrupt then throw e
               pure (some e.toMessageData)
@@ -3358,7 +3755,7 @@ def elabDeriveTimeBound : CommandElab := fun stx => do
         return
       if k.useJoin.isSome then
         s.restore
-        let some whyU ← emitUseTimeBound k (t ++ `timed) name (useName := some useName) | return
+        let some whyU ← emitUseTimeBound k (t ++ `timed) name (useName := useName) | return
         throwError "`{name}` is not proved: {why}\nwith the query counts: {whyU}"
       throwError "`{name}` is not proved: {why}"
     let s ← saveState
@@ -3378,6 +3775,111 @@ def elabDeriveTimeBound : CommandElab := fun stx => do
           by the fold rule: {whyF}"
       throwError "`{name}` is not proved: {why}\nby the fold rule: {whyF}"
     reportFallback name whyF
+
+/-- Whether the costed tree `c` has a cost companion with a list argument (`roleOf`,
+`lastListArg?`): a binder that has a majorant under `derive_time_bound.majorants`. -/
+def hasListCost (c : Name) : MetaM Bool := do
+  forallTelescope (← getConstInfo c).type fun xs _ => do
+    for x in xs do
+      let t ← inferType x
+      if let some .cost ← roleOf t then
+        if (← lastListArg? t).isSome then return true
+    return false
+
+/-- The proof of the uniform time theorem `uni` from the majorant form `majName`, its instance
+at the constant majorants. The binders of the two theorems are paired in order: a binder `M_f`
+of the majorant form, of type `ℕ → ℕ`, is `fun _ => t_f` at the binder `t_f` of `uni` in its
+place, the `k`-th binder `hM_f` (a monotonicity) is `monotone_const` at the `k`-th such `t_f`
+(the hypotheses follow the bounds in the same order), and every other
+binder is the binder of `uni` in its place, of a definitionally equal type. The bound of the
+instance is that of `uni` up to `arithLe`; `none` when the binders or the bounds do not match. -/
+def uniformOfMajorant (majName : Name) (uni : ConstantInfo) : TermElabM (Option Expr) := do
+  let lvls := uni.levelParams.map mkLevelParam
+  let majTy ← instantiateTypeLevelParams (← getConstInfo majName).toConstantVal lvls
+  forallTelescope uni.type fun us concl => do
+    let mut e := Lean.mkConst majName lvls
+    let mut ty := majTy
+    let mut i := 0
+    let mut ts : Array Expr := #[]
+    let mut j := 0
+    repeat
+      let .forallE n d b _ := ty | break
+      let s := n.toString
+      let a ← if s.startsWith "hM_" then
+          let some v := ts[j]? | return none
+          j := j + 1
+          mkAppOptM ``monotone_const #[some natE, some natE, none, none, some v]
+        else
+          let some u := us[i]? | return none
+          i := i + 1
+          if s.startsWith "M_" && (← isDefEq d (← mkArrow natE natE)) then
+            ts := ts.push u
+            pure (mkLambda `_ .default natE u)
+          else pure u
+      unless ← isDefEq (← inferType a) d do return none
+      e := mkApp e a
+      ty := b.instantiate1 a
+    unless i == us.size do return none
+    let pf ← if ← isDefEq ty concl then pure e else
+      unless ty.isAppOfArity ``LE.le 4 && concl.isAppOfArity ``LE.le 4 do return none
+      unless ← isDefEq ty.appFn!.appArg! concl.appFn!.appArg! do return none
+      let le ← try arithLe ty.appArg! concl.appArg! catch _ => return none
+      mkAppM ``Nat.le_trans #[e, le]
+    let pf ← instantiateMVars pf
+    unless ← isDefEq (← inferType pf) concl do return none
+    if pf.hasSorry || pf.hasExprMVar then return none
+    return some (← mkLambdaFVars us pf)
+
+/-- The majorant form `t.timeBound_timed_maj` of the costed tree `t.timed`, then the uniform
+time theorem `uni` proved from it (`uniformOfMajorant`) and the use bound `use?` as it was
+proved; `false` when the majorant form is not proved, has no majorant, or does not give `uni`.
+On `false` or an exception the caller restores the state with `uni` proved directly. -/
+def majorantThenUniform (t : Name) (uni : ConstantInfo) (use? : Option ConstantInfo)
+    (queries : Bool) : TermElabM Bool := do
+  let majName := t ++ `timeBound_timed_maj
+  withOptions (fun o => derive_time_bound.majorants.set o true) do
+    deriveTimeBoundAt t majName none queries
+  let some maj := (← getEnv).find? majName | return false
+  -- the majorant form differs from the uniform one only at a cost companion with a list argument
+  unless (maj.type.find? (·.isAppOf ``Monotone)).isSome do return false
+  let some val ← uniformOfMajorant majName uni | return false
+  addDecl (.thmDecl
+    { name := uni.name, levelParams := uni.levelParams, type := uni.type, value := val })
+  if let some (.thmInfo u) := use? then addDecl (.thmDecl u)
+  return (← getEnv).contains uni.name
+
+/-- `derive_time_bound R.tree` states and proves `R.tree.timeBound_timed`, the time theorem of
+`R.tree.timed` (see the module docstring and `deriveTimeBoundAt`), and for a kind with a vector
+charge also the use bound `R.tree.useBound_timed` when it is proved. With the option
+`derive_time_bound.majorantForm` (the default) and a cost companion with a list argument, it also
+states the majorant form `R.tree.timeBound_timed_maj` (the theorem of the option
+`derive_time_bound.majorants`) and proves `R.tree.timeBound_timed`, with its statement unchanged,
+from it at the constant majorants (`uniformOfMajorant`, `costMaj_const_iff`); where the majorant
+form is not proved or does not give the uniform one, the uniform form is proved alone. -/
+syntax (name := deriveTimeBoundCmd) "derive_time_bound " ("+queries ")? ident : command
+
+@[command_elab deriveTimeBoundCmd]
+def elabDeriveTimeBound : CommandElab := fun stx => do
+  liftTermElabM do
+    let queries := !stx[1].isNone
+    let t ← realizeGlobalConstNoOverloadWithInfo stx[2]
+    let name := t ++ `timeBound_timed
+    let useName := t ++ `useBound_timed
+    let opts ← getOptions
+    unless derive_time_bound.majorantForm.get opts && !derive_time_bound.majorants.get opts &&
+        (← hasListCost (t ++ `timed)) do
+      return ← deriveTimeBoundAt t name (some useName) queries
+    let s0 ← saveState
+    deriveTimeBoundAt t name (some useName) queries
+    let s1 ← saveState
+    let uni ← getConstInfo name
+    let use? := (← getEnv).find? useName
+    s0.restore
+    let derived ← try majorantThenUniform t uni use? queries
+      catch e => do
+        if e.isInterrupt then throw e
+        pure false
+    unless derived do s1.restore
 
 end
 

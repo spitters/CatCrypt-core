@@ -6,8 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.PAKE.CPaceSquare
-public import CatCryptCore.Crypto.PAKE.CPaceH1
-public import CatCryptCore.Crypto.PAKE.DHExtractKit
 public import CatCryptCore.Crypto.OracleGameUpToBad
 
 /-!

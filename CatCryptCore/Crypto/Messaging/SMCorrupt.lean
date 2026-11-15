@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Messaging.CKACorrupt
 public import CatCryptCore.Crypto.Assumptions.DualPRF
+public import CatCryptCore.Crypto.OracleAdversaryStateMap
 import CatCryptCore.Tactics.AutoDispatchExt
 import CatCryptCore.Tactics.DeriveTimed
 
@@ -16,9 +17,10 @@ import CatCryptCore.Tactics.DeriveTimed
 The confidentiality game of secure messaging with state corruption for the double ratchet of
 Alwen, Coretti and Dodis (EUROCRYPT 2019), over a CKA `C`, the root KDF
 `R : PRGDef (RK × Key) (RK × Sa)`, the chain generator `G : PRGDef Sa (W × Sa)` and the AEAD
-`D : AEADDef W Ct`, and its modular proof from the CKA game with corruption of
-`CatCryptCore.Crypto.Messaging.CKACorrupt`, a PRF-PRNG root step and a forward-secure AEAD
-(ACD, Sections 4 and 5).
+`D : AEADDef W Ct AD` with associated data in `AD`, and its modular proof from the CKA game
+with corruption of `CatCryptCore.Crypto.Messaging.CKACorrupt`, a PRF-PRNG root step and a
+forward-secure AEAD (ACD, Sections 4 and 5). A message of the adversary is a pair of a plaintext
+in `W` and its associated data in `AD`.
 
 ## The game
 
@@ -189,26 +191,6 @@ open scoped ENNReal
 
 variable {S S' D R V α : Type}
 
-/-- **State maps under an invariant.** A map `f` of oracle states that commutes with every
-oracle call from the states satisfying `Inv`, an invariant kept on the support of every call,
-commutes with every run from such a state. -/
-theorem run_map_state_inv (O : S → D → PMF (R × S)) (O' : S' → D → PMF (R × S'))
-    (f : S → S') (Inv : S → Prop)
-    (hInv : ∀ s d, Inv s → ∀ x ∈ (O s d).support, Inv x.2)
-    (hO : ∀ s d, Inv s → (O s d).map (Prod.map id f) = O' (f s) d)
-    (A : OracleAdv D R α) (s : S) (hs : Inv s) :
-    (run O A s).map (Prod.map id f) = run O' A (f s) := by
-  induction A generalizing s with
-  | ret a => simp [PMF.pure_map]
-  | rand p k ih =>
-    simp only [run_rand, PMF.map_bind]
-    congr 1; funext b; exact ih b s hs
-  | query d k ih =>
-    simp only [run_query, PMF.map_bind]
-    rw [← hO s d hs, PMF.bind_map]
-    refine PMF.bind_congr_support _ _ _ fun x hx => ?_
-    exact ih x.1 x.2 (hInv s d hs x hx)
-
 /-- The outputs of the runs related by a state map under an invariant are equal. -/
 theorem run_map_fst_of_map_state_inv (O : S → D → PMF (R × S)) (O' : S' → D → PMF (R × S'))
     (f : S → S') (Inv : S → Prop)
@@ -216,7 +198,7 @@ theorem run_map_fst_of_map_state_inv (O : S → D → PMF (R × S)) (O' : S' →
     (hO : ∀ s d, Inv s → (O s d).map (Prod.map id f) = O' (f s) d)
     (A : OracleAdv D R α) (s : S) (hs : Inv s) :
     (run O A s).map Prod.fst = (run O' A (f s)).map Prod.fst := by
-  rw [← run_map_state_inv O O' f Inv hInv hO A s hs, PMF.map_comp]
+  rw [← run_map_state_of_inv O O' f Inv hInv hO A s hs, PMF.map_comp]
   rfl
 
 /-- After the critical step, the oracle with the value `v` drawn in advance is the lazy one. -/
@@ -455,16 +437,17 @@ end CKAPMF
 
 /-! ## The secure-messaging game with state corruption -/
 
-/-- The queries of the secure-messaging adversary. -/
-inductive SMQuery (W : Type) where
+/-- The queries of the secure-messaging adversary, with plaintexts in `W` and associated data
+in `AD` (by default `W`). -/
+inductive SMQuery (W : Type) (AD : Type := W) where
   /-- The party opens a new epoch: it runs the CKA sending algorithm and the root step. -/
   | ratchet (p : CKAParty)
   /-- The party receives the CKA message of the epoch opened by its peer. -/
   | recv (p : CKAParty)
   /-- The party encrypts the message `m` (a plaintext and associated data) in its epoch. -/
-  | send (p : CKAParty) (m : W × W)
+  | send (p : CKAParty) (m : W × AD)
   /-- As `send`, in the challenge epoch, with a uniform ciphertext in the ideal game. -/
-  | chall (p : CKAParty) (m : W × W)
+  | chall (p : CKAParty) (m : W × AD)
   /-- The full state of the party is returned, if the corruption gate allows it. -/
   | corrupt (p : CKAParty)
 
@@ -533,7 +516,7 @@ structure SMSt (Sc Msg RK Sa : Type) where
 
 section Game
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- The challenge of party `p` is allowed in the local state `l` at the counter `e` of `p`. -/
@@ -542,16 +525,16 @@ def challOk (l : SMLoc RK Sa) (t e : ℕ) (p : CKAParty) : Bool :=
 
 /-- The distribution of the challenge ciphertext under the key `k`: the encryption of `m`, or a
 uniform ciphertext in the ideal game. -/
-noncomputable def challCt (D : AEADDef W Ct) (ideal : Bool) (k : W) (m : W × W) : PMF Ct :=
+noncomputable def challCt (D : AEADDef W Ct AD) (ideal : Bool) (k : W) (m : W × AD) : PMF Ct :=
   if ideal then PMF.uniformFintype Ct else PMF.pure (D.encrypt k m.1 m.2)
 
 /-- The oracle of the secure-messaging game with the challenge epoch `t`, the challenge mode
 `ideal` and the root step `root` at the opening of epoch `t`; every other epoch uses the root
 KDF `R`. The real game has `root rk I = pure (R (rk, I))`; the other choices are hybrids. -/
 noncomputable def smOracleOf (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa) :
-    SMQuery W → PMF (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa)
+    SMQuery W AD → PMF (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa)
   | .ratchet p =>
     if s.ck.canSend p then
       (PMF.uniformFintype Rand).bind fun r =>
@@ -596,25 +579,26 @@ def smInit (i : Msg × Sc × Sc) (rk : RK) : SMSt Sc Msg RK Sa :=
 end Game
 
 /-- A secure-messaging adversary: a distribution `tStar` of the challenge epoch, and for each
-challenge epoch and public value of the CKA initialisation an oracle tree. -/
-structure SMCorruptAdv (Sc Msg RK Sa W Ct : Type) : Type 1 where
+challenge epoch and public value of the CKA initialisation an oracle tree, whose messages have
+associated data in `AD` (by default `W`). -/
+structure SMCorruptAdv (Sc Msg RK Sa W Ct : Type) (AD : Type := W) : Type 1 where
   /-- The choice of the challenge epoch. -/
   tStar : PMF ℕ
   /-- The interaction with the oracles. -/
-  play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool
+  play : ℕ → Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool
 
 section Game
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [Fintype RK] [Nonempty RK]
 
 /-- The secure-messaging game with the root step `root` at the challenge epoch: the adversary
 chooses the challenge epoch `t`, the CKA is initialised, both parties get a uniform root key,
 and the adversary interacts with the oracle. -/
 noncomputable def sm_corrupt_gameOf (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa))
-    (A : SMCorruptAdv Sc Msg RK Sa W Ct) : SPComp Bool :=
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) : SPComp Bool :=
   SPComp.bind (liftPMF A.tStar) fun t =>
     SPComp.bind C.init fun i =>
       SPComp.bind (SPComp.sample RK) fun rk =>
@@ -624,14 +608,14 @@ noncomputable def sm_corrupt_gameOf (C : CKADef Sc Msg Key) [CKACoins C Rand]
 /-- The secure-messaging game with state corruption; `ideal` selects the uniform challenge
 ciphertext. -/
 noncomputable def sm_corrupt_game (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct) : SPComp Bool :=
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) : SPComp Bool :=
   sm_corrupt_gameOf C R G D ΔFS ΔPCS ideal (realRoot R) A
 
 /-- **Secure-messaging advantage with state corruption** of the adversary `A`. -/
 noncomputable def SM_Corrupt_Advantage (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (A : SMCorruptAdv Sc Msg RK Sa W Ct) : ℝ≥0∞ :=
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) : ℝ≥0∞ :=
   Advantage (sm_corrupt_game C R G D ΔFS ΔPCS false A) (sm_corrupt_game C R G D ΔFS ΔPCS true A)
 
 end Game
@@ -640,12 +624,12 @@ end Game
 
 section Structure
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- The opening of the challenge epoch `t`: a new epoch by a party that may send, whose counter
 is one before `t`. -/
-def smCrit (t : ℕ) (s : SMSt Sc Msg RK Sa) : SMQuery W → Bool
+def smCrit (t : ℕ) (s : SMSt Sc Msg RK Sa) : SMQuery W AD → Bool
   | .ratchet p => s.ck.canSend p && (s.ck.t p + 1 == t)
   | _ => false
 
@@ -654,9 +638,9 @@ def smOpened (t : ℕ) (s : SMSt Sc Msg RK Sa) : Prop := t ≤ s.ck.t .A ∨ t �
 
 /-- **Monotone counters.** Every oracle call leaves every epoch counter at least as large. -/
 theorem smOracleOf_t_mono (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa)
-    (q : SMQuery W) (x) (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support)
+    (q : SMQuery W AD) (x) (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support)
     (P : CKAParty) : s.ck.t P ≤ x.2.ck.t P := by
   cases q with
   | ratchet p =>
@@ -696,9 +680,9 @@ theorem smOracleOf_t_mono (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 /-- The opening of the challenge epoch leads to an opened state. -/
 theorem smOracleOf_opened_of_crit (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa)
-    (q : SMQuery W) (hc : smCrit t s q = true) (x)
+    (q : SMQuery W AD) (hc : smCrit t s q = true) (x)
     (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support) : smOpened t x.2 := by
   cases q with
   | ratchet p =>
@@ -713,9 +697,9 @@ theorem smOracleOf_opened_of_crit (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 /-- An opened state stays opened. -/
 theorem smOracleOf_opened (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa)
-    (q : SMQuery W) (hs : smOpened t s) (x)
+    (q : SMQuery W AD) (hs : smOpened t s) (x)
     (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support) : smOpened t x.2 := by
   rcases hs with h | h
   · exact Or.inl (h.trans (smOracleOf_t_mono C R G D ΔFS ΔPCS t ideal root s q x hx .A))
@@ -723,7 +707,7 @@ theorem smOracleOf_opened (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 omit [SampleableType W] in
 /-- An opened state admits no opening of the challenge epoch. -/
-theorem smCrit_of_opened (t : ℕ) (s : SMSt Sc Msg RK Sa) (hs : smOpened t s) (q : SMQuery W) :
+theorem smCrit_of_opened (t : ℕ) (s : SMSt Sc Msg RK Sa) (hs : smOpened t s) (q : SMQuery W AD) :
     smCrit t s q = false := by
   cases q with
   | ratchet p =>
@@ -739,9 +723,9 @@ theorem smCrit_of_opened (t : ℕ) (s : SMSt Sc Msg RK Sa) (hs : smOpened t s) (
 /-- Away from the opening of the challenge epoch, the oracle does not depend on the root step
 at the challenge epoch. -/
 theorem smOracleOf_root_congr (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root root' : RK → Key → PMF (RK × Sa))
-    (s : SMSt Sc Msg RK Sa) (q : SMQuery W) (hc : smCrit t s q = false) :
+    (s : SMSt Sc Msg RK Sa) (q : SMQuery W AD) (hc : smCrit t s q = false) :
     smOracleOf C R G D ΔFS ΔPCS t ideal root s q = smOracleOf C R G D ΔFS ΔPCS t ideal root' s q := by
   cases q with
   | ratchet p =>
@@ -756,11 +740,11 @@ theorem smOracleOf_root_congr (C : CKADef Sc Msg Key) [CKACoins C Rand]
 epoch draws `v` from `μ` and continues as `rootv v`, the run equals the run with `v` drawn in
 advance. -/
 theorem sm_run_eager (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) {V : Type} (μ : PMF V) (root : RK → Key → PMF (RK × Sa))
     (rootv : V → RK → Key → PMF (RK × Sa))
     (hroot : ∀ rk I, root rk I = μ.bind fun v => rootv v rk I) {α : Type}
-    (A : OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) α) (s : SMSt Sc Msg RK Sa) :
+    (A : OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) α) (s : SMSt Sc Msg RK Sa) :
     OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal root) A s =
       μ.bind fun v => OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal (rootv v)) A s := by
   refine OracleAdv.run_eq_bind_eager _ _ μ (smCrit t) ?_ ?_ (smOpened t) ?_ ?_ ?_ A s
@@ -975,7 +959,7 @@ end PRFPRNG
 
 section CKARed
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [Fintype RK] [Nonempty RK]
 
 /-- The opening of an epoch by party `p` in the CKA simulator: a CKA send, or the CKA challenge
@@ -1014,8 +998,8 @@ noncomputable def smCKARecvT (σ : SMLoc RK Sa × CKAGameSt Unit Unit) (p : CKAP
 
 /-- The send of party `p` in the CKA simulator, computed locally: the encryption of `m` under
 the next key of the sending chain, if `p` sends in its epoch. -/
-noncomputable def smCKASendT (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (σ : SMLoc RK Sa × CKAGameSt Unit Unit) (p : CKAParty) (m : W × W) :
+noncomputable def smCKASendT (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (σ : SMLoc RK Sa × CKAGameSt Unit Unit) (p : CKAParty) (m : W × AD) :
     OracleAdv CKAQuery (CKAAns Sc Msg Key Rand)
       (SMAns Sc Msg RK Sa Ct × (SMLoc RK Sa × CKAGameSt Unit Unit)) :=
   match σ.1.snd p with
@@ -1026,8 +1010,8 @@ noncomputable def smCKASendT (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
   | none => .ret (.none, σ)
 
 /-- The challenge of party `p` in the CKA simulator, computed locally. -/
-noncomputable def smCKAChallT (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (t : ℕ)
-    (ideal : Bool) (σ : SMLoc RK Sa × CKAGameSt Unit Unit) (p : CKAParty) (m : W × W) :
+noncomputable def smCKAChallT (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (t : ℕ)
+    (ideal : Bool) (σ : SMLoc RK Sa × CKAGameSt Unit Unit) (p : CKAParty) (m : W × AD) :
     OracleAdv CKAQuery (CKAAns Sc Msg Key Rand)
       (SMAns Sc Msg RK Sa Ct × (SMLoc RK Sa × CKAGameSt Unit Unit)) :=
   match σ.1.snd p with
@@ -1054,8 +1038,8 @@ noncomputable def smCKACorrT (σ : SMLoc RK Sa × CKAGameSt Unit Unit) (p : CKAP
 `SMLoc` of the secure-messaging state and a shadow of the CKA game state that keeps the epoch
 counters. -/
 noncomputable def smCKAImplOf (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (t : ℕ) (ideal : Bool)
-    (σ : SMLoc RK Sa × CKAGameSt Unit Unit) (q : SMQuery W) :
+    (D : AEADDef W Ct AD) (t : ℕ) (ideal : Bool)
+    (σ : SMLoc RK Sa × CKAGameSt Unit Unit) (q : SMQuery W AD) :
     OracleAdv CKAQuery (CKAAns Sc Msg Key Rand)
       (SMAns Sc Msg RK Sa Ct × (SMLoc RK Sa × CKAGameSt Unit Unit)) :=
   match q with
@@ -1069,8 +1053,8 @@ noncomputable def smCKAImplOf (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa
 `pub`, it draws a uniform root key and runs the secure-messaging adversary against the
 simulator `smCKAImplOf`. -/
 noncomputable def smCKATreeOf (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (ideal : Bool)
-    (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) (t : ℕ) (pub : Msg) :
+    (D : AEADDef W Ct AD) (ideal : Bool)
+    (play : ℕ → Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool) (t : ℕ) (pub : Msg) :
     OracleAdv CKAQuery (CKAAns Sc Msg Key Rand) Bool :=
   .rand (PMF.uniformFintype RK) fun rk =>
     (OracleAdv.simulate (smCKAImplOf R G D t ideal) (play t pub)
@@ -1086,7 +1070,7 @@ end CKARed
 
 section CKAHop
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key]
 
 /-- The root step at the challenge epoch of the first hybrid: the root KDF on a uniform key. -/
@@ -1133,8 +1117,8 @@ with the root step `ckaHopRoot R idealK`, mapped to the states of the reduction 
 game, is the call of the simulator `smCKAImplOf` against the CKA oracle with the challenge mode
 `idealK`. -/
 theorem smCKA_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS t : ℕ) (ideal idealK : Bool)
-    (s : SMSt Sc Msg RK Sa) (q : SMQuery W) :
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ΔFS ΔPCS t : ℕ) (ideal idealK : Bool)
+    (s : SMSt Sc Msg RK Sa) (q : SMQuery W AD) :
     (smOracleOf C R G D ΔFS ΔPCS t ideal (ckaHopRoot R idealK) s q).map
         (Prod.map id smCKAEmb) =
       OracleAdv.simOracle (smCKAImplOf R G D t ideal) (ckaOracleP C ΔFS ΔPCS t idealK)
@@ -1179,7 +1163,7 @@ theorem ckaShadow_init (pub : Msg) (sA sB : Sc) :
 /-- **The CKA reduction** `smcCKARed R G D ideal A`: the CKA adversary that keeps the challenge
 epoch of `A` and plays the tree `smCKATreeOf`. -/
 noncomputable def smcCKARed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    (D : AEADDef W Ct AD) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
     CKACorruptAdv Sc Msg Key Rand Bool where
   tStar := A.tStar
   play := smCKATreeOf R G D ideal A.play
@@ -1189,9 +1173,9 @@ omit [Fintype Key] [Nonempty Key] in
 distribution when the CKA initialisation is the lift of `initP`. -/
 theorem sm_corrupt_gameOf_eq_liftPMF (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa))
-    (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
     sm_corrupt_gameOf C R G D ΔFS ΔPCS ideal root A =
       liftPMF (A.tStar.bind fun t => initP.bind fun i => (PMF.uniformFintype RK).bind fun rk =>
         (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal root) (A.play t i.1)
@@ -1204,8 +1188,8 @@ the secure-messaging game with the root step `ckaHopRoot R idealK` at the challe
 real game for the real CKA key, the first hybrid for the uniform one. -/
 theorem smCKA_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.Sound C)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (ideal idealK : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (ideal idealK : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
     cka_corrupt_game C ΔFS ΔPCS idealK (smcCKARed R G D ideal A) =
       sm_corrupt_gameOf C R G D ΔFS ΔPCS ideal (ckaHopRoot R idealK) A := by
   rw [cka_corrupt_game_eq_liftPMF C hS initP hinit, sm_corrupt_gameOf_eq_liftPMF C initP hinit]
@@ -1227,7 +1211,7 @@ end CKAHop
 
 section RootRed
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- The opening of an epoch by party `p` in the simulator of the root hop: the CKA sending
@@ -1261,8 +1245,8 @@ noncomputable def smRootRecv {D' R' : Type} (C : CKADef Sc Msg Key) (s : SMSt Sc
   else .ret (.none, s)
 
 /-- The send of party `p` in a simulator with the full state. -/
-noncomputable def smFullSend {D' R' : Type} (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (s : SMSt Sc Msg RK Sa) (p : CKAParty) (m : W × W) :
+noncomputable def smFullSend {D' R' : Type} (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (s : SMSt Sc Msg RK Sa) (p : CKAParty) (m : W × AD) :
     OracleAdv D' R' (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :=
   match s.loc.snd p with
   | some sa =>
@@ -1272,8 +1256,8 @@ noncomputable def smFullSend {D' R' : Type} (G : PRGDef Sa (W × Sa)) (D : AEADD
   | none => .ret (.none, s)
 
 /-- The challenge of party `p` in a simulator with the full state. -/
-noncomputable def smFullChall {D' R' : Type} (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (p : CKAParty) (m : W × W) :
+noncomputable def smFullChall {D' R' : Type} (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (p : CKAParty) (m : W × AD) :
     OracleAdv D' R' (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :=
   match s.loc.snd p with
   | some sa =>
@@ -1294,8 +1278,8 @@ noncomputable def smFullCorr {D' R' : Type} (ΔFS ΔPCS t : ℕ) (s : SMSt Sc Ms
 the first hybrid, with the root step at the challenge epoch asked to the `prf` oracle of the
 PRF-PRNG game. -/
 noncomputable def smRootImplOf (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (q : SMQuery W) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (q : SMQuery W AD) :
     OracleAdv (PPQuery RK Key) (RK × Sa) (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :=
   match q with
   | .ratchet p => smRootRatchet C R t s p
@@ -1308,9 +1292,9 @@ noncomputable def smRootImplOf (C : CKADef Sc Msg Key) [CKACoins C Rand]
 the CKA initialisation from `initP` and a uniform root key, and runs the adversary against the
 simulator `smRootImplOf`. -/
 noncomputable def smRootTreeOf (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fintype RK]
-    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
-    (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    (play : ℕ → Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool) :
     OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
   .rand tStar fun t =>
     .rand initP fun i =>
@@ -1326,16 +1310,16 @@ end RootRed
 
 section RootHop
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- Away from the opening of the challenge epoch, the simulator of the root hop asks no query
 and answers as the secure-messaging oracle with any root step at the challenge epoch. -/
 theorem smRoot_step_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) {U : Type}
     (O' : U → PPQuery RK Key → PMF ((RK × Sa) × U)) (s : SMSt Sc Msg RK Sa) (u : U)
-    (q : SMQuery W) (hc : smCrit t s q = false) :
+    (q : SMQuery W AD) (hc : smCrit t s q = false) :
     OracleAdv.simOracle (smRootImplOf C R G D ΔFS ΔPCS t ideal) O' (s, u) q =
       (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).map fun y => (y.1, (y.2, u)) := by
   cases q with
@@ -1382,9 +1366,9 @@ omit [Fintype Key] [Nonempty Key] in
 the game with the root step `fixedKeyRoot R k` at the challenge epoch, with the PRF-PRNG state
 attached, is the call of the simulator against the real PRF-PRNG oracle. -/
 theorem smRoot_step_real (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (rk' : RK) (k : Key) (s : SMSt Sc Msg RK Sa)
-    (q : SMQuery W) :
+    (q : SMQuery W AD) :
     (smOracleOf C R G D ΔFS ΔPCS t ideal (fixedKeyRoot R k) s q).map
         (Prod.map id fun s => (s, (⟨rk', k, [], []⟩ : PPSt RK Key (RK × Sa)))) =
       OracleAdv.simOracle (smRootImplOf C R G D ΔFS ΔPCS t ideal)
@@ -1405,9 +1389,9 @@ oracle is empty unless the challenge epoch has been opened, each call of the sim
 the ideal PRF-PRNG oracle, with the PRF-PRNG state dropped, is the call of the game with a
 uniform root output at the challenge epoch. -/
 theorem smRoot_step_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (u : PPSt RK Key (RK × Sa))
-    (hu : u.tR = [] ∨ smOpened t s) (q : SMQuery W) :
+    (hu : u.tR = [] ∨ smOpened t s) (q : SMQuery W AD) :
     (OracleAdv.simOracle (smRootImplOf C R G D ΔFS ΔPCS t ideal)
         (ppOracle (rootFn R) true true) (s, u) q).map (Prod.map id Prod.fst) =
       smOracleOf C R G D ΔFS ΔPCS t ideal unifRoot s q := by
@@ -1430,18 +1414,18 @@ theorem smRoot_step_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
 /-- **The PRF-PRNG reduction** `smcRootRed C R G D ΔFS ΔPCS ideal initP A`: the tree
 `smRootTreeOf` at the challenge epoch and the interaction of `A`. -/
 noncomputable def smcRootRed (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc))
-    (A : SMCorruptAdv Sc Msg RK Sa W Ct) : OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) : OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
   smRootTreeOf C R G D ΔFS ΔPCS ideal initP A.tStar A.play
 
 omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq Key] in
 /-- Running the PRF-PRNG reduction against an oracle is running the adversary against the
 composed oracle from the drawn initial state. -/
 theorem smcRootRed_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc))
-    (A : SMCorruptAdv Sc Msg RK Sa W Ct) {U : Type}
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) {U : Type}
     (O' : U → PPQuery RK Key → PMF ((RK × Sa) × U)) (u : U) :
     (OracleAdv.run O' (smcRootRed C R G D ΔFS ΔPCS ideal initP A) u).map Prod.fst =
       A.tStar.bind fun t => initP.bind fun i => (PMF.uniformFintype RK).bind fun rk =>
@@ -1454,8 +1438,8 @@ theorem smcRootRed_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
 hybrid: the root step at the challenge epoch on a uniform key. -/
 theorem smRoot_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
     pp_game (rootFn R) false false (smcRootRed C R G D ΔFS ΔPCS ideal initP A) =
       sm_corrupt_gameOf C R G D ΔFS ΔPCS ideal (unifKeyRoot R) A := by
   rw [sm_corrupt_gameOf_eq_liftPMF C initP hinit]
@@ -1489,8 +1473,8 @@ theorem smRoot_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
 hybrid: a uniform root output at the challenge epoch. -/
 theorem smRoot_ideal_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
     pp_game (rootFn R) true true (smcRootRed C R G D ΔFS ΔPCS ideal initP A) =
       sm_corrupt_gameOf C R G D ΔFS ΔPCS ideal unifRoot A := by
   rw [sm_corrupt_gameOf_eq_liftPMF C initP hinit]
@@ -1528,14 +1512,16 @@ end RootHop
 
 section FSAEADGame
 
-variable {Sa W Ct : Type} [SampleableType W] [SampleableType Ct]
+variable {Sa W Ct AD : Type} [SampleableType W] [SampleableType Ct]
 
-/-- The queries of the FS-AEAD adversary. -/
-inductive FSQuery (W : Type) where
-  /-- The sender encrypts the message `m` under the next key of its chain. -/
-  | enc (m : W × W)
+/-- The queries of the FS-AEAD adversary, with plaintexts in `W` and associated data in `AD`
+(by default `W`). -/
+inductive FSQuery (W : Type) (AD : Type := W) where
+  /-- The sender encrypts the message `m` (plaintext, associated data) under the next key of its
+  chain. -/
+  | enc (m : W × AD)
   /-- As `enc`, once, with a uniform ciphertext in the ideal game. -/
-  | chall (m : W × W)
+  | chall (m : W × AD)
   /-- The state of the sender is returned. -/
   | corrupt
 
@@ -1566,9 +1552,10 @@ Dodis, §4.3): `enc m` encrypts under the next key `(G cur).1` and moves the sta
 `(G cur).2`; `chall m` does the same once, with a uniform ciphertext if `ideal`, and is refused
 after a corruption; `corrupt` returns the current state. A corruption after the challenge is
 allowed: the state has moved past the challenge key (forward secrecy). -/
-noncomputable def fsOracle (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
-    (s : FSSt Sa) : FSQuery W → PMF (FSAns Sa Ct × FSSt Sa)
-  | .enc m => PMF.pure (.ct (D.encrypt (G.stretch s.cur).1 m.1 m.2), { s with cur := (G.stretch s.cur).2 })
+noncomputable def fsOracle (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool)
+    (s : FSSt Sa) : FSQuery W AD → PMF (FSAns Sa Ct × FSSt Sa)
+  | .enc m =>
+    PMF.pure (.ct (D.encrypt (G.stretch s.cur).1 m.1 m.2), { s with cur := (G.stretch s.cur).2 })
   | .chall m =>
     if !s.done && !s.corr then
       (challCt D ideal (G.stretch s.cur).1 m).bind fun c =>
@@ -1580,14 +1567,14 @@ variable [Fintype Sa] [Nonempty Sa]
 
 /-- The FS-AEAD game with corruption: a uniform initial state of the epoch, and the run of the
 adversary against `fsOracle`. -/
-noncomputable def fsaead_corrupt_game (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
-    (A : OracleAdv (FSQuery W) (FSAns Sa Ct) Bool) : SPComp Bool :=
+noncomputable def fsaead_corrupt_game (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ideal : Bool) (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) : SPComp Bool :=
   liftPMF ((PMF.uniformFintype Sa).bind fun sa =>
     (OracleAdv.run (fsOracle G D ideal) A ⟨sa, sa, false, false⟩).map Prod.fst)
 
 /-- **FS-AEAD advantage with corruption** of the adversary `A`. -/
-noncomputable def FSAEAD_Corrupt_Advantage (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (A : OracleAdv (FSQuery W) (FSAns Sa Ct) Bool) : ℝ≥0∞ :=
+noncomputable def FSAEAD_Corrupt_Advantage (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) : ℝ≥0∞ :=
   Advantage (fsaead_corrupt_game G D false A) (fsaead_corrupt_game G D true A)
 
 end FSAEADGame
@@ -1596,7 +1583,7 @@ end FSAEADGame
 
 section FSRed
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- Party `p` opened the challenge epoch with the next root key `rk`; its sending chain and the
@@ -1625,7 +1612,7 @@ structure FSSim (Sc Msg RK Sa : Type) where
 next root key is `rkS` and the chain is the FS-AEAD game's. -/
 noncomputable def smFSRatchet (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (R : PRGDef (RK × Key) (RK × Sa)) (t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (p : CKAParty) :
-    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+    OracleAdv (FSQuery W AD) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
   if x.s.ck.canSend p then
     .rand (PMF.uniformFintype Rand) fun r =>
       if x.s.ck.t p + 1 == t then
@@ -1644,7 +1631,7 @@ noncomputable def smFSRatchet (C : CKADef Sc Msg Key) [CKACoins C Rand]
 /-- The receive of party `p` in the FS-AEAD simulator. -/
 noncomputable def smFSRecv (C : CKADef Sc Msg Key) (rkS : RK) (x : FSSim Sc Msg RK Sa)
     (p : CKAParty) :
-    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+    OracleAdv (FSQuery W AD) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
   if x.s.ck.canRecv p then
     if x.outX then
       .ret (.none, ⟨⟨x.s.ck.recvd p (C.recv (x.s.ck.st p) x.s.ck.msg).1, x.s.loc.recvX p rkS⟩,
@@ -1661,9 +1648,9 @@ noncomputable def smFSRecv (C : CKADef Sc Msg Key) (rkS : RK) (x : FSSim Sc Msg 
 
 /-- The send of party `p` in the FS-AEAD simulator: forwarded to the FS-AEAD game on the chain
 of the challenge epoch, computed locally otherwise. -/
-noncomputable def smFSSend (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (x : FSSim Sc Msg RK Sa)
-    (p : CKAParty) (m : W × W) :
-    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+noncomputable def smFSSend (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (x : FSSim Sc Msg RK Sa)
+    (p : CKAParty) (m : W × AD) :
+    OracleAdv (FSQuery W AD) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
   if x.sndX p then
     if ckaSender (x.s.ck.t p) == p then
       .query (.enc m) fun a =>
@@ -1682,8 +1669,8 @@ noncomputable def smFSSend (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (x : FSS
     | none => .ret (.none, x)
 
 /-- The challenge of party `p` in the FS-AEAD simulator: forwarded to the FS-AEAD game. -/
-noncomputable def smFSChall (t : ℕ) (x : FSSim Sc Msg RK Sa) (p : CKAParty) (m : W × W) :
-    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+noncomputable def smFSChall (t : ℕ) (x : FSSim Sc Msg RK Sa) (p : CKAParty) (m : W × AD) :
+    OracleAdv (FSQuery W AD) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
   if x.sndX p then
     if challOk x.s.loc t (x.s.ck.t p) p then
       .query (.chall m) fun a =>
@@ -1696,7 +1683,7 @@ noncomputable def smFSChall (t : ℕ) (x : FSSim Sc Msg RK Sa) (p : CKAParty) (m
 
 /-- The corruption of party `p` in the FS-AEAD simulator. -/
 noncomputable def smFSCorr (ΔFS ΔPCS t : ℕ) (x : FSSim Sc Msg RK Sa) (p : CKAParty) :
-    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+    OracleAdv (FSQuery W AD) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
   if ckaAllowCorr ΔFS ΔPCS t x.s.ck p then
     .ret (.state (x.s.ck.st p) (x.s.loc.rk p) (x.s.loc.snd p) (x.s.loc.rcv p), x)
   else .ret (.none, x)
@@ -1706,9 +1693,9 @@ of the challenge epoch: the secure-messaging oracle of the second hybrid with th
 `(rkS, sa)` at the challenge epoch, where the FS-AEAD instance of the challenge epoch, from the
 initial state `sa`, is the FS-AEAD game's. -/
 noncomputable def smFSImplOf (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (q : SMQuery W) :
-    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (q : SMQuery W AD) :
+    OracleAdv (FSQuery W AD) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
   match q with
   | .ratchet p => smFSRatchet C R t rkS x p
   | .recv p => smFSRecv C rkS x p
@@ -1720,10 +1707,10 @@ noncomputable def smFSImplOf (C : CKADef Sc Msg Key) [CKACoins C Rand]
 initialisation, the initial root key and the root key of the challenge epoch, and runs the
 adversary against the simulator `smFSImplOf`. -/
 noncomputable def smFSTreeOf (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fintype RK]
-    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
-    (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
-    OracleAdv (FSQuery W) (FSAns Sa Ct) Bool :=
+    (play : ℕ → Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool) :
+    OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool :=
   .rand tStar fun t =>
     .rand initP fun i =>
       .rand (PMF.uniformFintype RK) fun rk =>
@@ -1839,7 +1826,7 @@ end FSInvSec
 
 section FSHop
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- The root step at the challenge epoch with the output `y` fixed in advance. -/
@@ -1849,9 +1836,9 @@ noncomputable def constRoot (y : RK × Sa) (_ : RK) (_ : Key) : PMF (RK × Sa) :
 the simulator against the FS-AEAD oracle, mapped by `fsAbs`, is the call of the game with the
 root output `(rkS, sa)` at the challenge epoch. -/
 theorem smFS_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
     (hPCS : 1 ≤ ΔPCS) (t : ℕ) (ideal : Bool) (rkS : RK) (sa : Sa)
-    (x : FSSim Sc Msg RK Sa × FSSt Sa) (hx : FSInv t sa x) (q : SMQuery W) :
+    (x : FSSim Sc Msg RK Sa × FSSt Sa) (hx : FSInv t sa x) (q : SMQuery W AD) :
     (OracleAdv.simOracle (smFSImplOf C R G D ΔFS ΔPCS t rkS) (fsOracle G D ideal) x q).map
         (Prod.map id (fsAbs rkS)) =
       smOracleOf C R G D ΔFS ΔPCS t ideal (constRoot (Key := Key) (rkS, sa)) (fsAbs rkS x) q := by
@@ -2030,8 +2017,8 @@ theorem FSInv.of_cur {t : ℕ} {sa : Sa} {x : FSSim Sc Msg RK Sa × FSSt Sa} (hx
 /-- **The invariant of the FS-AEAD simulation is kept** by every call of the simulator against
 the FS-AEAD oracle. -/
 theorem smFS_inv (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS t : ℕ) (ideal : Bool) (rkS : RK)
-    (sa : Sa) (x : FSSim Sc Msg RK Sa × FSSt Sa) (hx : FSInv t sa x) (q : SMQuery W) (y)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ΔFS ΔPCS t : ℕ) (ideal : Bool) (rkS : RK)
+    (sa : Sa) (x : FSSim Sc Msg RK Sa × FSSt Sa) (hx : FSInv t sa x) (q : SMQuery W AD) (y)
     (hy : y ∈ (OracleAdv.simOracle (smFSImplOf C R G D ΔFS ΔPCS t rkS) (fsOracle G D ideal)
       x q).support) : FSInv t sa y.2 := by
   obtain ⟨⟨⟨ck, l⟩, sX, rX, oX⟩, u⟩ := x
@@ -2297,9 +2284,9 @@ theorem smFS_inv (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Ke
 /-- **The FS-AEAD reduction** `smcFSRed C R G D ΔFS ΔPCS initP A`: the tree `smFSTreeOf` at the
 challenge epoch and the interaction of `A`. -/
 noncomputable def smcFSRed [Fintype RK] [Nonempty RK] (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (initP : PMF (Msg × Sc × Sc)) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
-    OracleAdv (FSQuery W) (FSAns Sa Ct) Bool :=
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (initP : PMF (Msg × Sc × Sc)) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
+    OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool :=
   smFSTreeOf C R G D ΔFS ΔPCS initP A.tStar A.play
 
 theorem fsAbs_init (rkS rk : RK) (i : Msg × Sc × Sc) (sa : Sa) :
@@ -2328,9 +2315,9 @@ reduction `smcFSRed`, with the challenge mode `ideal`, is the second hybrid with
 challenge mode: a uniform root output at the challenge epoch. -/
 theorem smFS_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (ideal : Bool)
-    (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
     fsaead_corrupt_game G D ideal (smcFSRed C R G D ΔFS ΔPCS initP A) =
       sm_corrupt_gameOf C R G D ΔFS ΔPCS ideal unifRoot A := by
   rw [sm_corrupt_gameOf_eq_liftPMF C initP hinit]
@@ -2372,7 +2359,7 @@ end FSHop
 
 section Main
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key] [Fintype Sa]
   [Nonempty Sa] [DecidableEq RK] [DecidableEq Key]
 
@@ -2389,8 +2376,8 @@ for the two challenge modes `b`, plus the FS-AEAD advantage with corruption of `
 the reduction `smcFSRed C R G D ΔFS ΔPCS initP A`. -/
 theorem sm_corrupt_advantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hS : CKACoins.Sound C) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
     SM_Corrupt_Advantage C R G D ΔFS ΔPCS A ≤
       ∑ b : Bool, CKA_Corrupt_Advantage C ΔFS ΔPCS (smcCKARed R G D b A) +
         ∑ b : Bool, PRFPRNG_Advantage R (smcRootRed C R G D ΔFS ΔPCS b initP A) +
@@ -2426,7 +2413,7 @@ end Main
 
 section DH
 
-variable {RK Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
+variable {RK Sa W Ct AD : Type} [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
   [Fintype Sa] [Nonempty Sa] [DecidableEq RK]
 
 /-- The distribution of the initialisation of `dhCKA`. -/
@@ -2444,7 +2431,7 @@ CKA `dhCKA` and the delays `ΔFS = 2`, `ΔPCS = 2`, the CKA terms of `sm_corrupt
 are the DDH advantages of the reductions `ckaCorruptDDHRed (smcCKARed R F D b A)`
 (`dhCKA_corrupt_advantage_eq_ddh`). -/
 theorem sm_dh_corrupt_advantage_le (R : PRGDef (RK × G) (RK × Sa)) (F : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (A : SMCorruptAdv (G × CG.Exp) G RK Sa W Ct) :
+    (D : AEADDef W Ct AD) (A : SMCorruptAdv (G × CG.Exp) G RK Sa W Ct AD) :
     SM_Corrupt_Advantage (dhCKA G) R F D 2 2 A ≤
       ∑ b : Bool, DDH_Advantage G (ckaCorruptDDHRed (smcCKARed (Rand := CG.Exp) R F D b A)) +
         ∑ b : Bool, PRFPRNG_Advantage R (smcRootRed (dhCKA G) R F D 2 2 b (dhInitP G) A) +
@@ -2459,7 +2446,7 @@ theorem sm_dh_corrupt_advantage_le (R : PRGDef (RK × G) (RK × Sa)) (F : PRGDef
 the dual-PRF advantages of `H` at the reductions `ppRedR` and `ppRedL`
 (`hkdfRoot_prfprng_le`). -/
 theorem sm_dh_hkdf_corrupt_advantage_le (H : RK → G → RK × Sa) (F : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (A : SMCorruptAdv (G × CG.Exp) G RK Sa W Ct) :
+    (D : AEADDef W Ct AD) (A : SMCorruptAdv (G × CG.Exp) G RK Sa W Ct AD) :
     SM_Corrupt_Advantage (dhCKA G) (hkdfRoot H) F D 2 2 A ≤
       ∑ b : Bool, DDH_Advantage G
           (ckaCorruptDDHRed (smcCKARed (Rand := CG.Exp) (hkdfRoot H) F D b A)) +
@@ -2478,7 +2465,7 @@ end DH
 
 section PassiveDist
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- `n` epochs of the CKA `C` as a probability mass function, with the sending algorithm on
@@ -2516,8 +2503,8 @@ theorem ckaRunP_length (C : CKADef Sc Msg Key) [CKACoins C Rand] (n : ℕ) (s r 
 
 /-- The ciphertexts of the messages `ms` of one epoch under the keys `keys`, the message of
 global index `g` first: uniform below the threshold `k`, the encryption otherwise. -/
-noncomputable def epochCtsDist (D : AEADDef W Ct) (k : ℕ) :
-    ℕ → List W → List (W × W) → PMF (List Ct)
+noncomputable def epochCtsDist (D : AEADDef W Ct AD) (k : ℕ) :
+    ℕ → List W → List (W × AD) → PMF (List Ct)
   | g, key :: keys, m :: ms =>
     (if g < k then PMF.uniformFintype Ct else PMF.pure (D.encrypt key m.1 m.2)).bind fun c =>
       (epochCtsDist D k (g + 1) keys ms).map (c :: ·)
@@ -2525,14 +2512,14 @@ noncomputable def epochCtsDist (D : AEADDef W Ct) (k : ℕ) :
 
 /-- The ciphertexts of the epochs with the FS-AEAD states `sas` and the messages `msgs`, the
 first message of global index `g`: the messages of global index below `k` are uniform. -/
-noncomputable def ctsDistAll (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (k : ℕ) :
-    ℕ → List Sa → List (List (W × W)) → PMF (List (List Ct))
+noncomputable def ctsDistAll (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (k : ℕ) :
+    ℕ → List Sa → List (List (W × AD)) → PMF (List (List Ct))
   | g, sa :: sas, ms :: msgs =>
     (epochCtsDist D k g (fsprgRun G ms.length sa).1 ms).bind fun cs =>
       (ctsDistAll G D k (g + ms.length) sas msgs).map (cs :: ·)
   | _, _, _ => PMF.pure []
 
-theorem epochCtsDist_zero (D : AEADDef W Ct) (g : ℕ) (keys : List W) (ms : List (W × W)) :
+theorem epochCtsDist_zero (D : AEADDef W Ct AD) (g : ℕ) (keys : List W) (ms : List (W × AD)) :
     epochCtsDist D 0 g keys ms = PMF.pure (encAll D keys ms) := by
   induction keys generalizing g ms with
   | nil => cases ms <;> rfl
@@ -2544,8 +2531,9 @@ theorem epochCtsDist_zero (D : AEADDef W Ct) (g : ℕ) (keys : List W) (ms : Lis
         encAll, List.zipWith_cons_cons]
 
 /-- Without uniform messages the ciphertexts are those of the double ratchet. -/
-theorem ctsDistAll_zero (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (g : ℕ) (sas : List Sa)
-    (msgs : List (List (W × W))) : ctsDistAll G D 0 g sas msgs = PMF.pure (smCts G D sas msgs) := by
+theorem ctsDistAll_zero (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (g : ℕ) (sas : List Sa)
+    (msgs : List (List (W × AD))) :
+    ctsDistAll G D 0 g sas msgs = PMF.pure (smCts G D sas msgs) := by
   induction sas generalizing g msgs with
   | nil => cases msgs <;> rfl
   | cons sa sas ih =>
@@ -2557,19 +2545,19 @@ theorem ctsDistAll_zero (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (g : ℕ) (
 
 /-- Uniform ciphertexts of the epochs `ms :: msgs` are uniform ciphertexts of `ms` and of
 `msgs`. -/
-def idealCtsCons (ms : List (W × W)) (msgs : List (List (W × W))) (n : ℕ) :
+def idealCtsCons (ms : List (W × AD)) (msgs : List (List (W × AD))) (n : ℕ) :
     (Fin ms.length → Ct) × IdealCts Ct msgs n ≃ IdealCts Ct (ms :: msgs) (n + 1) :=
   Fin.consEquiv fun j : Fin (n + 1) => Fin (epochLen (ms :: msgs) j) → Ct
 
 omit [SampleableType W] [SampleableType Ct] in
-theorem ctsOf_idealCtsCons (ms : List (W × W)) (msgs : List (List (W × W))) (n : ℕ)
+theorem ctsOf_idealCtsCons (ms : List (W × AD)) (msgs : List (List (W × AD))) (n : ℕ)
     (x : (Fin ms.length → Ct) × IdealCts Ct msgs n) :
     ctsOf (idealCtsCons ms msgs n x) = List.ofFn x.1 :: ctsOf x.2 := by
   simp only [ctsOf, idealCtsCons, List.ofFn_succ]
   rfl
 
 /-- When every message of the epoch is below the threshold, its ciphertexts are uniform. -/
-theorem epochCtsDist_unif (D : AEADDef W Ct) (k g : ℕ) (keys : List W) (ms : List (W × W))
+theorem epochCtsDist_unif (D : AEADDef W Ct AD) (k g : ℕ) (keys : List W) (ms : List (W × AD))
     (hk : g + ms.length ≤ k) (hl : keys.length = ms.length) :
     epochCtsDist D k g keys ms = (PMF.uniformFintype (Fin ms.length → Ct)).map List.ofFn := by
   induction ms generalizing g keys with
@@ -2596,8 +2584,8 @@ theorem epochCtsDist_unif (D : AEADDef W Ct) (k g : ℕ) (keys : List W) (ms : L
       exact (ofFn_cons v c).symm
 
 /-- When every message is below the threshold, the ciphertexts of the epochs are uniform. -/
-theorem ctsDistAll_unif (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (k g : ℕ) (sas : List Sa)
-    (msgs : List (List (W × W))) (hk : g + (msgs.map List.length).sum ≤ k)
+theorem ctsDistAll_unif (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (k g : ℕ) (sas : List Sa)
+    (msgs : List (List (W × AD))) (hk : g + (msgs.map List.length).sum ≤ k)
     (hl : sas.length = msgs.length) :
     ctsDistAll G D k g sas msgs =
       (PMF.uniformFintype (IdealCts Ct msgs msgs.length)).map ctsOf := by
@@ -2606,7 +2594,7 @@ theorem ctsDistAll_unif (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (k g : ℕ)
     cases sas with
     | nil =>
       simp only [ctsDistAll, List.length_nil]
-      rw [show (ctsOf : IdealCts Ct ([] : List (List (W × W))) 0 → List (List Ct)) = fun _ => []
+      rw [show (ctsOf : IdealCts Ct ([] : List (List (W × AD))) 0 → List (List Ct)) = fun _ => []
         from funext fun _ => rfl]
       exact (PMF.map_const _ _).symm
     | cons sa sas => simp at hl
@@ -2631,7 +2619,7 @@ end PassiveDist
 
 section Passive
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- The CKA message of an answer, or `d`. -/
@@ -2648,7 +2636,7 @@ def SMAns.ctOr : SMAns Sc Msg RK Sa Ct → Ct
 index below `k` are sent and their ciphertexts replaced by uniform ones, the message of index
 `k` is the challenge, the others are sent. -/
 noncomputable def pasMsgs (k : ℕ) (P : CKAParty) :
-    ℕ → List (W × W) → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (List Ct)
+    ℕ → List (W × AD) → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) (List Ct)
   | _, [] => .ret []
   | g, m :: ms =>
     if g < k then
@@ -2663,8 +2651,8 @@ noncomputable def pasMsgs (k : ℕ) (P : CKAParty) :
 opens the epoch, sends the messages, and the peer receives. The CKA messages and the
 ciphertexts are collected. -/
 noncomputable def pasEpochs (k : ℕ) (d : Msg) :
-    ℕ → ℕ → List (List (W × W)) →
-      OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (List Msg × List (List Ct))
+    ℕ → ℕ → List (List (W × AD)) →
+      OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) (List Msg × List (List Ct))
   | _, _, [] => .ret ([], [])
   | e, g, ms :: msgs =>
     .query (.ratchet (ckaSender (e + 1))) fun a =>
@@ -2675,7 +2663,7 @@ noncomputable def pasEpochs (k : ℕ) (d : Msg) :
 
 /-- The epoch (counted from `e`) of the message of global index `k`, the first message of the
 epochs `msgs` having index `g`. -/
-def msgEpoch : ℕ → ℕ → List (List (W × W)) → ℕ → ℕ
+def msgEpoch : ℕ → ℕ → List (List (W × AD)) → ℕ → ℕ
   | e, _, [], _ => e
   | e, g, ms :: msgs, k => if k < g + ms.length then e else msgEpoch (e + 1) (g + ms.length) msgs k
 
@@ -2686,8 +2674,8 @@ def optBit : Option (Bool × Heap) → Bool
 
 /-- The tree of the passive adversary of the message of global index `k`: the epochs `msgs`,
 then the passive distinguisher `A` on the CKA messages and the ciphertexts. -/
-noncomputable def smPassiveTreeOf (msgs : List (List (W × W))) (A : SMView Msg Ct → SPComp Bool)
-    (k : ℕ) (pub : Msg) : OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool :=
+noncomputable def smPassiveTreeOf (msgs : List (List (W × AD))) (A : SMView Msg Ct → SPComp Bool)
+    (k : ℕ) (pub : Msg) : OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool :=
   (pasEpochs k pub 0 0 msgs).bind fun r =>
     .rand (A ((pub, r.1), r.2) Heap.empty) fun o => .ret (optBit o)
 
@@ -2698,8 +2686,8 @@ the challenge epoch is the epoch of the message `k`; it runs the epochs `msgs` w
 messages before `k` replaced by uniform ciphertexts, the challenge at `k` and the messages after
 it sent, and runs the passive distinguisher `A` on the CKA messages and the ciphertexts. It never
 corrupts. -/
-noncomputable def smPassiveAdv (msgs : List (List (W × W))) (A : SMView Msg Ct → SPComp Bool)
-    (k : ℕ) : SMCorruptAdv Sc Msg RK Sa W Ct where
+noncomputable def smPassiveAdv (msgs : List (List (W × AD))) (A : SMView Msg Ct → SPComp Bool)
+    (k : ℕ) : SMCorruptAdv Sc Msg RK Sa W Ct AD where
   tStar := PMF.pure (msgEpoch 0 0 msgs k + 1)
   play _ pub := smPassiveTreeOf msgs A k pub
 
@@ -2733,8 +2721,8 @@ sending chain `sa`, the run of `pasMsgs` gives the ciphertexts of `epochCtsDist`
 threshold of the challenge mode; the CKA state, the root keys and the root output in transit
 are unchanged, and the challenge flag records whether the message `k` has been reached. -/
 theorem pasMsgs_run (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
-    (root : RK → Key → PMF (RK × Sa)) (k : ℕ) (P : CKAParty) (ms : List (W × W)) (g : ℕ)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (root : RK → Key → PMF (RK × Sa)) (k : ℕ) (P : CKAParty) (ms : List (W × AD)) (g : ℕ)
     (sa : Sa) (s : SMSt Sc Msg RK Sa) (hsa : s.loc.snd P = some sa)
     (hP : ckaSender (s.ck.t P) = P) (hd : s.loc.done = decide (k < g))
     (ht : g ≤ k → k < g + ms.length → s.ck.t P = t) :
@@ -2807,8 +2795,8 @@ theorem pasMsgs_run (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK ×
 key `ρ`, the run of `pasEpochs` gives the CKA messages of a CKA run from `(σ₁, σ₂)` and the
 ciphertexts of `ctsDistAll` on the root chain from `ρ`. -/
 theorem pasEpochs_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (k : ℕ) (d : Msg) (msgs : List (List (W × W)))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (k : ℕ) (d : Msg) (msgs : List (List (W × AD)))
     (e g : ℕ) (σ₁ σ₂ : Sc) (ρ : RK) (s : SMSt Sc Msg RK Sa) (hA : s.ck.t .A = e)
     (hB : s.ck.t .B = e) (h1 : s.ck.st (ckaSender (e + 1)) = σ₁)
     (h2 : s.ck.st (ckaSender (e + 1)).other = σ₂) (hρ : s.loc.rk (ckaSender (e + 1)) = ρ)
@@ -2935,7 +2923,7 @@ end Passive
 
 section PassiveMain
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key] [Fintype Sa]
   [Nonempty Sa]
 
@@ -2943,7 +2931,7 @@ variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [Sam
 uniform ciphertexts. -/
 noncomputable def smPasDist (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (msgs : List (List (W × W))) (k : ℕ) : PMF (SMView Msg Ct) :=
+    (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (k : ℕ) : PMF (SMView Msg Ct) :=
   initP.bind fun i => (ckaRunP C msgs.length i.2.1 i.2.2).bind fun q =>
     (PMF.uniformFintype RK).bind fun rk =>
       (ctsDistAll G D k 0 (rootRun R rk (q.1.map Prod.snd)) msgs).map fun cts =>
@@ -2952,8 +2940,8 @@ noncomputable def smPasDist (C : CKADef Sc Msg Key) [CKACoins C Rand]
 omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
 theorem sm_real_eq_pas (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.Sound C)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (msgs : List (List (W × AD))) :
     sm_real C R G D msgs = liftPMF (smPasDist C initP R G D msgs 0) := by
   unfold sm_real smPasDist
   simp only [hinit, ckaRun_eq_liftPMF C hS, sample_eq_liftPMF, liftPMF_bind_pure,
@@ -2970,8 +2958,8 @@ theorem rootRun_length (R : PRGDef (RK × Key) (RK × Sa)) (rk : RK) (Is : List 
 omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
 theorem sm_ideal_eq_pas (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.Sound C)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (msgs : List (List (W × AD))) :
     sm_ideal C msgs = liftPMF (smPasDist C initP R G D msgs (msgs.map List.length).sum) := by
   unfold sm_ideal ckaPub smPasDist
   simp only [hinit, ckaRun_eq_liftPMF C hS, sample_eq_liftPMF, liftPMF_bind_pure,
@@ -3001,8 +2989,8 @@ the challenge mode `ideal` accepts with the probability that `A` accepts on the 
 with the messages below the threshold `pasThr ideal k` uniform. -/
 theorem smPassive_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (ideal : Bool) (msgs : List (List (W × W)))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (msgs : List (List (W × AD)))
     (A : SMView Msg Ct → SPComp Bool) (k : ℕ) :
     prTrue (sm_corrupt_game C R G D ΔFS ΔPCS ideal (smPassiveAdv msgs A k)) Heap.empty =
       prTrue ((liftPMF (smPasDist C initP R G D msgs (pasThr ideal k))).bind A) Heap.empty := by
@@ -3042,8 +3030,8 @@ order of the epochs) of the advantages with corruption of the adversaries
 and the adversary of message `k` challenges it. -/
 theorem sm_advantage_le_corrupt_passive (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hS : CKACoins.Sound C) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (msgs : List (List (W × W))) (A : SMView Msg Ct → SPComp Bool) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (msgs : List (List (W × AD))) (A : SMView Msg Ct → SPComp Bool) :
     SM_Advantage C R G D msgs A ≤
       ∑ k ∈ Finset.range (msgs.map List.length).sum,
         SM_Corrupt_Advantage C R G D ΔFS ΔPCS (smPassiveAdv msgs A k) := by
@@ -3071,7 +3059,7 @@ structure SMAdRec where
   /-- The least epoch allowed for the challenge. -/
   lo : ℕ
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- The oracle of the secure-messaging game with an adaptive challenge epoch. The epochs, the
@@ -3082,9 +3070,9 @@ raises `lo` to `max(t_A, t_B) + ΔPCS` (post-compromise security: a challenge is
 `ΔPCS` epochs after every earlier corruption); a corruption of `P` after a challenge at `e` is
 answered if `e + ΔFS ≤ t_P` (forward secrecy). -/
 noncomputable def smAdOracle (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec) :
-    SMQuery W → PMF (SMAns Sc Msg RK Sa Ct × (SMSt Sc Msg RK Sa × SMAdRec))
+    SMQuery W AD → PMF (SMAns Sc Msg RK Sa Ct × (SMSt Sc Msg RK Sa × SMAdRec))
   | .ratchet p =>
     (smOracleOf C R G D ΔFS ΔPCS 0 ideal (realRoot R) x.1 (.ratchet p)).map fun y => (y.1, (y.2, x.2))
   | .recv p =>
@@ -3116,8 +3104,9 @@ variable [Fintype RK] [Nonempty RK]
 /-- The secure-messaging game with an adaptive challenge epoch: the CKA is initialised, both
 parties get a uniform root key, and the adversary interacts with `smAdOracle`. -/
 noncomputable def sm_adaptive_game (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool)
+    (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool) :
     SPComp Bool :=
   SPComp.bind C.init fun i =>
     SPComp.bind (SPComp.sample RK) fun rk =>
@@ -3126,8 +3115,8 @@ noncomputable def sm_adaptive_game (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 /-- **Secure-messaging advantage with state corruption and an adaptive challenge epoch.** -/
 noncomputable def SM_Adaptive_Advantage (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) : ℝ≥0∞ :=
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool) : ℝ≥0∞ :=
   Advantage (sm_adaptive_game C R G D ΔFS ΔPCS false A) (sm_adaptive_game C R G D ΔFS ΔPCS true A)
 
 end Adaptive
@@ -3149,12 +3138,12 @@ structure GuessSt where
   /-- The record of the adaptive game. -/
   ad : SMAdRec
 
-variable {Sc Msg RK Sa W Ct : Type}
+variable {Sc Msg RK Sa W Ct AD : Type}
 
 /-- The opening of an epoch in the guessing reduction: forwarded, with the counters and the
 sending chain recorded. -/
 noncomputable def guessRatchet (w : GuessSt) (p : CKAParty) :
-    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
+    OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
   if w.sh.canSend p then
     .query (.ratchet p) fun a =>
       .ret (a, { w with sh := w.sh.sent p () (), hs := Function.update w.hs p true })
@@ -3162,7 +3151,7 @@ noncomputable def guessRatchet (w : GuessSt) (p : CKAParty) :
 
 /-- The receive in the guessing reduction: forwarded, with the counters recorded. -/
 noncomputable def guessRecv (w : GuessSt) (p : CKAParty) :
-    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
+    OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
   if w.sh.canRecv p then
     .query (.recv p) fun a => .ret (a, { w with sh := w.sh.recvd p () })
   else .query (.recv p) fun a => .ret (a, w)
@@ -3176,8 +3165,8 @@ def guessOk (w : GuessSt) (p : CKAParty) : Bool :=
 /-- The challenge in the guessing reduction with the guess `e`: a challenge that the adaptive
 game answers is forwarded at the epoch `e`; at another epoch it is recorded and not
 answered. -/
-noncomputable def guessChall (e : ℕ) (w : GuessSt) (p : CKAParty) (m : W × W) :
-    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
+noncomputable def guessChall (e : ℕ) (w : GuessSt) (p : CKAParty) (m : W × AD) :
+    OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
   if guessOk w p then
     if w.sh.t p == e then
       .query (.chall p m) fun a => .ret (a, { w with dn := true, ad := ⟨some e, w.ad.lo⟩ })
@@ -3188,7 +3177,7 @@ noncomputable def guessChall (e : ℕ) (w : GuessSt) (p : CKAParty) (m : W × W)
 forwarded if it keeps the epoch `e` allowed, and recorded otherwise; after the challenge it is
 forwarded when the adaptive game answers it. -/
 noncomputable def guessCorr (ΔFS ΔPCS e : ℕ) (w : GuessSt) (p : CKAParty) :
-    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
+    OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
   match w.ad.cE with
   | none =>
     if max (w.sh.t .A) (w.sh.t .B) + ΔPCS ≤ e then
@@ -3200,8 +3189,8 @@ noncomputable def guessCorr (ΔFS ΔPCS e : ℕ) (w : GuessSt) (p : CKAParty) :
     else .ret (.none, w)
 
 /-- The simulator of the guessing reduction with the guess `e`. -/
-noncomputable def guessImplOf (ΔFS ΔPCS e : ℕ) (w : GuessSt) (q : SMQuery W) :
-    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
+noncomputable def guessImplOf (ΔFS ΔPCS e : ℕ) (w : GuessSt) (q : SMQuery W AD) :
+    OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
   match q with
   | .ratchet p => guessRatchet w p
   | .recv p => guessRecv w p
@@ -3216,8 +3205,8 @@ def guessInit : GuessSt := ⟨CKAGameSt.init () () (), fun _ => false, false, �
 simulator `guessImplOf` and accepts if the adversary accepts and its challenge was at the epoch
 `e`. -/
 noncomputable def guessTreeOf (ΔFS ΔPCS e : ℕ)
-    (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) (pub : Msg) :
-    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool :=
+    (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool) (pub : Msg) :
+    OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool :=
   (OracleAdv.simulate (guessImplOf ΔFS ΔPCS e) (A pub) guessInit).bind fun r =>
     .ret (r.1 && (r.2.ad.cE == some e))
 
@@ -3226,8 +3215,8 @@ derive_timed guessTreeOf
 /-- **The guessing reduction** `smGuessAdv ΔFS ΔPCS A e`: the adversary of the game with an
 announced challenge epoch that announces `e`. -/
 noncomputable def smGuessAdv (ΔFS ΔPCS : ℕ)
-    (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) (e : ℕ) :
-    SMCorruptAdv Sc Msg RK Sa W Ct where
+    (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool) (e : ℕ) :
+    SMCorruptAdv Sc Msg RK Sa W Ct AD where
   tStar := PMF.pure e
   play _ pub := guessTreeOf ΔFS ΔPCS e A pub
 
@@ -3237,7 +3226,7 @@ end Guess
 
 section GuessSim
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- The epoch `e` is excluded as the epoch of the challenge: a challenge at another epoch has
@@ -3276,7 +3265,7 @@ theorem guessMir_advanced (s : SMSt Sc Msg RK Sa) (ad : SMAdRec) (p : CKAParty) 
 /-- With the root KDF at every epoch, the oracle does not depend on the challenge epoch for the
 openings of epochs. -/
 theorem smOracleOf_realRoot_ratchet (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t t' : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (p : CKAParty) :
     smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R) s (.ratchet p) =
       smOracleOf C R G D ΔFS ΔPCS t' ideal (realRoot R) s (.ratchet p) := by
@@ -3287,9 +3276,9 @@ still be the challenge epoch, the simulator against the game with the announced 
 either answers as the adaptive oracle, with mirrored states, or both lead only to states in
 which `e` is excluded as the challenge epoch. -/
 theorem guess_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS e : ℕ)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ΔFS ΔPCS e : ℕ)
     (ideal : Bool) (s : SMSt Sc Msg RK Sa) (ad : SMAdRec) (hb : adBad e ad = false)
-    (q : SMQuery W) :
+    (q : SMQuery W AD) :
     OracleAdv.simOracle (guessImplOf ΔFS ΔPCS e)
         (smOracleOf C R G D ΔFS ΔPCS e ideal (realRoot R)) (guessEmb (s, ad)) q =
       (smAdOracle C R G D ΔFS ΔPCS ideal (s, ad) q).map (Prod.map id guessEmb) ∨
@@ -3426,9 +3415,9 @@ theorem guess_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × 
 
 /-- The adaptive game keeps the exclusion of the epoch `e`. -/
 theorem smAd_bad_sticky (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS e : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec)
-    (hx : adBad e x.2 = true) (q : SMQuery W) (z)
+    (hx : adBad e x.2 = true) (q : SMQuery W AD) (z)
     (hz : z ∈ (smAdOracle C R G D ΔFS ΔPCS ideal x q).support) : adBad e z.2.2 = true := by
   cases q with
   | ratchet p =>
@@ -3470,8 +3459,8 @@ theorem smAd_bad_sticky (C : CKADef Sc Msg Key) [CKACoins C Rand]
 omit [SampleableType W] [SampleableType Ct] in
 /-- The guessing reduction keeps the exclusion of the epoch `e`, whatever it is run against. -/
 theorem guess_bad_sticky (ΔFS ΔPCS e : ℕ)
-    (O' : SMSt Sc Msg RK Sa → SMQuery W → PMF (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa))
-    (x : GuessSt × SMSt Sc Msg RK Sa) (hx : adBad e x.1.ad = true) (q : SMQuery W) (z)
+    (O' : SMSt Sc Msg RK Sa → SMQuery W AD → PMF (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa))
+    (x : GuessSt × SMSt Sc Msg RK Sa) (hx : adBad e x.1.ad = true) (q : SMQuery W AD) (z)
     (hz : z ∈ (OracleAdv.simOracle (guessImplOf ΔFS ΔPCS e) O' x q).support) :
     adBad e z.2.1.ad = true := by
   simp only [OracleAdv.simOracle, PMF.support_map, Set.mem_image] at hz
@@ -3537,8 +3526,8 @@ theorem guess_bad_sticky (ΔFS ΔPCS e : ℕ)
 the probability that the adversary accepts in the adaptive game and its challenge is at the
 epoch `e`. -/
 theorem guess_run_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS e : ℕ) (ideal : Bool) (A : OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS e : ℕ) (ideal : Bool) (A : OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool)
     (s₀ : SMSt Sc Msg RK Sa) :
     ((OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS e ideal (realRoot R))
         ((OracleAdv.simulate (guessImplOf ΔFS ΔPCS e) A (guessMir s₀ ⟨none, 0⟩)).bind fun r =>
@@ -3599,9 +3588,9 @@ theorem guess_run_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 /-- The adaptive game keeps the challenge once asked. -/
 theorem smAd_chall_sticky (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec)
-    (hx : x.2.cE.isSome = true) (q : SMQuery W) (z)
+    (hx : x.2.cE.isSome = true) (q : SMQuery W AD) (z)
     (hz : z ∈ (smAdOracle C R G D ΔFS ΔPCS ideal x q).support) : z.2.2.cE.isSome = true := by
   cases q with
   | ratchet p =>
@@ -3636,8 +3625,8 @@ theorem smAd_chall_sticky (C : CKADef Sc Msg Key) [CKACoins C Rand]
 adaptive game agree: the probability that the adversary accepts without having been answered a
 challenge is the same in both. -/
 theorem smAd_nochall_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (A : OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (A : OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool)
     (s₀ : SMSt Sc Msg RK Sa) :
     ((OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS true) A (s₀, ⟨none, 0⟩)).map fun z =>
         z.1 && z.2.2.cE.isNone) true =
@@ -3706,14 +3695,14 @@ end GuessSim
 
 section Horizon
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- **One epoch per query.** Every oracle call raises every epoch counter by at most one. -/
 theorem smOracleOf_t_le_succ (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa)
-    (q : SMQuery W) (x) (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support)
+    (q : SMQuery W AD) (x) (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support)
     (P : CKAParty) : x.2.ck.t P ≤ s.ck.t P + 1 := by
   cases q with
   | ratchet p =>
@@ -3755,8 +3744,8 @@ theorem smOracleOf_t_le_succ (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 /-- Every call of the adaptive oracle raises every epoch counter by at most one. -/
 theorem smAdOracle_t_le_succ (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec) (q : SMQuery W) (z)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec) (q : SMQuery W AD) (z)
     (hz : z ∈ (smAdOracle C R G D ΔFS ΔPCS ideal x q).support) (P : CKAParty) :
     z.2.1.ck.t P ≤ x.1.ck.t P + 1 := by
   cases q with
@@ -3792,8 +3781,8 @@ theorem smAdOracle_t_le_succ (C : CKADef Sc Msg Key) [CKACoins C Rand]
 /-- A call of the adaptive oracle keeps the epoch of the answered challenge, or answers the
 challenge at the counter of a party. -/
 theorem smAdOracle_cE (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec) (q : SMQuery W) (z)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec) (q : SMQuery W AD) (z)
     (hz : z ∈ (smAdOracle C R G D ΔFS ΔPCS ideal x q).support) (e : ℕ)
     (he : z.2.2.cE = some e) : x.2.cE = some e ∨ ∃ P, e = x.1.ck.t P := by
   cases q with
@@ -3831,9 +3820,9 @@ theorem smAdOracle_cE (C : CKADef Sc Msg Key) [CKACoins C Rand]
 against the adaptive oracle, from a state whose epoch counters and answered challenge epoch are
 at most `c`, the challenge is answered at an epoch at most `c + n`. -/
 theorem smAd_run_cE_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) {n : ℕ}
-    {A : OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool} (hA : A.IsQueryBound n)
+    {A : OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool} (hA : A.IsQueryBound n)
     (x : SMSt Sc Msg RK Sa × SMAdRec) (c : ℕ) (hxt : ∀ P, x.1.ck.t P ≤ c)
     (hxe : ∀ e, x.2.cE = some e → e ≤ c) (z)
     (hz : z ∈ (OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS ideal) A x).support) (e : ℕ)
@@ -3857,7 +3846,7 @@ end Horizon
 
 section AdaptiveMain
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [Fintype RK] [Nonempty RK]
 
 omit [Fintype RK] [Nonempty RK] in
@@ -3868,8 +3857,9 @@ theorem guessMir_init (i : Msg × Sc × Sc) (rk : RK) :
 /-- The probability that the adaptive game accepts, given the initialisation and the root key. -/
 theorem sm_adaptive_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool)
+    (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool) :
     prTrue (sm_adaptive_game C R G D ΔFS ΔPCS ideal A) Heap.empty =
       ∑' i, initP i * ∑' rk, PMF.uniformFintype RK rk *
         ((OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS ideal) (A i.1)
@@ -3881,8 +3871,8 @@ theorem sm_adaptive_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
 given the initialisation and the root key. -/
 theorem sm_guess_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool)
     (e : ℕ) :
     prTrue (sm_corrupt_game C R G D ΔFS ΔPCS ideal (smGuessAdv ΔFS ΔPCS A e)) Heap.empty =
       ∑' i, initP i * ∑' rk, PMF.uniformFintype RK rk *
@@ -3900,8 +3890,8 @@ the advantages, in the game with the announced challenge epoch, of the guessing 
 `smGuessAdv ΔFS ΔPCS A e`. -/
 theorem sm_adaptive_advantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool) :
     SM_Adaptive_Advantage C R G D ΔFS ΔPCS A ≤
       ∑' e, SM_Corrupt_Advantage C R G D ΔFS ΔPCS (smGuessAdv ΔFS ΔPCS A e) := by
   set X : Bool → (Msg × Sc × Sc) → RK → PMF (Bool × SMSt Sc Msg RK Sa × SMAdRec) := fun b i rk =>
@@ -3946,9 +3936,9 @@ game answers the challenge at the counter of a party, and every query raises eac
 at most one. -/
 theorem sm_guess_game_eq_zero_of_lt (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) {q e : ℕ}
-    (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool)
     (hA : ∀ T, (A T).IsQueryBound q) (he : q < e) :
     prTrue (sm_corrupt_game C R G D ΔFS ΔPCS ideal (smGuessAdv ΔFS ΔPCS A e)) Heap.empty = 0 := by
   rw [sm_guess_game_eq C initP hinit]
@@ -3975,8 +3965,8 @@ theorem sm_guess_game_eq_zero_of_lt (C : CKADef Sc Msg Key) [CKACoins C Rand]
 advantage zero. -/
 theorem sm_guess_advantage_eq_zero_of_lt (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) {q e : ℕ} (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) {q e : ℕ} (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool)
     (hA : ∀ T, (A T).IsQueryBound q) (he : q < e) :
     SM_Corrupt_Advantage C R G D ΔFS ΔPCS (smGuessAdv ΔFS ΔPCS A e) = 0 := by
   simp only [SM_Corrupt_Advantage, Advantage,
@@ -3989,8 +3979,8 @@ guessing reductions `smGuessAdv ΔFS ΔPCS A e` (`sm_adaptive_advantage_le`, who
 for `e > q` by `sm_guess_advantage_eq_zero_of_lt`). -/
 theorem sm_adaptive_advantage_le_of_isQueryBound (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) {q : ℕ} (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) {q : ℕ} (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool)
     (hA : ∀ T, (A T).IsQueryBound q) :
     SM_Adaptive_Advantage C R G D ΔFS ΔPCS A ≤
       ∑ e ∈ Finset.range (q + 1),
@@ -4007,9 +3997,9 @@ an adaptive challenge epoch is at most the sum over the epochs `e` of the bound 
 theorem sm_adaptive_corrupt_advantage_le [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa]
     [DecidableEq RK] [DecidableEq Key] (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hS : CKACoins.Sound C) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS)
-    (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool) :
     SM_Adaptive_Advantage C R G D ΔFS ΔPCS A ≤
       ∑' e, (∑ b : Bool,
           CKA_Corrupt_Advantage C ΔFS ΔPCS (smcCKARed R G D b (smGuessAdv ΔFS ΔPCS A e)) +
@@ -4027,8 +4017,8 @@ theorem sm_adaptive_corrupt_advantage_le_of_isQueryBound [Fintype Key] [Nonempty
     [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq Key] (C : CKADef Sc Msg Key)
     [CKACoins C Rand] (hS : CKACoins.Sound C) (initP : PMF (Msg × Sc × Sc))
     (hinit : C.init = liftPMF initP) (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) {q : ℕ}
-    (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (D : AEADDef W Ct AD) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) {q : ℕ}
+    (A : Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool)
     (hA : ∀ T, (A T).IsQueryBound q) :
     SM_Adaptive_Advantage C R G D ΔFS ΔPCS A ≤
       ∑ e ∈ Finset.range (q + 1), (∑ b : Bool,
@@ -4043,7 +4033,7 @@ end AdaptiveMain
 
 section AdaptiveDH
 
-variable {RK Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
+variable {RK Sa W Ct AD : Type} [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
   [Fintype Sa] [Nonempty Sa] [DecidableEq RK] (G : Type) [CG : CyclicGroup G] [DecidableEq G]
 
 /-- **The Diffie–Hellman double ratchet with an adaptive challenge epoch.** With `dhCKA` and
@@ -4051,7 +4041,7 @@ variable {RK Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [Fintype RK]
 the CKA reductions, the PRF-PRNG advantages of the root reductions and the FS-AEAD advantage of
 the FS-AEAD reduction, all at the guessing reduction `smGuessAdv 2 2 A e`. -/
 theorem sm_dh_adaptive_advantage_le (R : PRGDef (RK × G) (RK × Sa)) (F : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (A : G → OracleAdv (SMQuery W) (SMAns (G × CG.Exp) G RK Sa Ct) Bool) :
+    (D : AEADDef W Ct AD) (A : G → OracleAdv (SMQuery W AD) (SMAns (G × CG.Exp) G RK Sa Ct) Bool) :
     SM_Adaptive_Advantage (dhCKA G) R F D 2 2 A ≤
       ∑' e, (∑ b : Bool, DDH_Advantage G
           (ckaCorruptDDHRed (smcCKARed (Rand := CG.Exp) R F D b (smGuessAdv 2 2 A e))) +
@@ -4065,7 +4055,7 @@ theorem sm_dh_adaptive_advantage_le (R : PRGDef (RK × G) (RK × Sa)) (F : PRGDe
 /-- **The Diffie–Hellman double ratchet with the HKDF-shaped root step and an adaptive challenge
 epoch**, from DDH, the dual-PRF assumption and FS-AEAD security. -/
 theorem sm_dh_hkdf_adaptive_advantage_le (H : RK → G → RK × Sa) (F : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (A : G → OracleAdv (SMQuery W) (SMAns (G × CG.Exp) G RK Sa Ct) Bool) :
+    (D : AEADDef W Ct AD) (A : G → OracleAdv (SMQuery W AD) (SMAns (G × CG.Exp) G RK Sa Ct) Bool) :
     SM_Adaptive_Advantage (dhCKA G) (hkdfRoot H) F D 2 2 A ≤
       ∑' e, (∑ b : Bool, DDH_Advantage G (ckaCorruptDDHRed
             (smcCKARed (Rand := CG.Exp) (hkdfRoot H) F D b (smGuessAdv 2 2 A e))) +
@@ -4082,8 +4072,8 @@ theorem sm_dh_hkdf_adaptive_advantage_le (H : RK → G → RK × Sa) (F : PRGDef
 with a query bound**: the bound of `sm_dh_adaptive_advantage_le` with the sum over the epochs
 `e ≤ q`, for an adversary asking at most `q` queries. -/
 theorem sm_dh_adaptive_advantage_le_of_isQueryBound (R : PRGDef (RK × G) (RK × Sa))
-    (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {q : ℕ}
-    (A : G → OracleAdv (SMQuery W) (SMAns (G × CG.Exp) G RK Sa Ct) Bool)
+    (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) {q : ℕ}
+    (A : G → OracleAdv (SMQuery W AD) (SMAns (G × CG.Exp) G RK Sa Ct) Bool)
     (hA : ∀ T, (A T).IsQueryBound q) :
     SM_Adaptive_Advantage (dhCKA G) R F D 2 2 A ≤
       ∑ e ∈ Finset.range (q + 1), (∑ b : Bool, DDH_Advantage G
@@ -4099,8 +4089,8 @@ theorem sm_dh_adaptive_advantage_le_of_isQueryBound (R : PRGDef (RK × G) (RK ×
 epoch, for an adversary with a query bound**: the bound of `sm_dh_hkdf_adaptive_advantage_le`
 with the sum over the epochs `e ≤ q`, for an adversary asking at most `q` queries. -/
 theorem sm_dh_hkdf_adaptive_advantage_le_of_isQueryBound (H : RK → G → RK × Sa)
-    (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {q : ℕ}
-    (A : G → OracleAdv (SMQuery W) (SMAns (G × CG.Exp) G RK Sa Ct) Bool)
+    (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) {q : ℕ}
+    (A : G → OracleAdv (SMQuery W AD) (SMAns (G × CG.Exp) G RK Sa Ct) Bool)
     (hA : ∀ T, (A T).IsQueryBound q) :
     SM_Adaptive_Advantage (dhCKA G) (hkdfRoot H) F D 2 2 A ≤
       ∑ e ∈ Finset.range (q + 1), (∑ b : Bool, DDH_Advantage G (ckaCorruptDDHRed

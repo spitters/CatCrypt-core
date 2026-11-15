@@ -8,6 +8,7 @@ module
 import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveReduction.Basic
 import CatCryptCore.Tactics.DeriveTimeBound
+import CatCryptCore.Tactics.AutoTime
 public import CatCryptCore.Tactics.DeriveTimeBound.Basic
 public import CatCryptCore.Crypto.OracleAdversaryFree
 public import CatCryptCore.Core.SPTreeTimedFree
@@ -25,7 +26,9 @@ A DDH-style reduction and a reduction with two adversary calls, whose time theor
 `let` of a function field of a structure binder applied to an argument, whose cost is charged
 once. Two reductions sample an index and pass a function of it to the adversary, at a cost
 that the registered closed form of the function's cost companion makes independent of the
-index: `List.replicate.timedCost_le` in `padRed`, `digits7.timedCost_eq` in `digitRed`.
+index: `List.replicate.timedCost_le` in `padRed`, `digits7.timedCost_eq` in `digitRed`. Their
+majorant forms `R.tree.timeBound_timed_maj` bound the adversary's cost companion by its majorant
+at the bound of the length of the list it receives (`List.length_replicate`, `digits7_length`).
 A pure step over a nested state structure (`PureStep.stepRed`: a flag test, a match on the
 event, and on a tick a match on the head statement whose alternatives test flags, match with a
 wildcard alternative and update the state with record updates) has its time theorem proved
@@ -37,7 +40,10 @@ along its bound.
   `letRed.tree.timeBound_timed`, `padRed.tree.timeBound_timed`,
   `digitRed.tree.timeBound_timed` and `PureStep.stepRed.tree.timeBound_timed`, emitted by the
   command
+* `padRed.tree.timeBound_timed_maj`, `digitRed.tree.timeBound_timed_maj`, emitted by the command
+  in majorant form
 * `digits7.timedCost_eq` — computing `t` digits costs `4 t + 1`
+* `digits7_length` — `t` digits form a list of length `t`
 -/
 
 @[expose] public section
@@ -108,6 +114,14 @@ example (n : ℕ) (A : List ℕ → SPTree.Timed Bool) (ACost : List ℕ → ℕ
   have := padRed.tree.timeBound_timed n A ACost hA hAc
   omega
 
+/-- The majorant form of the time theorem of `padRed` charges the majorant of `ACost` at `n`, the
+length of `List.replicate n i`, for every sampled index `i`. -/
+example (n : ℕ) (A : List ℕ → SPTree.Timed Bool) (ACost : List ℕ → ℕ) {T : ℕ} {M : ℕ → ℕ}
+    (hA : ∀ x, (A x).time ≤ T) (hM : Monotone M) (hAc : ∀ x, ACost x ≤ M x.length) :
+    SPTree.Timed.stepTime (padRed.tree.timed n A ACost) ≤ M n + 3 * n + T + 10 := by
+  have := padRed.tree.timeBound_timed_maj n A ACost hA hM hAc
+  omega
+
 /-- The `t` low base-7 digits of `a`. -/
 def digits7 : ℕ → ℕ → List ℕ
   | 0, _ => []
@@ -120,6 +134,13 @@ theorem digits7.timedCost_eq (t a : ℕ) : digits7.timedCost t a = 4 * t + 1 := 
   induction t generalizing a with
   | zero => rw [digits7.timedCost]
   | succ t ih => rw [digits7.timedCost, ih]; omega
+
+/-- The `t` low base-7 digits form a list of length `t`. -/
+@[length_bound]
+theorem digits7_length (t a : ℕ) : (digits7 t a).length = t := by
+  induction t generalizing a with
+  | zero => simp [digits7]
+  | succ t ih => simp [digits7, ih]
 
 /-- Sample an index and pass its `t` low base-7 digits to the adversary. -/
 noncomputable def digitRed (t : ℕ) (A : List ℕ → SPComp Bool) : SPComp Bool := do
@@ -136,6 +157,14 @@ example (t : ℕ) (A : List ℕ → SPTree.Timed Bool) (ACost : List ℕ → ℕ
     (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ c) :
     SPTree.Timed.stepTime (digitRed.tree.timed t A ACost) ≤ c + 4 * t + T + 4 :=
   digitRed.tree.timeBound_timed t A ACost hA hAc
+
+/-- The majorant form of the time theorem of `digitRed` charges the majorant of `ACost` at `t`,
+the length of the digits (`digits7_length`), for every sampled index. -/
+example (t : ℕ) (A : List ℕ → SPTree.Timed Bool) (ACost : List ℕ → ℕ) {T : ℕ} {M : ℕ → ℕ}
+    (hA : ∀ x, (A x).time ≤ T) (hM : Monotone M) (hAc : ∀ x, ACost x ≤ M x.length) :
+    SPTree.Timed.stepTime (digitRed.tree.timed t A ACost) ≤ M t + 4 * t + T + 4 := by
+  have := digitRed.tree.timeBound_timed_maj t A ACost hA hM hAc
+  omega
 
 namespace PureStep
 

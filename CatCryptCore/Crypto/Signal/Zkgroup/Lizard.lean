@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Data.List.Perm.Basic
+import Mathlib.Tactic.Attr.Core
 
 /-!
 # The Lizard encoding

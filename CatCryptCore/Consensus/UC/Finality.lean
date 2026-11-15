@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Consensus.UC.FinalityLive
-public import CatCryptCore.Consensus.FinalityExamples
 public import CatCryptCore.Crypto.UCTransparentHybrid
 
 @[expose] public section

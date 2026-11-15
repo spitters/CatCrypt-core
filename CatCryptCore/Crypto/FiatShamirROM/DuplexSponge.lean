@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.ForMathlib.PMFMod
-public import CatCryptCore.ForMathlib.PMFUniform
+import CatCryptCore.ForMathlib.PMFUniform
 public import CatCryptCore.ForMathlib.PMFOption
 public import CatCryptCore.Crypto.MLKEM.XOFMatrix
 

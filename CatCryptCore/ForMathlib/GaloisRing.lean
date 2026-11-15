@@ -6,8 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import Mathlib.FieldTheory.Finite.GaloisField
-public import Mathlib.FieldTheory.PrimitiveElement
-public import Mathlib.RingTheory.AdjoinRoot
 
 /-!
 # The Galois ring `GR(2^k, d)`

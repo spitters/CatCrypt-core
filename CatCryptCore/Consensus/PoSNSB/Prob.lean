@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Consensus.PoSNSB.Prob.Collision
-public import CatCryptCore.Consensus.PoSNSB.ChainQualityTip
+import CatCryptCore.Consensus.PoSNSB.ChainQualityTip
 
 /-!
 # PoS-NSB: chain growth, chain quality and common prefix with high probability

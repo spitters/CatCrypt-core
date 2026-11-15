@@ -8,7 +8,7 @@ module
 public import CatCryptCore.Crypto.AKE.X3DH.Extraction.X3dh_haxpipe
 public import CatCryptCore.Crypto.AKE.X3DHPassiveHops
 public import CatCryptCore.Crypto.AKE.FAKESys
-public import CatCryptCore.Crypto.AdvantageMap
+import CatCryptCore.Crypto.AdvantageMap
 
 /-!
 # The extracted X3DH handshake and the passive model

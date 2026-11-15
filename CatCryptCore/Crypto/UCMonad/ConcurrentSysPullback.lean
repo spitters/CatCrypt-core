@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCMonad.ConcurrentSys
-public import CatCryptCore.Crypto.UCPullback
 
 /-!
 # The dummy-adversary theorem for environment-dependent bounds

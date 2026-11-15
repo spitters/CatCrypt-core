@@ -5,7 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Consensus.PoSNSB.Prob.Erasure
+public import CatCryptCore.Consensus.PoSNSB.Prob.Time
+public import CatCryptCore.Consensus.PoSNSB.Prob
 
 /-!
 # PoS-NSB: executions driven by an input log

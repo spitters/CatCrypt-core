@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Tactics.LinkTimed
+public import CatCryptCore.Tactics.StdCostsMem
 public import CatCryptCore.Crypto.UCGlobalPipeTimed
 public import CatCryptCore.Crypto.GeneralForkingLemmaTimed
 

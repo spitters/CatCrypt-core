@@ -46,6 +46,7 @@ The realizations between systems of one interface form a category with hom-types
 * `MultiHybrid.pipeHybrid`, `Sys.pipe`, `Sys.hcompPipe`: the two-call pipe.
 * `Sys.merge`: two ports onto one system.
 * `SysObj`, `UCIface`: the objects of the two categories.
+* `liftInv`, `restrictInv`: a system restricted to the states of an invariant.
 
 ## Main results
 
@@ -87,13 +88,13 @@ theorem view_eq_of_stepMap (R : Sys τ E O) (I : Sys υ E O) (f : τ → υ)
   rw [h2, h, hinit]
 
 /-- The state `x` with its proof of `Inv` if `Inv x` holds, and `d` otherwise. -/
-private noncomputable def liftInv (Inv : τ → Prop) (d : {t // Inv t}) (x : τ) :
+noncomputable def liftInv (Inv : τ → Prop) (d : {t // Inv t}) (x : τ) :
     {t // Inv t} := by
   classical exact if h : Inv x then ⟨x, h⟩ else d
 
 /-- The system `R` on the states satisfying `Inv`: each new state that fails `Inv` is replaced by
 the initial state. -/
-private noncomputable def restrictInv (R : Sys τ E O) (Inv : τ → Prop) (h : Inv R.init) :
+noncomputable def restrictInv (R : Sys τ E O) (Inv : τ → Prop) (h : Inv R.init) :
     Sys {t // Inv t} E O where
   init := ⟨R.init, h⟩
   step t e := SPComp.map (fun p => (liftInv Inv ⟨R.init, h⟩ p.1, p.2)) (R.step t.1 e)

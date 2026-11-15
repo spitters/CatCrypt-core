@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Deep.Package
 public import CatCryptCore.Deep.PackageEquiv
 
 /-!

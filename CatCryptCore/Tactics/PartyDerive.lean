@@ -7,8 +7,6 @@ module
 
 public import CatCryptCore.Crypto.Party.Derived
 public import CatCryptCore.Crypto.Party.Timed
-public import CatCryptCore.Crypto.Party.Call
-public meta import CatCryptCore.Crypto.Party.Call
 
 /-!
 # `party_derive`: the derivation tactic of the party language

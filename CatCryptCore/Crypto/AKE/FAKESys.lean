@@ -43,6 +43,13 @@ protocol session `sid`, with its intended peer and its role (`initiator` or `res
 without a key compromised, so that `newKey` delivers the adversary key to it. This models an
 adversary that runs the exchange with the party in place of its peer.
 
+Both are instances of `F_AKEImp keySample imp`, the functionality with an impersonation
+predicate `imp : Rec K → Bool`: `impersonate sid pid` marks the fresh session without a key
+compromised when its record `r` has `imp r = true`, and changes nothing otherwise
+(`F_AKEImp_step_impersonate`). `F_AKE` has the predicate that holds nowhere, `F_KE` the
+predicate that holds everywhere; a predicate in between is partial authentication, as the
+unilateral authentication of a server whose clients are anonymous.
+
 **What the adversary port shows.** The outputs of the adversary port are acknowledgements and
 notices; they carry no key (`AOut` has no key type). The honest events carry no secret, and
 both functionalities are opaque for the view that relates equal events, any two honest outputs
@@ -66,6 +73,7 @@ for `unlinked = false` this covers `newKeyUnlinked` as well.
 ## Main definitions
 
 * `FAKE.St`: the shared state (session records, corrupt parties, notices, cursor).
+* `F_AKEImpK`, `F_AKEImp`: the functionality with an impersonation predicate.
 * `F_AKE`, `F_KE`: the two functionalities.
 * `F_AKEWake`, `F_KEWake`: the forms in which `newKey` activates the recipient, which outputs
   its key on the honest port.
@@ -74,7 +82,8 @@ for `unlinked = false` this covers `newKeyUnlinked` as well.
 ## Main results
 
 * `F_AKE_portTyped`, `F_KE_portTyped`, `F_AKE_idleAt`, `F_KE_idleAt`.
-* `F_AKE_opaque`, `F_KE_opaque`, `F_AKEWake_opaque`, `F_KEWake_opaque`.
+* `F_AKEImp_opaque`, `F_AKE_opaque`, `F_KE_opaque`, `F_AKEWake_opaque`, `F_KEWake_opaque`.
+* `F_AKEImp_step_impersonate`.
 * `newKeyStep_key_exposed`, `newKeyStep_key_partner`, `newKeyStep_key_fresh`,
   `newKeyFreshStep_key`, `F_AKE_step_newKey_fresh`, `F_AKE_step_impersonate`,
   `F_AKE_step_newKeyUnlinked_linked`, `F_AKE_step_newKeyUnlinked_unlinked`.
@@ -205,6 +214,24 @@ def impStep (t : St K) (x : Inst) : St K :=
     if r.status = .fresh ∧ r.key.isNone then setRec t x { r with status := .compromised } else t
   | none => t
 
+/-- The state after `impersonate` at `x` under the impersonation predicate `imp`: `impStep` at
+a session whose record `r` has `imp r = true`, no change otherwise. -/
+def impStepOf (imp : Rec K → Bool) (t : St K) (x : Inst) : St K :=
+  match t.recs x with
+  | some r => if imp r then impStep t x else t
+  | none => t
+
+/-- Under the predicate that holds nowhere, `impersonate` changes nothing. -/
+@[simp] theorem impStepOf_false (t : St K) (x : Inst) : impStepOf (fun _ => false) t x = t := by
+  unfold impStepOf
+  split <;> rfl
+
+/-- Under the predicate that holds everywhere, `impersonate` is `impStep`. -/
+@[simp] theorem impStepOf_true (t : St K) (x : Inst) :
+    impStepOf (fun _ => true) t x = impStep t x := by
+  unfold impStepOf impStep
+  split <;> simp_all
+
 /-- The session `x` with record `r` receives the adversary key: its party or its peer is
 corrupt, or it is compromised. -/
 def Exposed (t : St K) (x : Inst) (r : Rec K) : Prop :=
@@ -294,22 +321,29 @@ noncomputable def honSysW : Sys (St K) (HEv ⊕ Inst) (HOut K) where
     | .inl e => SPComp.pure (honStep t e)
     | .inr x => SPComp.pure (t, .key (keyOf t x))
 
-/-- The adversary port as a system with a fresh-key kernel: `newKey` and `newKeyUnlinked` with
-proposal `k` draw a fresh key from `fresh k`; every other event is deterministic; `auth` disables
-`impersonate`; `unlinked` makes `newKeyUnlinked` ignore the partner, and without it
-`newKeyUnlinked` is `newKey`. -/
-noncomputable def advSysK (auth unlinked : Bool) (fresh : K → SPComp K) :
+/-- The adversary port as a system with an impersonation predicate and a fresh-key kernel:
+`newKey` and `newKeyUnlinked` with proposal `k` draw a fresh key from `fresh k`; every other
+event is deterministic; `impersonate sid pid` applies `impStep` to a session whose record `r` has
+`imp r = true`, and changes nothing otherwise; `unlinked` makes `newKeyUnlinked` ignore the
+partner, and without it `newKeyUnlinked` is `newKey`. -/
+noncomputable def advSysImp (imp : Rec K → Bool) (unlinked : Bool) (fresh : K → SPComp K) :
     Sys (St K) (AEv K) AOut where
   init := initSt
   step t e := match e with
     | .idle => SPComp.pure (t, .ack)
     | .poll => SPComp.pure ((pollStep t).1, .notice (pollStep t).2)
     | .corrupt pid => SPComp.pure (corruptStep t pid, .ack)
-    | .impersonate sid pid => SPComp.pure (if auth then t else impStep t (sid, pid), .ack)
+    | .impersonate sid pid => SPComp.pure (impStepOf imp t (sid, pid), .ack)
     | .newKey sid pid k => SPComp.map (fun kf => (newKeyStep t (sid, pid) k kf, .ack)) (fresh k)
     | .newKeyUnlinked sid pid k =>
       SPComp.map (fun kf => ((if unlinked then newKeyFreshStep else newKeyStep) t (sid, pid) k kf,
         .ack)) (fresh k)
+
+/-- The adversary port as a system with a fresh-key kernel: `advSysImp` with the predicate that
+holds nowhere when `auth`, and everywhere otherwise; `auth` disables `impersonate`. -/
+noncomputable def advSysK (auth unlinked : Bool) (fresh : K → SPComp K) :
+    Sys (St K) (AEv K) AOut :=
+  advSysImp (fun _ => !auth) unlinked fresh
 
 /-- The adversary port as a system: `newKey` and `newKeyUnlinked` draw a fresh sample of
 `keySample`, whatever key the adversary proposes. -/
@@ -477,29 +511,42 @@ def keHonView {K : Type} : PubView HEv (HOut K) where
 
 /-! ## The functionalities -/
 
-/-- **The ideal authenticated key exchange with a fresh-key kernel**: a fresh session receives
-a key drawn from `fresh k`, where `k` is the key the adversary proposes. The honest port is on
-the left, the adversary port on the right, one shared state. With `unlinked = true` it is the
-ideal implicitly authenticated key exchange without key confirmation. -/
+/-- **The ideal key exchange with an impersonation predicate and a fresh-key kernel**: a fresh
+session receives a key drawn from `fresh k`, where `k` is the key the adversary proposes, and
+`impersonate` compromises the fresh sessions without a key whose record satisfies `imp`. The
+honest port is on the left, the adversary port on the right, one shared state. -/
+noncomputable def F_AKEImpK {K : Type} (fresh : K → SPComp K) (imp : Rec K → Bool)
+    (unlinked : Bool := false) : Sys (St K) (HEv ⊕ AEv K) (HOut K ⊕ AOut) :=
+  Sys.ofPorts honSys (advSysImp imp unlinked fresh)
+
+/-- **The ideal key exchange with an impersonation predicate** with the key distribution
+`keySample`: `F_AKEImpK` with the kernel that ignores the proposal. -/
+noncomputable def F_AKEImp {K : Type} (keySample : SPComp K) (imp : Rec K → Bool)
+    (unlinked : Bool := false) : Sys (St K) (HEv ⊕ AEv K) (HOut K ⊕ AOut) :=
+  F_AKEImpK (fun _ => keySample) imp unlinked
+
+/-- **The ideal authenticated key exchange with a fresh-key kernel**: `F_AKEImpK` with the
+impersonation predicate that holds nowhere. With `unlinked = true` it is the ideal implicitly
+authenticated key exchange without key confirmation. -/
 noncomputable def F_AKEK {K : Type} (fresh : K → SPComp K) (unlinked : Bool := false) :
     Sys (St K) (HEv ⊕ AEv K) (HOut K ⊕ AOut) :=
-  Sys.ofPorts honSys (advSysK true unlinked fresh)
+  F_AKEImpK fresh (fun _ => false) unlinked
 
 /-- **The ideal authenticated key exchange** with the key distribution `keySample`:
-`F_AKEK` with the kernel that ignores the proposal. -/
+`F_AKEImp` with the impersonation predicate that holds nowhere. -/
 noncomputable def F_AKE {K : Type} (keySample : SPComp K) (unlinked : Bool := false) :
     Sys (St K) (HEv ⊕ AEv K) (HOut K ⊕ AOut) :=
-  F_AKEK (fun _ => keySample) unlinked
+  F_AKEImp keySample (fun _ => false) unlinked
 
 /-- The fresh-key kernel that samples the key uniformly and keeps the datum of the proposal. -/
 noncomputable def prekeyFresh (K D : Type) [Fintype K] [Nonempty K] : K × D → SPComp (K × D) :=
   fun p => SPComp.map (·, p.2) (SPComp.sample K)
 
-/-- **The ideal unauthenticated key exchange** with the key distribution `keySample`: as
-`F_AKE`, with `impersonate` enabled. -/
+/-- **The ideal unauthenticated key exchange** with the key distribution `keySample`:
+`F_AKEImp` with the impersonation predicate that holds everywhere. -/
 noncomputable def F_KE {K : Type} (keySample : SPComp K) (unlinked : Bool := false) :
     Sys (St K) (HEv ⊕ AEv K) (HOut K ⊕ AOut) :=
-  Sys.ofPorts honSys (advSys false unlinked keySample)
+  F_AKEImp keySample (fun _ => true) unlinked
 
 /-- **`F_AKE` with activation on delivery**: `newKey sid pid k` activates the party `pid`, which
 outputs the key of its session `sid` on the honest port. -/
@@ -536,7 +583,7 @@ theorem F_KE_portTyped (keySample : SPComp K) (unlinked : Bool) :
 /-- `F_AKEK` is idle at the adversary event `idle`. -/
 theorem F_AKEK_idleAt (fresh : K → SPComp K) (unlinked : Bool) :
     MultiHybrid.IdleAt (F_AKEK fresh unlinked) (.inr .idle) (.inr .ack) := fun t => by
-  simp [F_AKEK, advSysK]
+  simp [F_AKEK, F_AKEImpK, advSysImp]
 
 /-- `F_AKE` is idle at the adversary event `idle`. -/
 theorem F_AKE_idleAt (keySample : SPComp K) (unlinked : Bool) :
@@ -546,7 +593,7 @@ theorem F_AKE_idleAt (keySample : SPComp K) (unlinked : Bool) :
 /-- `F_KE` is idle at the adversary event `idle`. -/
 theorem F_KE_idleAt (keySample : SPComp K) (unlinked : Bool) :
     MultiHybrid.IdleAt (F_KE keySample unlinked) (.inr .idle) (.inr .ack) := fun t => by
-  simp [F_KE, advSys, advSysK]
+  simp [F_KE, F_AKEImp, F_AKEImpK, advSysImp]
 
 /-- A system on the key-exchange interface is opaque for `keHonView.sum eqView`: the view is
 the equality on events and relates more outputs than the equality. -/
@@ -562,6 +609,12 @@ theorem opaque_keView {τ : Type} (X : Sys τ (HEv ⊕ AEv K) (HOut K ⊕ AOut))
       cases o
       · exact Sum.LiftRel.inl trivial
       · exact Sum.LiftRel.inr rfl)
+
+/-- **Opacity of `F_AKEImp`**: equal events give equal adversary outputs, whatever the
+impersonation predicate; the keys reach only the honest port. -/
+theorem F_AKEImp_opaque (keySample : SPComp K) (imp : Rec K → Bool) (unlinked : Bool) :
+    (F_AKEImp keySample imp unlinked).Opaque (keHonView.sum eqView) :=
+  opaque_keView _
 
 /-- **Opacity of `F_AKEK`**: equal events give equal adversary outputs; the keys reach only the
 honest port. -/
@@ -636,7 +689,7 @@ theorem F_AKEK_step_newKey_fresh (fresh : K → SPComp K) (unlinked : Bool) {t :
     split
     · next p hp' => simp only [hp p hp', ↓reduceIte]
     · rfl
-  simp [F_AKEK, advSysK, newKeyStep, hr, hk, hv, he, SPComp.map, SPComp.bind_assoc,
+  simp [F_AKEK, F_AKEImpK, advSysImp, newKeyStep, hr, hk, hv, he, SPComp.map, SPComp.bind_assoc,
     SPComp.pure_bind]
 
 /-- **The fresh key of `F_AKE`.** At a session without a key that is not exposed and has no
@@ -658,19 +711,29 @@ theorem newKeyFreshStep_key {t : St K} {x : Inst} {r : Rec K} (k kf : K)
     keyOf (newKeyFreshStep t x k kf) x = some (if Exposed t x r then k else kf) := by
   simp [newKeyFreshStep, hr, hk, setRec, keyOf]
 
+/-- **`impersonate` in `F_AKEImp`**: `impStep` at a session whose record satisfies the
+impersonation predicate `imp`, no change otherwise. -/
+theorem F_AKEImp_step_impersonate (keySample : SPComp K) (imp : Rec K → Bool) (unlinked : Bool)
+    (t : St K) (sid : SessionId) (pid : PartyId) :
+    (F_AKEImp keySample imp unlinked).step t (.inr (.impersonate sid pid)) =
+      SPComp.pure (match t.recs (sid, pid) with
+        | some r => if imp r then impStep t (sid, pid) else t
+        | none => t, .inr .ack) := by
+  simp [F_AKEImp, F_AKEImpK, advSysImp, impStepOf, SPComp.map, SPComp.pure_bind]
+
 /-- `impersonate` changes nothing in `F_AKE`. -/
 theorem F_AKE_step_impersonate (keySample : SPComp K) (unlinked : Bool) (t : St K)
     (sid : SessionId) (pid : PartyId) :
     (F_AKE keySample unlinked).step t (.inr (.impersonate sid pid)) =
       SPComp.pure (t, .inr .ack) := by
-  simp [F_AKE, F_AKEK, advSysK]
+  simp [F_AKE, F_AKEImp, F_AKEImpK, advSysImp]
 
 /-- In `F_AKE` without `unlinked`, `newKeyUnlinked` steps as `newKey`. -/
 theorem F_AKE_step_newKeyUnlinked_linked (keySample : SPComp K) (t : St K) (sid : SessionId)
     (pid : PartyId) (k : K) :
     (F_AKE keySample false).step t (.inr (.newKeyUnlinked sid pid k)) =
       (F_AKE keySample false).step t (.inr (.newKey sid pid k)) := by
-  simp [F_AKE, F_AKEK, advSysK]
+  simp [F_AKE, F_AKEImp, F_AKEImpK, advSysImp]
 
 /-- In `F_AKE` with `unlinked`, `newKeyUnlinked` stores the key of `newKeyFreshStep`, which
 ignores the partner. -/
@@ -678,7 +741,8 @@ theorem F_AKE_step_newKeyUnlinked_unlinked (keySample : SPComp K) (t : St K) (si
     (pid : PartyId) (k : K) :
     (F_AKE keySample true).step t (.inr (.newKeyUnlinked sid pid k)) =
       SPComp.map (fun kf => (newKeyFreshStep t (sid, pid) k kf, .inr .ack)) keySample := by
-  simp [F_AKE, F_AKEK, advSysK, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+  simp [F_AKE, F_AKEImp, F_AKEImpK, advSysImp, SPComp.map, SPComp.bind_assoc,
+    SPComp.pure_bind]
 
 /-! ## Relabelling the keys of `F_AKEK` -/
 
@@ -698,11 +762,11 @@ theorem F_AKEK_stepMap_mapKey {K' : Type} (f : K → K') {fresh : K → SPComp K
       (F_AKEK fresh' unlinked).step (St.mapKey f t) (Sum.map id (AEv.mapKey f) e) := by
   rcases e with e | e
   · cases e <;>
-      simp [F_AKEK, honSys, honStep, SPComp.map, SPComp.pure_bind,
+      simp [F_AKEK, F_AKEImpK, honSys, honStep, SPComp.map, SPComp.pure_bind,
         addSession_mapKey, keyOf_mapKey, HOut.mapKey]
   · cases e <;>
-      simp [F_AKEK, advSysK, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, hκ, AEv.mapKey,
-        pollStep_mapKey, corruptStep_mapKey, newKeyStep_mapKey]
+      simp [F_AKEK, F_AKEImpK, advSysImp, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, hκ,
+        AEv.mapKey, pollStep_mapKey, corruptStep_mapKey, newKeyStep_mapKey]
     cases unlinked <;> simp [newKeyStep_mapKey, newKeyFreshStep_mapKey]
 
 /-! ## Correctness -/

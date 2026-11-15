@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QPullbackFeedback
-public import CatCryptCore.Quantum.QPullbackCascade
 
 /-!
 # Quantum feedback behind a simulator with a private register

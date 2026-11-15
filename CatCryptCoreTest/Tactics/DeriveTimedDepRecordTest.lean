@@ -115,7 +115,8 @@ noncomputable def cellRed (tab : ℕ → Option Cell) (p x : ℕ) (D : ℕ → S
 /--
 error: derive_timed: a function bound in data: the field
 `CatCrypt.Tactics.DeriveTimedDepRecordTest.Box.read` is applied in `c.bx.read
-  (c.bx.put c.val x) x`
+  (c.bx.put c.val x) x`; its type `c.bx.T → ℕ → ℕ` has the domain `c.bx.T`, which is not
+finite, so it is not a store (rule (p))
 -/
 #guard_msgs (whitespace := lax) in
 derive_timed cellRed

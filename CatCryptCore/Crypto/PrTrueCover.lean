@@ -5,7 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.ForkingLemma
+import CatCryptCore.Crypto.ForkingLemma
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # Covering bounds for `prTrue` of pure Booleans

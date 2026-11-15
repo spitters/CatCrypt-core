@@ -193,6 +193,231 @@ contribute, and each tactic's own docstring names the source it came from:
 The `_ec` and `_pf` suffixes mark the two automation drivers by source, keeping the
 EasyCrypt `ssprove_auto_ec` distinct from the ProofFrog `ssprove_auto_pf`.
 
+# Time certificates
+
+A security theorem bounds the advantage of every adversary `A` by the advantages of
+explicit reductions `B A` plus a statistical term. The theorem holds for every Lean
+function `A`; its content for an efficient adversary comes from a second statement, that
+the running time of `B A` is bounded by the running time of `A`. A time certificate is
+that second statement, with the definitions it needs, checked by the kernel.
+
+## Costed form, erasure theorem, time theorem
+
+A Lean function carries no cost of its own, so the time of a reduction is read off a
+syntactic copy of it. The certificate of a reduction `R` has three parts.
+
+- _The costed form_ `R.timed`. Each tree in `R` (an oracle tree `OracleAdv`, a
+  computation tree `SPTree`) is replaced by its costed mirror (`OracleAdv.Timed`,
+  `SPTree.Timed`), which has the same constructors and carries at every continuation the
+  cost of computing the next node. Each function-typed binder, adversary or primitive, is
+  followed by a cost companion `fCost`, the cost of evaluating it at its arguments.
+  `R.timed` returns its tree preceded by the step cost of computing that tree.
+- _The erasure theorem_ `R.erase_timed`: erasing the costs gives back `R`,
+  `(R.timed xs').2.erase = R xs`, where `xs` is `xs'` with each costed binder erased and
+  the cost companions dropped. A derived costed form has its step costs fixed by the cost
+  rules below; for a costed form written by hand the erasure theorem fixes the program and
+  leaves the step costs unconstrained.
+- _The time theorem_ `R.timeBound_timed`: a bound on the time of `R.timed` in terms of
+  bound variables for the time of the adversary, the cost of a call to it, its number of
+  queries and the costs of the primitives, each with a hypothesis. The intended shape is
+  `time(B A) ≤ k · time(A) + q · t + c`, with `q` queries answered at cost `t`, `k` runs of
+  `A` and `c` the remaining work of `B`.
+
+The one-way-function inverter to PRG distinguisher reduction is a short example.
+
+```
+-- Crypto/Assumptions/OWF.lean
+noncomputable def prg_distinguisher_of_owf_inverter
+    (G : PRGDef W W) (A_owf : OWF_Adversary W) : PRG_Adversary W :=
+  fun y => do
+    let s' ← A_owf y
+    SPComp.pure (decide (G.stretch s' = y))
+
+-- Crypto/Assumptions/OWFTimed.lean
+derive_reduction prg_distinguisher_of_owf_inverter
+
+theorem prg_distinguisher_of_owf_inverter.tree.timeBound_timed {W : Type} [DecidableEq W]
+    (G : PRGDef W W) (A : W → SPTree.Timed W) (ACost : W → ℕ) (y : W) (stretch : W → W)
+    (stretchCost : W → ℕ) {T a ts : ℕ} (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ a)
+    (hs : ∀ x, stretchCost x ≤ ts) :
+    SPTree.Timed.stepTime
+        (prg_distinguisher_of_owf_inverter.tree.timed G A ACost y stretch stretchCost) ≤
+      T + a + ts + 3 := by
+  time_bound
+```
+
+`derive_reduction` reflects the `do` block into the computation tree
+`prg_distinguisher_of_owf_inverter.tree`, in which the inverter is a tree-valued binder and
+the stretch function of `G` a primitive binder `stretch`; it proves the compile equation
+`prg_distinguisher_of_owf_inverter.compile_tree`, which states that the tree compiles to
+the reduction, and then runs `derive_timed` on the tree, which defines
+`prg_distinguisher_of_owf_inverter.tree.timed` and proves
+`prg_distinguisher_of_owf_inverter.tree.erase_timed`. The time theorem states that an
+inverter of time at most `T` and call cost at most `a`, with a stretch function of cost at
+most `ts`, gives a distinguisher of time at most `T + a + ts + 3`.
+
+## The cost model
+
+Programs are trees. The table `treeKinds` lists the tree kinds: oracle trees and
+computation trees are built in, and `register_tree_kind` adds further kinds (oracle
+programs, quantum circuits). For each kind it records the costed type, the erasure, the
+costed form of each node and combinator, and the time bound. Every effect node (`sample`,
+`get`, `set`, `rand`, `query`) costs one unit, and the time of a costed tree
+(`SPTree.Timed.time`) is the sum of the node units and step costs along its costliest path.
+
+The step costs follow from the code of the reduction by the rules of call-by-value
+evaluation. A call costs one plus the cost of the callee at its arguments plus the costs of
+the arguments; `if` and `match` cost one plus the condition and the branch taken; an
+arithmetic operation on `ℕ`, on `ZMod p` or on a fixed-width word costs one; constructors,
+literals, projections and variables cost nothing; a `let` is priced once. A primitive
+without a body to price takes the cost registered by `timed_cost f := e`, which is a
+trusted statement. A function stored in data is carried as a costed closure, the function
+with its cost companion, which is the first-order case of the writer translation of
+function types in the typed measures of Forster and Kunze. The rules follow the
+instrumented translation of the Ironwood project and Isabelle's `time_fun`, and in
+addition charge each call of a non-recursive function, each decision and each arithmetic
+operation.
+
+Each costed tree translates to a tree of the free monad `PFunctor.FreeM P` of a
+polynomial functor of the PolyFun library, with a tick node for each step cost. The time
+bound of each kind is equivalent to PolyFun's charge bound `FreeM.IsChargeBound` of this
+tick tree under the charge `tickCost` (`OracleAdv.Timed.timeBound_iff_isChargeBound`;
+`SPTree.Timed.timeBound_iff_isChargeBoundUnder` for computation trees, whose sampling
+nodes answer only within the support of their distribution). The laws of charge bounds
+(bind, monotonicity, interpretation by a handler) therefore hold for every tree kind, and
+the query bound of an adversary is the same fold at a charge that counts queries.
+
+The deep language D (`Complexity/D/`) gives the cost model a semantics of its own. D is
+an intrinsically typed call-by-value λ-calculus whose cost `Tm.cost` is the number of
+evaluation steps, after the weak call-by-value λ-calculus L of Forster and Kunze, whose
+step count is polynomially related to Turing-machine time (Forster, Kunze and Roth).
+Operations on `ℕ` cost the bit lengths of their arguments, the logarithmic criterion
+under which RAM time and Turing-machine time are polynomially related (Cook and Reckhow).
+`reflect_d f` extracts a Lean definition into D and proves that the extracted term denotes
+`f`. The costed translation of D is read in the Diller–Nahm category of containers (Moss
+and von Glehn): a type is a container whose positions are data tokens and clock ticks, a
+pure term is a Diller–Nahm morphism `Tm.dnC` whose backward map sends a data token to its
+demand, and the soundness theorem `Tm.dnC_bounds` bounds evaluation by the ticks of that
+demand. At a function type, the simulation relation is price-soundness of the costed
+closure (`Sim.arr_iff_priceSound`), so a function with its cost companion is a morphism of
+this category. `Complexity/D/Link.lean` relates the step costs of costed trees to the
+evaluation steps of D in both directions (`CTree.stepTime_toTimed_le`,
+`TimedSim.cost_le`).
+
+## Simulators
+
+A simulator map, which builds the ideal-world simulator from an adversary, is certified as
+a reduction is, and its time theorem bounds the time of the simulator by the time of the
+adversary it simulates plus a constant. A simulator that runs as an interactive machine is
+certified by a bound per activation, in one of four forms.
+
+- _Constant._ Each step costs at most `t` (`Simulator.Timed.TimeBound`).
+- _Graded by the activations._ A simulator whose state grows with the activations, such
+  as a lazily sampled table, has step `i` cost at most `a + b · i`
+  (`MultiHybrid.Timed.TimeBoundGraded`), so that `q` activations cost at most
+  `q · a + b · q · (q - 1) / 2` (`MultiHybrid.Timed.TimeBoundGraded.actRun_time_le`).
+- _Graded by size._ A simulator whose step handles data of the size of the environment's
+  input has step `i` on an event `e` cost at most `a + b · i + c · |e|`
+  (`MultiHybrid.Timed.TimeBoundSized`).
+- _Potential._ In general, an invariant `Inv` and a potential `Φ` on the states are part
+  of the certificate (`MultiHybrid.Timed.PotentialBound`). A step on an input `x` from a
+  state `s` costs at most `a + b · (Φ s + g x)` and returns states `s'` with outputs `y`
+  such that `Φ s' + h y ≤ Φ s + g x`, where `g` measures the import received and `h` the
+  import passed on; at `h = 0` the clause is `Φ s' ≤ Φ s + g x`
+  (`MultiHybrid.Timed.PotentialBound.ofZero`). When `g` is at most `c` times the size of
+  the message (`ImportLinear`), a run of `k` activations costs at most
+  `k · a + b · k · (Φ₀ + ∑ⱼ mⱼ)` with `mⱼ` the import of activation `j`
+  (`MultiHybrid.Timed.PotentialBound.actRun_le`): the time is polynomial in the number of
+  activations and the import, which is the notion of running time of Canetti's revised UC
+  framework (J. ACM 67(5), 2020).
+
+The first three forms are instances of the fourth, with the potential `0`
+(`Simulator.Timed.TimeBound.timeBoundPot`, `Simulator.Timed.TimeBoundGraded.timeBoundPot`,
+`Simulator.Timed.TimeBoundSizedZero.timeBoundPot`). The potential time bound of a composite
+simulator is stated by recursion on the simulator (`Simulator.Timed.TimeBoundPot`): the
+potential of a composite is the sum of the potentials of its factors, and their time
+constants add.
+
+## Using the tactics
+
+- `derive_timed R`, for `R` whose result is a tree of a registered kind, defines `R.timed`
+  and proves `R.erase_timed`; `derive_timed (suffix := s) R` names them `R.s` and
+  `R.erase_s`.
+- `derive_reduction B`, for `B` whose result is an `SPComp` computation, defines the
+  computation tree `B.tree` with each adversary and each primitive as a binder, proves
+  `B.compile_tree`, and runs `derive_timed B.tree`; `(adv := A₁ … Aₖ)` names the
+  adversary binders.
+- `derive_time_bound R.tree` states and proves `R.tree.timeBound_timed`: each adversary,
+  key generation and cost companion binder receives a bound variable and a hypothesis, and
+  the bound is the cost of the tree with each of these atoms replaced by its bound;
+  `derive_time_bound +queries` states the time together with the query count. The tactic
+  `time_bound` proves a time theorem whose statement is written by hand, as in the
+  example above, and `derive_time_rec … using τ` proves one for a costed form defined by
+  recursion, with the bound `τ` given.
+- `derive_hybrid_time R` proves the time theorem of a costed hybrid machine from the time
+  theorems of its steps; `(graded)` and `(potential)` give the graded and the potential
+  forms. `derive_simulator S` certifies a bundled simulator built by composition, tensor
+  and relabelling.
+
+The certificate of a reduction defined in `F.lean` is written in `F.lean` itself or in a
+companion module `FTimed.lean` that imports `F` and is imported by no other module, so
+that adding a certificate rebuilds nothing downstream; `Crypto/Assumptions/OWFTimed.lean`
+above is such a companion.
+
+`time_cert_try c` (`Tactics/TimeCertTry.lean`) runs a certifying command `c`. When `c`
+succeeds, it has the effect of `c`. When `c` fails, the environment and the messages are
+restored to their state before `c`, and one warning is logged: the tag
+`time-cert exception:` followed by the declaration name, the command keyword and the first
+line of the first error, separated by tabs. A failed derivation therefore leaves the file building,
+and the warnings, collected from a build log, list the certificates still to be written.
+
+```
+time_cert_try derive_reduction prg_distinguisher_of_owf_inverter
+```
+
+## Composition
+
+Certificates compose along the constructions that build larger reductions and protocols.
+Inside a reduction, a call of a reduction with a costed form is charged the step cost of
+that form, and `time_bound` reads the time theorems of derived callees. A handler of an
+adversary's nodes with overhead at most `h` per unit of the adversary's time and `r` at a
+leaf gives time `(1 + h) · T + r` for an adversary of time `T`
+(`OracleAdv.Timed.timeBound_fold`). In UC composition, an environment has time
+`(n, o, q, tD)` (`EnvTimeBound`): activations of cost at most `n`, observations of cost at
+most `o`, at most `q` activations and a distinguisher of cost at most `tD`. A costed
+pullback (`CostedPullback`) reduces an environment of time `(n, o, q, tD)` to one of time
+`(n + nextC, o + obsC, roundsMul · q + roundsAdd, tD + distC)`
+(`CostedPullback.pull_envTimeBound`), and costed pullbacks compose
+(`CostedPullback.comp`). The composition theorem for two holes,
+`CostedPullback.realizes_twoHole`, states the realization of the composite, with the sum of
+the two bounds at the reduced environments, together with the time of each reduced
+environment. Parallel composition is its instance `realizes_par_timed`: if `X` realizes
+`X'` against the environments of time `(n + (sY + 9), o + 4, q, tD + 1)` and `Y` realizes
+`Y'` against those of time `(n + (sX + 9), o + 4, q, tD + 1)`, where `sY` and `sX` bound
+the activations of costed forms of `Y` and `X'`, then `X.par Y` realizes `X'.par Y'`
+against the environments of time `(n, o, q, tD)`. The cascade has the same form
+(`realizes_seq_timed`).
+
+## Further reading
+
+- The module docstring of `Tactics/DeriveTimed.lean` is the rule reference of the
+  translation, in the sections _Tree kinds_, _Computation arguments of nodes_, _Binders_,
+  _Functions stored in data and in state fields_, _Costed closures_, _Cost rules_, and
+  _States, generic callees and recursion_, with the lettered rules for records, closures,
+  stores, decisions and recursion; the docstrings of `Tactics/DeriveReduction.lean`,
+  `Tactics/DeriveTimeBound.lean`, `Tactics/DeriveSimulator.lean` and
+  `Tactics/TimeCertTry.lean` give the rules of the other commands.
+- [Crypto/ConcreteSecurity.md](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/ConcreteSecurity.md)
+  states the convention of concrete security, lists certified reductions with their
+  bounds, and relates the cost model to other cost analyses.
+- [Complexity/D/README.md](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Complexity/D/README.md)
+  describes D, its cost of primitive operations, `reflect_d` and the Diller–Nahm
+  interpretation, and
+  [Crypto/Complexity.md](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/Complexity.md)
+  the complexity classes and the time over D.
+- `Complexity/TimeBoundCharge.lean` states the time bound of each tree kind as a charge
+  bound.
+
 # Other projects
 
 EasyCrypt is an important inspiration for both SSProve and CatCrypt. VCVio builds

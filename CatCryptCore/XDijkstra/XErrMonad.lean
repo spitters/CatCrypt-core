@@ -5,8 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Prob.Support
-public import CatCryptCore.Core.StdDoBridge
+import CatCryptCore.Prob.Support
+import CatCryptCore.Core.StdDoBridge
 public import CatCryptCore.XDijkstra.Rel.XSDistrSoundness
 public import CatCryptCore.XDijkstra.XMvcgenReg
 public import CatCryptCore.XDijkstra.GradedDo

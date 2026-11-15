@@ -6,9 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.PAKE.CPaceHops
-public import CatCryptCore.Crypto.PAKE.CPaceH1
-public import CatCryptCore.Crypto.PAKE.DHExtractKit
-public import CatCryptCore.Crypto.OracleLazyMulti
 
 /-!
 # The bad event of the CPace square

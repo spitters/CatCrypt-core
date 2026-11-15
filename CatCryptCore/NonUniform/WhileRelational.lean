@@ -6,7 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.NonUniform.WhileApprox
-public import CatCryptCore.Relational.Rules
+import CatCryptCore.Relational.Rules
+public import CatCryptCore.Relational.Judgment
 
 /-!
 # pRHL rules for bounded loop approximants

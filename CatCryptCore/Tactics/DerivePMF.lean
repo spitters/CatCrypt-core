@@ -7,6 +7,8 @@ module
 
 public import CatCryptCore.Crypto.OracleAdversaryDist
 public import CatCryptCore.Tactics.DeriveTimed
+import CatCryptCore.Tactics.AutoSetsDecl
+import Mathlib.Tactic.Positivity.Finset
 
 /-!
 # Costed forms of distribution-valued reductions

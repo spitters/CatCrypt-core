@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Messaging.TripleRatchetCorrupt
-import CatCryptCore.Tactics.AutoDispatchExt
 
 /-!
 # The KEM CKA with state corruption, from KEM-CPA security

@@ -5,9 +5,10 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Party.Derived
 public import CatCryptCore.Crypto.UCCoupling
 public import CatCryptCore.Crypto.UCLoopbackObservationBridge
+public import CatCryptCore.Crypto.UCChannel
+public import CatCryptCore.Crypto.Party.Prog
 
 /-!
 # A relational program logic for party programs

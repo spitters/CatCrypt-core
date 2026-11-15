@@ -6,8 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCSimulatorCostPotComp
-public import CatCryptCore.Crypto.UCPullbackCost
-public import CatCryptCore.Crypto.UCConcreteTimed
 public import CatCryptCore.Crypto.UCParallelTimed
 
 /-!

@@ -107,6 +107,22 @@ a subterm without a potential leaf through the instance theorems
 A composite whose middle interface does not conserve import (a factor that creates import at an
 answer, by copying its state into it) is refused with the four measures of the interface.
 
+## Graded time bounds at the length potential
+
+`derive_hybrid_time (graded) R` proves `R.timeBoundGraded_timed : … → (R.timed …).TimeBoundGraded
+(fun i s => Pot (n₀ + g * i) s) a b` from the step theorems of `R`, at the potential of the state
+of `derive_time_bound` (`DeriveTimeBound.potentialOf`, `stateAtoms`): the conjunction `Pot n s` of
+a companion atom for each cost companion, a length atom for each list component and a
+member-length atom for each list component of the members of a list component. At a fresh state
+`s`, input `x` and bound `M`, with the atoms of `Pot M s` as hypotheses, the bound of each step
+theorem is bounded free of `s` and `x` (`bfree?`) and read as `aₛ + bₛ * M` (`affineLe`), and every
+leaf state of the step has `Pot (M + gₛ) s'` by the leaf-length rule with the clauses
+`growthLeaf` and `growthBindTree`; the atoms of the initial state are bounded by `n₀`. With `a`,
+`b` and `g` the maxima over the three steps, `MultiHybrid.Timed.TimeBoundGraded.of_pot` gives the
+graded bound with the constants `a + b * n₀` and `b * g`, which `derive_simulator` lifts as any
+graded time theorem of a leaf. A step whose bound is not affine in the bound of the potential (a
+nested scan) is refused with the step and its bound.
+
 ## Main definitions
 
 * `derive_simulator S` — define `S.timed`, prove `S.erase_timed` and `S.timeBound_timed`
@@ -117,6 +133,10 @@ answer, by copying its state into it) is refused with the four measures of the i
   `R.st.tree` or, for a costed form on costed states, `R.st.treeHat`
 * `derive_hybrid_time (potential) R` — define the potential time bound `R.potentialBound_timed`
   of the costed multi-call simulator `R.timed` (rule and class in `StatePotential.lean`)
+* `derive_hybrid_time (graded) R` — prove the graded time bound `R.timeBoundGraded_timed` of the
+  costed multi-call simulator `R.timed` at the length potential of its state (`deriveGraded`)
+* `MultiHybrid.Timed.TimeBoundGraded.of_pot` — the graded time bound from the facts of the steps
+  at a potential
 * `derive_simulator (suffix := s) S` — the same with the costed forms and theorems named by `s`
   in place of `timed` (`S.s`, `S.erase_s`, `S.timeBoundGraded_s`), reading those of its
   multi-call simulators and deriving the missing ones by `derive_reduction (suffix := s)`; a leaf
@@ -125,6 +145,39 @@ answer, by copying its state into it) is refused with the four measures of the i
 -/
 
 public section
+
+namespace CatCrypt.Crypto.UCTransparent.MultiHybrid.Timed
+
+open CatCrypt.Core
+
+variable {σ E O EG OG : Type}
+
+/-- **The graded time bound from a potential.** When the initial state has the potential `P n₀`
+and every step from a state of potential `P M` costs at most `a + b * M` and returns states of
+potential `P (M + g)`, the costed multi-call simulator has the graded time bound on the
+invariant `P (n₀ + g * i)` after `i` activations, with the constants `a + b * n₀` and `b * g`. -/
+theorem TimeBoundGraded.of_pot {A : MultiHybrid.Timed σ E O EG OG} (P : ℕ → σ → Prop)
+    {n₀ a b g : ℕ} (h0 : P n₀ A.init)
+    (hs : ∀ M s e, P M s → SPTree.Timed.stepTime (A.startCost s e, A.start s e) ≤ a + b * M ∧
+      SPTree.Timed.AllRet (fun y => P (M + g) y.1) (A.start s e))
+    (hr : ∀ M s o, P M s → SPTree.Timed.stepTime (A.resumeCost s o, A.resume s o) ≤ a + b * M ∧
+      SPTree.Timed.AllRet (fun y => P (M + g) y.1) (A.resume s o))
+    (hf : ∀ M s o, P M s → SPTree.Timed.stepTime (A.finishCost s o, A.finish s o) ≤ a + b * M ∧
+      SPTree.Timed.AllRet (fun y => P (M + g) y.1) (A.finish s o)) :
+    A.TimeBoundGraded (fun i s => P (n₀ + g * i) s) (a + b * n₀) (b * g) := by
+  have hle : ∀ i, a + b * (n₀ + g * i) = a + b * n₀ + b * g * i := fun i => by
+    rw [Nat.mul_add, Nat.mul_assoc, Nat.add_assoc]
+  have hsucc : ∀ i, n₀ + g * i + g = n₀ + g * (i + 1) := fun i => by
+    rw [Nat.mul_succ, Nat.add_assoc]
+  refine ⟨by simpa using h0, fun i s e h => ?_, fun i s o h => ?_, fun i s o h => ?_⟩
+  · obtain ⟨h1, h2⟩ := hs _ s e h
+    exact ⟨hle i ▸ h1, by simpa only [hsucc] using h2⟩
+  · obtain ⟨h1, h2⟩ := hr _ s o h
+    exact ⟨hle i ▸ h1, by simpa only [hsucc] using h2⟩
+  · obtain ⟨h1, h2⟩ := hf _ s o h
+    exact ⟨hle i ▸ h1, by simpa only [hsucc] using h2⟩
+
+end CatCrypt.Crypto.UCTransparent.MultiHybrid.Timed
 
 namespace CatCrypt.Tactics.DeriveSimulator
 
@@ -1502,19 +1555,253 @@ def deriveHybridTime (R : Name) : TermElabM Unit := do
         { name := R ++ `timeBound_timed, levelParams := info.levelParams,
           type := ← mkForallFVars tBs (← inferType pf), value := ← mkLambdaFVars tBs pf })
 
+/-! ### Graded time bounds at the length potential -/
+
+open CatCrypt.Tactics.DeriveTimeBound (potentialOf potAtoms conjParts conjProjs closeLeafLen
+  growthLeaf bfree? affineLe closeNat maxChain mkAddN mkMulN natE initAtomBound BindRule
+  hintLe)
+
+/-- The monotonicity `∀ m n s, m ≤ n → Pot m s → Pot n s` of the potential `Pot` of the values
+of type `σ`, the conjunction of `k` atoms `∀ ys, l ≤ n`: each atom by `Nat.le_trans`. -/
+def potMonoPf (Pot σ : Expr) (k : Nat) : MetaM Expr :=
+  withLocalDeclD `m natE fun m => withLocalDeclD `n natE fun n =>
+  withLocalDeclD `s σ fun s =>
+  withLocalDeclD `h (CatCrypt.Tactics.DeriveTimeBound.mkNatLe m n) fun h =>
+  withLocalDeclD `hP (Pot.beta #[m, s]) fun hP => do
+    let projs ← conjProjs hP k
+    let parts := conjParts (Pot.beta #[n, s]) k
+    let pfs ← (projs.zip parts).mapM fun (p, ty) => forallTelescope ty fun ys body => do
+      mkLambdaFVars ys (← hintLe (← mkAppM ``Nat.le_trans #[mkAppN p ys, h]) body)
+    let conj ← pfs.pop.foldrM (fun p acc => mkAppM ``And.intro #[p, acc]) pfs.back!
+    mkLambdaFVars #[m, n, s, h, hP] conj
+
+/-- The bind clause of the growth of the potential at a step of a costed multi-call simulator:
+at `A.bind f` of costed trees the leaf invariant `AllRet (fun v => Pot (M + ?g₁) v) A` of the
+first tree is proved by the leaf-length rule with the clauses `growthLeaf` and
+`growthBindTree`; the rule continues on `f a` under the atoms of that invariant at `a`
+(`SPTree.Timed.allRet_mono`, `SPTree.Timed.allRet_bind_of`). -/
+partial def growthBindTree (k : CatCrypt.Tactics.TimeFold.FoldKind) (M : Expr) : BindRule :=
+  fun av g allRetQ y' => do
+  let n := y'.getAppNumArgs
+  if n < 2 then return none
+  let (A, f) := (y'.getArg! (n - 2), y'.getArg! (n - 1))
+  let V := (← whnfR (← inferType A)).appArg!
+  let Pot ← potentialOf V
+  let g₁ ← mkFreshExprMVar natE
+  let Q₁ ← withLocalDeclD `v V fun v => do mkLambdaFVars #[v] (Pot.beta #[mkAddN M g₁, v])
+  let hA ← mkFreshExprSyntheticOpaqueMVar
+    (← mkAppM ``CatCrypt.Core.SPTree.Timed.AllRet #[Q₁, A])
+  closeLeafLen k av hA.mvarId! g₁.mvarId! (leaf := growthLeaf M)
+    (bind := some (growthBindTree k M))
+  let Q := allRetQ.appArg!
+  let M₁ ← instantiateMVars (mkAddN M g₁)
+  let m ← withLocalDeclD `a V fun a => do return (← potAtoms M₁ a V).size
+  let hfTy ← withLocalDeclD `a V fun a => do
+    let atoms ← potAtoms M₁ a V
+    withLocalDeclsDND (atoms.map (`ha, ·)) fun has => do
+      mkForallFVars (#[a] ++ has) (← mkAppM ``CatCrypt.Core.SPTree.Timed.AllRet
+        #[Q, ← mkAppM ``Prod.snd #[(mkApp f a).headBeta]])
+  let hf ← mkFreshExprSyntheticOpaqueMVar hfTy
+  let hf' ← withLocalDeclD `a V fun a => do
+    withLocalDeclD `ha (← instantiateMVars (Q₁.beta #[a])) fun ha => do
+      mkLambdaFVars #[a, ha] (mkAppN hf (#[a] ++ (← conjProjs ha m)))
+  let g' ← g.replaceTargetDefEq (mkApp allRetQ (← mkAppM ``Prod.snd #[y']))
+  let hmono ← mkAppM ``CatCrypt.Core.SPTree.Timed.allRet_mono #[hf', A, hA]
+  g'.assign (← mkAppM ``CatCrypt.Core.SPTree.Timed.allRet_bind_of #[hmono])
+  return some #[hf.mvarId!]
+
+/-- The step tree `t` (`A.start s x` of a costed multi-call simulator `A`) with its projections
+reduced: a projection function unfolded, a projection of a structure instance reduced and the
+result beta reduced, so that a `match` of the step is the head of the tree. -/
+partial def exposeStep (t : Expr) (fuel : Nat := 8) : MetaM Expr := do
+  if fuel == 0 then return t
+  let t := t.headBeta
+  let f := t.getAppFn
+  if f.isProj then
+    if let some f' ← withDefault (reduceProj? f) then
+      return ← exposeStep (mkAppN f' t.getAppArgs) (fuel - 1)
+    return t
+  if let some c := f.constName? then
+    if (← getProjectionFnInfo? c).isSome then
+      if let some t' ← withDefault (unfoldDefinition? t) then
+        return ← exposeStep t' (fuel - 1)
+  return t
+
+/-- The constant `x` in closed form (`closeNat`) and simplified by `max 0 a = a`, `max a a = a`,
+`a + 0 = a`, `a * 0 = 0` and numeral arithmetic, with the proof of `x ≤` the result. -/
+def simpConst (x : Expr) : TermElabM (Expr × Expr) := do
+  let (x₁, h₁) ← closeNat x
+  let ctx ← Simp.Context.ofNames [``Nat.zero_max, ``Nat.max_zero, ``max_self, ``Nat.add_zero,
+    ``Nat.zero_add, ``Nat.mul_zero, ``Nat.zero_mul, ``Nat.add_assoc] true
+  let (r, _) ← simp x₁ ctx (simprocs := #[← Simp.getSimprocs])
+  match r.proof? with
+  | some p => return (r.expr, ← mkAppM ``Nat.le_trans #[h₁, ← mkAppM ``Nat.le_of_eq #[p]])
+  | none => return (r.expr, h₁)
+
+/-- Prove `R.timeBoundGraded_timed : … → (R.timed …).TimeBoundGraded (fun i s => Pot (n₀ + g * i)
+s) a' b'` from the step theorems of `R`, at the potential `Pot` of the state
+(`DeriveTimeBound.potentialOf`); see the module docstring. -/
+def deriveGraded (R : Name) : TermElabM Unit := do
+  let tName := R ++ (← sfx)
+  let info ← getConstInfo tName
+  let lvls := info.levelParams.map mkLevelParam
+  forallTelescope info.type fun xs ty => do
+  let ty ← whnfR ty
+  unless ty.isAppOfArity ``MultiHybrid.Timed 5 do
+    throwError "derive_hybrid_time (graded): `{tName}` is not a \
+      `MultiHybrid.Timed`{indentExpr ty}"
+  let tys := ty.getAppArgs
+  let σ := tys[0]!
+  let A := mkAppN (mkConst tName lvls) xs
+  let bounds ← IO.mkRef #[]
+  let hyps ← IO.mkRef #[]
+  let mut stepBs := #[]
+  for (st, cost, tree, xi) in potSteps do
+    stepBs := stepBs.push (← potStepBound bounds hyps R st cost tree A σ tys[xi]!)
+  withMVarsAsFVars ((← bounds.get) ++ (← hyps.get)) 0 #[] fun tFvs => do
+  let stepBs ← stepBs.mapM fun (B, pf) => return (← instantiateMVars B, ← instantiateMVars pf)
+  let Pot ← potentialOf σ
+  let m ← withLocalDeclD `n natE fun n => withLocalDeclD `s σ fun s => do
+    return (← potAtoms n s σ).size
+  let k := CatCrypt.Core.SPTree.Timed.spTreeFold
+  -- the facts of each step at a bound `M`: `a`, `b`, `g` and the proof
+  let mut facts : Array (Expr × Nat × Expr × Expr) := #[]
+  for (B, pf) in stepBs, (st, _, stepFn, xi) in potSteps do
+    let X := tys[xi]!
+    let r ← withLocalDeclD `M natE fun M => withLocalDeclD `s σ fun s =>
+      withLocalDeclD `x X fun x => do
+      let atoms := conjParts (Pot.beta #[M, s]) m
+      withLocalDeclsDND (atoms.map (`hP, ·)) fun hPs => do
+        let avoid := #[s.fvarId!, x.fvarId!]
+        let Bsx := B.beta #[s, x]
+        let some (B', pB) ← bfree? avoid Bsx
+          | throwError "derive_hybrid_time (graded): the bound of the step `{st}` of \
+              `{R}`{indentExpr Bsx}\nhas no bound free of the state and the input under the \
+              potential{indentExpr (Pot.beta #[M, s])}"
+        let (a, b, pA) ← try affineLe #[M.fvarId!] avoid M B'
+          catch ex => throwError "derive_hybrid_time (graded): the bound of the step `{st}` of \
+            `{R}`{indentExpr B'}\nis not affine in the bound `M` of the potential of the \
+            state:{indentD ex.toMessageData}"
+        let (aN, ha) ← closeNat a
+        let bM := mkMulN (mkNatLit b) M
+        let time ← mkAppM ``Nat.le_trans #[pf.beta #[s, x], ← mkAppM ``Nat.le_trans
+          #[pB, ← mkAppM ``Nat.le_trans #[pA, ← mkAppM ``Nat.add_le_add_right #[ha, bM]]]]
+        -- the growth of the potential at the step
+        let gm ← mkFreshExprMVar natE
+        let tree ← mkAppM stepFn #[A, s, x]
+        let leafTy := (← whnfR (← inferType tree)).appArg!
+        let Q ← withLocalDeclD `y leafTy fun y => do
+          mkLambdaFVars #[y] (Pot.beta #[mkAddN M gm, ← mkAppM ``Prod.fst #[y]])
+        let gGoal ← mkFreshExprSyntheticOpaqueMVar
+          (← mkAppM ``CatCrypt.Core.SPTree.Timed.AllRet #[Q, ← exposeStep tree])
+        try
+          closeLeafLen k avoid gGoal.mvarId! gm.mvarId! (leaf := growthLeaf M)
+            (bind := some (growthBindTree k M))
+        catch ex => throwError "derive_hybrid_time (graded): the growth of the potential of the \
+          state at the step `{st}` of `{R}`:{indentD ex.toMessageData}"
+        let (gN, hg) ← closeNat (← instantiateMVars gm)
+        let Qg ← withLocalDeclD `y leafTy fun y => do
+          mkLambdaFVars #[y] (Pot.beta #[mkAddN M gN, ← mkAppM ``Prod.fst #[y]])
+        let mono ← potMonoPf Pot σ m
+        let up ← withLocalDeclD `y leafTy fun y => withLocalDeclD `hy (Q.beta #[y]) fun hy => do
+          mkLambdaFVars #[y, hy] (mkAppN mono #[mkAddN M gm, mkAddN M gN,
+            ← mkAppM ``Prod.fst #[y], ← mkAppM ``Nat.add_le_add_left #[hg, M], hy])
+        let grow ← mkAppOptM ``CatCrypt.Core.SPTree.Timed.allRet_mono
+          #[none, some Q, some Qg, some up, some tree, some gGoal]
+        let pair ← instantiateMVars (← mkAppM ``And.intro #[time, grow])
+        let body ← mkLambdaFVars hPs pair
+        let pfS ← withLocalDeclD `hP (Pot.beta #[M, s]) fun hP => do
+          mkLambdaFVars #[M, s, x, hP] (body.beta (← conjProjs hP m))
+        if pfS.hasExprMVar then
+          throwError "derive_hybrid_time (graded): the facts of the step `{st}` are not \
+            determined"
+        return (aN, b, gN, pfS)
+    facts := facts.push r
+  -- the constants: the maxima over the steps
+  let (aMx, aUps) ← maxChain (facts.map (·.1))
+  let (aMax, haMax) ← closeNat aMx
+  let bMax := facts.foldl (fun acc f => max acc f.2.1) 0
+  let (gMx, gUps) ← maxChain (facts.map (·.2.2.1))
+  let (gMax, hgMax) ← closeNat gMx
+  let mono ← potMonoPf Pot σ m
+  let mut stepPfs := #[]
+  for (_, b, gᵢ, pfS) in facts, (_, _, stepFn, xi) in potSteps, aUp in aUps, gUp in gUps do
+    let X := tys[xi]!
+    let p ← withLocalDeclD `M natE fun M => withLocalDeclD `s σ fun s =>
+      withLocalDeclD `x X fun x => withLocalDeclD `hP (Pot.beta #[M, s]) fun hP => do
+      let h := mkAppN pfS #[M, s, x, hP]
+      let ha ← mkAppM ``Nat.le_trans #[aUp, haMax]
+      let hb ← mkDecideProof (CatCrypt.Tactics.DeriveTimeBound.mkNatLe (mkNatLit b)
+        (mkNatLit bMax))
+      let time ← mkAppM ``Nat.le_trans #[← mkAppM ``And.left #[h],
+        ← mkAppM ``Nat.add_le_add #[ha, ← mkAppM ``Nat.mul_le_mul_right #[M, hb]]]
+      let tree ← mkAppM stepFn #[A, s, x]
+      let leafTy := (← whnfR (← inferType tree)).appArg!
+      let hg ← mkAppM ``Nat.le_trans #[gUp, hgMax]
+      let Qᵢ ← withLocalDeclD `y leafTy fun y => do
+        mkLambdaFVars #[y] (Pot.beta #[mkAddN M gᵢ, ← mkAppM ``Prod.fst #[y]])
+      let Qg ← withLocalDeclD `y leafTy fun y => do
+        mkLambdaFVars #[y] (Pot.beta #[mkAddN M gMax, ← mkAppM ``Prod.fst #[y]])
+      let up ← withLocalDeclD `y leafTy fun y => withLocalDeclD `hy (Qᵢ.beta #[y]) fun hy => do
+        mkLambdaFVars #[y, hy] (mkAppN mono #[mkAddN M gᵢ, mkAddN M gMax,
+          ← mkAppM ``Prod.fst #[y], ← mkAppM ``Nat.add_le_add_left #[hg, M], hy])
+      let grow ← mkAppOptM ``CatCrypt.Core.SPTree.Timed.allRet_mono
+        #[none, some Qᵢ, some Qg, some up, some tree, some (← mkAppM ``And.right #[h])]
+      mkLambdaFVars #[M, s, x, hP] (← mkAppM ``And.intro #[time, grow])
+    stepPfs := stepPfs.push p
+  -- the potential of the initial state: each atom bounded, `n₀` the maximum of the bounds
+  let s₀ ← whnfD (← mkAppM ``MultiHybrid.Timed.init #[A])
+  let parts ← withLocalDeclD `N natE fun N => do
+    (conjParts (Pot.beta #[N, s₀]) m).mapM fun p => do
+      let (nᵢ, mk) ← initAtomBound #[] p
+      withLocalDeclD `h (CatCrypt.Tactics.DeriveTimeBound.mkNatLe nᵢ N) fun h => do
+        return (nᵢ, ← mkLambdaFVars #[N, h] (← mk h))
+  let mut uniq : Array Expr := #[]
+  for (b, _) in parts do
+    unless uniq.contains b do uniq := uniq.push b
+  let (nMax, ups) ← maxChain uniq
+  let (n₀, hn) ← closeNat nMax
+  let pfs ← parts.mapM fun (b, f) => do
+    let some j := uniq.idxOf? b | throwError "derive_hybrid_time (graded): the initial state"
+    return f.beta #[n₀, ← mkAppM ``Nat.le_trans #[ups[j]!, hn]]
+  let hs₀ ← pfs.pop.foldrM (fun p acc => mkAppM ``And.intro #[p, acc]) pfs.back!
+  let h0 ← mkExpectedTypeHint hs₀ (Pot.beta #[n₀, ← mkAppM ``MultiHybrid.Timed.init #[A]])
+  let pf ← mkAppOptM ``MultiHybrid.Timed.TimeBoundGraded.of_pot
+    #[none, none, none, none, none, some A, some Pot, some n₀, some aMax, some (mkNatLit bMax),
+      some gMax, some h0, some stepPfs[0]!, some stepPfs[1]!, some stepPfs[2]!]
+  -- the statement with the invariant beta reduced and the constants in closed form
+  let inv ← withLocalDeclD `i natE fun i => withLocalDeclD `s σ fun s => do
+    mkLambdaFVars #[i, s] (← Core.betaReduce (Pot.beta #[mkAddN n₀ (mkMulN gMax i), s]))
+  let (a', ha') ← simpConst (mkAddN aMax (mkMulN (mkNatLit bMax) n₀))
+  let (b', hb') ← simpConst (mkMulN (mkNatLit bMax) gMax)
+  let pf ← mkAppM ``MultiHybrid.Timed.TimeBoundGraded.mono #[pf, ha', hb']
+  let concl ← mkAppM ``MultiHybrid.Timed.TimeBoundGraded #[A, inv, a', b']
+  let pf ← mkExpectedTypeHint (← instantiateMVars pf) concl
+  if pf.hasExprMVar then throwError "derive_hybrid_time (graded): the proof is incomplete"
+  let bs := xs ++ tFvs
+  addDecl (Declaration.thmDecl
+    { name := R ++ (← sfxName "timeBoundGraded"), levelParams := info.levelParams,
+      type := ← mkForallFVars bs concl, value := ← mkLambdaFVars bs pf })
+
+
 end
 
 /-- `derive_hybrid_time R` proves the time theorem `R.timeBound_timed` of the costed form
 `R.timed` of a hybrid machine (`Hybrid.Timed` or `MultiHybrid.Timed`) from the time theorems
-`R.st.tree.timeBound_timed` (or `R.st.treeHat.timeBound_timed`) of its steps. -/
-syntax (name := deriveHybridTimeCmd) "derive_hybrid_time " ("(" &"potential" ") ")? ident :
-  command
+`R.st.tree.timeBound_timed` (or `R.st.treeHat.timeBound_timed`) of its steps; with `(potential)`
+it defines the potential time bound `R.potentialBound_timed`, and with `(graded)` it proves the
+graded time bound `R.timeBoundGraded_timed` at the length potential of the state
+(`deriveGraded`). -/
+syntax (name := deriveHybridTimeCmd) "derive_hybrid_time "
+  ("(" (&"potential" <|> &"graded") ") ")? ident : command
 
-/-- Elaborate `derive_hybrid_time R` and `derive_hybrid_time (potential) R`. -/
+/-- Elaborate `derive_hybrid_time R`, `derive_hybrid_time (potential) R` and
+`derive_hybrid_time (graded) R`. -/
 @[command_elab deriveHybridTimeCmd]
 meta def elabDeriveHybridTime : CommandElab := fun stx => do
   let R ← liftTermElabM <| realizeGlobalConstNoOverloadWithInfo stx[2]
   if stx[1].getNumArgs == 0 then liftTermElabM <| deriveHybridTime R
+  else if ((toString stx[1]).splitOn "graded").length > 1 then liftTermElabM <| deriveGraded R
   else liftTermElabM <| derivePotential R
 
 /-- `derive_simulator S` defines the costed form `S.timed` of a bundled simulator `S` built

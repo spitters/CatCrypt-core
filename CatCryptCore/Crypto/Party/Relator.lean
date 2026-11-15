@@ -7,7 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Party.Lifting
 public import CatCryptCore.Crypto.UCCoupling
-public import CatCryptCore.Crypto.Party.UnwindingTransfer
+import CatCryptCore.Crypto.Party.UnwindingTransfer
 
 /-!
 # A relator for party programs: bisimulation and identical until bad

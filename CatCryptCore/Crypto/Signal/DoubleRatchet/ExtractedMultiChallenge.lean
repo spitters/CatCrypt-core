@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedScheme
-public import CatCryptCore.Crypto.Messaging.SMMultiChallenge
 
 /-!
 # The extracted double ratchet in the multi-challenge corruption game

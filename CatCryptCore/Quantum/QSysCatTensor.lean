@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QSysCat
-public import CatCryptCore.Quantum.QRealizesMem
 
 /-!
 # The tensor of quantum reactive systems on different registers

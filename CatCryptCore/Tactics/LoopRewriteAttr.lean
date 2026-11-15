@@ -5,7 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Lean
+import Lean.Meta.Tactic.Simp.RegisterCommand
+meta import Lean.Meta.Tactic.Simp.Attr
+public meta import Lean.Meta.Tactic.Simp.Simproc
 
 /-!
 # The simp set of loop rewriting

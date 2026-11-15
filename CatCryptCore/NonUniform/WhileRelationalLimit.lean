@@ -6,7 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.NonUniform.While
-public import CatCryptCore.NonUniform.WhileRelational
+public import CatCryptCore.Relational.Judgment
+import Mathlib.Tactic.Positivity.Finset
 
 /-!
 # The pRHL rule for the unbounded loop

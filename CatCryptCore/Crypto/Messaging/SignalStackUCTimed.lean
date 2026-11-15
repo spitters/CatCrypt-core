@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Messaging.SignalStackUC
 public import CatCryptCore.Crypto.AKE.X3DHSquareTimed
+import CatCryptCore.Tactics.DeriveSimulator
 
 /-!
 # Running time of the simulator of the Signal stack

@@ -16,7 +16,9 @@ A forward-secure AEAD scheme (FS-AEAD) encrypts the `j`-th message of an epoch u
 `j`-th output of a forward-secure PRG, so that the state of the PRG after the epoch reveals
 nothing about the keys of the messages sent in it (Alwen, Coretti and Dodis, §4.3). The
 confidentiality game gives the adversary the ciphertexts of the messages `msgs` and the
-generator state after them, against uniform ciphertexts and a uniform state.
+generator state after them, against uniform ciphertexts and a uniform state. A message is a
+pair of a plaintext in `W` and associated data in a type `AD` of the AEAD `AEADDef W C AD`; the
+integrity game takes the same parameter, by default `W`.
 
 The proof has two parts: the keys are replaced by uniform keys at the cost of the FS-PRG
 advantage of `fsaeadPost`, and the ciphertexts under uniform keys are replaced by uniform
@@ -64,31 +66,31 @@ namespace CatCrypt.Crypto.Messaging
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.Assumptions
 open scoped ENNReal
 
-variable {St W C : Type} [Fintype St] [Nonempty St] [SampleableType W] [SampleableType C]
+variable {St W C AD : Type} [Fintype St] [Nonempty St] [SampleableType W] [SampleableType C]
 
-/-- The ciphertexts of the messages `msgs`, each a pair of a plaintext and associated data,
-under the keys `keys`, position by position. -/
-def encAll (D : AEADDef W C) (keys : List W) (msgs : List (W × W)) : List C :=
+/-- The ciphertexts of the messages `msgs`, each a pair of a plaintext and associated data of
+type `AD`, under the keys `keys`, position by position. -/
+def encAll (D : AEADDef W C AD) (keys : List W) (msgs : List (W × AD)) : List C :=
   List.zipWith (fun k m => D.encrypt k m.1 m.2) keys msgs
 
 /-! ## The confidentiality game -/
 
 /-- FS-AEAD real game: the messages encrypted under the outputs of the generator `G` from a
 uniform state, and the state after the epoch. -/
-noncomputable def fsaead_real (G : PRGDef St (W × St)) (D : AEADDef W C)
-    (msgs : List (W × W)) : SPComp (List C × St) := do
+noncomputable def fsaead_real (G : PRGDef St (W × St)) (D : AEADDef W C AD)
+    (msgs : List (W × AD)) : SPComp (List C × St) := do
   let s ← SPComp.sample St
   SPComp.pure (encAll D (fsprgRun G msgs.length s).1 msgs, (fsprgRun G msgs.length s).2)
 
 /-- FS-AEAD ideal game: uniform ciphertexts and a uniform state. -/
-noncomputable def fsaead_ideal (msgs : List (W × W)) : SPComp (List C × St) := do
+noncomputable def fsaead_ideal (msgs : List (W × AD)) : SPComp (List C × St) := do
   let v ← SPComp.sample (Fin msgs.length → C)
   let s ← SPComp.sample St
   SPComp.pure (List.ofFn v, s)
 
 /-- FS-AEAD confidentiality advantage of the distinguisher `A`. -/
-noncomputable def FSAEAD_Advantage (G : PRGDef St (W × St)) (D : AEADDef W C)
-    (msgs : List (W × W)) (A : List C × St → SPComp Bool) : ℝ≥0∞ :=
+noncomputable def FSAEAD_Advantage (G : PRGDef St (W × St)) (D : AEADDef W C AD)
+    (msgs : List (W × AD)) (A : List C × St → SPComp Bool) : ℝ≥0∞ :=
   AdvantageA (fsaead_real G D msgs) (fsaead_ideal msgs) A
 
 /-! ## Reductions and hybrids -/
@@ -101,13 +103,13 @@ noncomputable def fsaeadPostOf (encode : List W → List C) (A : List C × St �
 
 /-- The FS-PRG distinguisher: encrypt the messages under the received keys and call `A` with
 the ciphertexts and the received state. -/
-noncomputable def fsaeadPost (D : AEADDef W C) (msgs : List (W × W))
+noncomputable def fsaeadPost (D : AEADDef W C AD) (msgs : List (W × AD))
     (A : List C × St → SPComp Bool) : List W × St → SPComp Bool :=
   fsaeadPostOf (fun ks => encAll D ks msgs) A
 
 /-- Hybrid `(j, r)`: `j` uniform ciphertexts, followed by the encryptions of the messages from
 position `j` on under `r` uniform keys, and a uniform state. -/
-noncomputable def fsaeadHyb (D : AEADDef W C) (msgs : List (W × W)) (j r : ℕ) :
+noncomputable def fsaeadHyb (D : AEADDef W C AD) (msgs : List (W × AD)) (j r : ℕ) :
     SPComp (List C × St) := do
   let vc ← SPComp.sample (Fin j → C)
   let vk ← SPComp.sample (Fin r → W)
@@ -117,7 +119,7 @@ noncomputable def fsaeadHyb (D : AEADDef W C) (msgs : List (W × W)) (j r : ℕ)
 /-- The ciphertexts of hybrid step `j` built from the `j` uniform ciphertexts `vc`, the `r`
 uniform keys `vk` and the AEAD challenge `c`: `vc`, then `c`, then the encryptions of the
 messages after position `j` under `vk`. -/
-def fsaeadView (D : AEADDef W C) (msgs : List (W × W)) (j r : ℕ) (vc : Fin j → C)
+def fsaeadView (D : AEADDef W C AD) (msgs : List (W × AD)) (j r : ℕ) (vc : Fin j → C)
     (vk : Fin r → W) (c : C) : List C :=
   List.ofFn vc ++ c :: encAll D (List.ofFn vk) (msgs.drop (j + 1))
 
@@ -131,20 +133,20 @@ noncomputable def fsaeadRedOf {j r : ℕ} (view : (Fin j → C) → (Fin r → W
   A (view vc vk c, s)
 
 /-- The AEAD distinguisher of hybrid step `j`: `fsaeadRedOf` with the view `fsaeadView`. -/
-noncomputable def fsaeadRed (D : AEADDef W C) (msgs : List (W × W)) (j r : ℕ)
+noncomputable def fsaeadRed (D : AEADDef W C AD) (msgs : List (W × AD)) (j r : ℕ)
     (A : List C × St → SPComp Bool) : C → SPComp Bool :=
   fsaeadRedOf (fsaeadView D msgs j r) A
 
 omit [SampleableType C] in
 /-- The real game is the FS-PRG real game followed by `fsaeadPost`. -/
-theorem fsaead_real_bind_eq (G : PRGDef St (W × St)) (D : AEADDef W C) (msgs : List (W × W))
-    (A : List C × St → SPComp Bool) :
+theorem fsaead_real_bind_eq (G : PRGDef St (W × St)) (D : AEADDef W C AD)
+    (msgs : List (W × AD)) (A : List C × St → SPComp Bool) :
     (fsaead_real G D msgs).bind A = (fsprg_real G msgs.length).bind (fsaeadPost D msgs A) := by
   simp only [fsaead_real, fsprg_real, fsaeadPost, fsaeadPostOf, SPComp.monad_bind_eq,
     SPComp.bind_assoc, SPComp.pure_bind]
 
 /-- The FS-PRG ideal game followed by `fsaeadPost` is hybrid `(0, n)`. -/
-theorem fsaeadHyb_zero_bind_eq (D : AEADDef W C) (msgs : List (W × W))
+theorem fsaeadHyb_zero_bind_eq (D : AEADDef W C AD) (msgs : List (W × AD))
     (A : List C × St → SPComp Bool) :
     (fsaeadHyb D msgs 0 msgs.length).bind A =
       (fsprg_ideal (St := St) msgs.length).bind (fsaeadPost D msgs A) := by
@@ -153,13 +155,13 @@ theorem fsaeadHyb_zero_bind_eq (D : AEADDef W C) (msgs : List (W × W))
     List.drop_zero]
 
 /-- Hybrid `(n, 0)` is the ideal game. -/
-theorem fsaeadHyb_self (D : AEADDef W C) (msgs : List (W × W)) :
+theorem fsaeadHyb_self (D : AEADDef W C AD) (msgs : List (W × AD)) :
     fsaeadHyb (St := St) D msgs msgs.length 0 = fsaead_ideal msgs := by
   simp only [fsaeadHyb, fsaead_ideal, SPComp.monad_bind_eq, sample_bind_unique,
     List.ofFn_zero, List.drop_length, encAll, List.zipWith_nil_left, List.append_nil]
 
 /-- Hybrid `(j, r + 1)` is the real AEAD game of `fsaeadRed` for the message at `j`. -/
-theorem fsaeadHyb_bind_eq_real (D : AEADDef W C) (msgs : List (W × W)) {j : ℕ}
+theorem fsaeadHyb_bind_eq_real (D : AEADDef W C AD) (msgs : List (W × AD)) {j : ℕ}
     (hj : j < msgs.length) (r : ℕ) (A : List C × St → SPComp Bool) :
     (fsaeadHyb D msgs j (r + 1)).bind A =
       AEAD_Game_Real D msgs[j].1 msgs[j].2 (fsaeadRed D msgs j r A) := by
@@ -174,7 +176,7 @@ theorem fsaeadHyb_bind_eq_real (D : AEADDef W C) (msgs : List (W × W)) {j : ℕ
     List.drop_eq_getElem_cons hj, encAll, List.zipWith_cons_cons]
 
 /-- Hybrid `(j + 1, r)` is the ideal AEAD game of `fsaeadRed`. -/
-theorem fsaeadHyb_succ_bind_eq_ideal (D : AEADDef W C) (msgs : List (W × W)) (j r : ℕ)
+theorem fsaeadHyb_succ_bind_eq_ideal (D : AEADDef W C AD) (msgs : List (W × AD)) (j r : ℕ)
     (A : List C × St → SPComp Bool) :
     (fsaeadHyb D msgs (j + 1) r).bind A = AEAD_Game_Ideal (fsaeadRed D msgs j r A) := by
   simp only [fsaeadHyb, SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
@@ -189,8 +191,8 @@ theorem fsaeadHyb_succ_bind_eq_ideal (D : AEADDef W C) (msgs : List (W × W)) (j
 FS-AEAD advantage over the messages `msgs` of length `n` is at most the PRG advantages of the
 FS-PRG reductions `fsprgRed G n i (fsaeadPost D msgs A)` plus the AEAD advantages of the
 encryption reductions `fsaeadRed D msgs j (n - (j + 1)) A` for the message at `j`. -/
-theorem fsaead_advantage_le (G : PRGDef St (W × St)) (D : AEADDef W C) (msgs : List (W × W))
-    (A : List C × St → SPComp Bool) :
+theorem fsaead_advantage_le [Inhabited AD] (G : PRGDef St (W × St)) (D : AEADDef W C AD)
+    (msgs : List (W × AD)) (A : List C × St → SPComp Bool) :
     FSAEAD_Advantage G D msgs A ≤
       ∑ i ∈ Finset.range msgs.length,
           PRG_Advantage G (fsprgRed G msgs.length i (fsaeadPost D msgs A)) +
@@ -264,14 +266,14 @@ theorem fsaeadRedOf.tree.timeBound_timed {j r : ℕ}
 
 /-- The costed form of `fsaeadRed D msgs j r`: the costed tree of `fsaeadRedOf` at the view
 `fsaeadView D msgs j r` of cost `viewCost`. -/
-noncomputable def fsaeadRed.timed (D : AEADDef W C) (msgs : List (W × W)) (j r : ℕ)
+noncomputable def fsaeadRed.timed (D : AEADDef W C AD) (msgs : List (W × AD)) (j r : ℕ)
     (viewCost : (Fin j → C) → (Fin r → W) → C → ℕ) (A : List C × St → SPTree.Timed Bool)
     (ACost : List C × St → ℕ) (c : C) : ℕ × SPTree.Timed Bool :=
   fsaeadRedOf.tree.timed (fsaeadView D msgs j r) viewCost A ACost c
 
 /-- The costed form of `fsaeadRed` erases and compiles to `fsaeadRed` at the erased
 adversary. -/
-theorem fsaeadRed.erase_timed (D : AEADDef W C) (msgs : List (W × W)) (j r : ℕ)
+theorem fsaeadRed.erase_timed (D : AEADDef W C AD) (msgs : List (W × AD)) (j r : ℕ)
     (viewCost : (Fin j → C) → (Fin r → W) → C → ℕ) (A : List C × St → SPTree.Timed Bool)
     (ACost : List C × St → ℕ) (c : C) :
     (fsaeadRed.timed D msgs j r viewCost A ACost c).2.erase.compile =
@@ -281,7 +283,7 @@ theorem fsaeadRed.erase_timed (D : AEADDef W C) (msgs : List (W × W)) (j r : �
 
 /-- **Time of `fsaeadRed`**, the bound of `fsaeadRedOf.tree.timeBound_timed` at the view
 `fsaeadView D msgs j r` of cost at most `tv`. -/
-theorem fsaeadRed.timeBound_timed (D : AEADDef W C) (msgs : List (W × W)) (j r : ℕ)
+theorem fsaeadRed.timeBound_timed (D : AEADDef W C AD) (msgs : List (W × AD)) (j r : ℕ)
     (viewCost : (Fin j → C) → (Fin r → W) → C → ℕ) (A : List C × St → SPTree.Timed Bool)
     (ACost : List C × St → ℕ) {T a tv : ℕ} (hA : ∀ x, (A x).time ≤ T)
     (hAc : ∀ x, ACost x ≤ a) (hv : ∀ vc vk c, viewCost vc vk c ≤ tv) (c : C) :
@@ -293,19 +295,21 @@ theorem fsaeadRed.timeBound_timed (D : AEADDef W C) (msgs : List (W × W)) (j r 
 
 section FSInt
 
-variable {Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [DecidableEq W]
-  [DecidableEq Ct]
+variable {Sa W Ct AD : Type} [SampleableType W] [SampleableType Ct] [DecidableEq W]
+  [DecidableEq Ct] [DecidableEq AD]
 
 /-- The key at the position `j` of the chain from the state `sa` of the chain generator `G`. -/
 def chainKey (G : PRGDef Sa (W × Sa)) (sa : Sa) (j : ℕ) : W :=
   (G.stretch ((fun s => (G.stretch s).2)^[j] sa)).1
 
-/-- The queries of the FS-AEAD integrity adversary. -/
-inductive FSIntQuery (W Ct : Type) where
-  /-- The sender encrypts the message `m` under the next key of its chain. -/
-  | enc (m : W × W)
+/-- The queries of the FS-AEAD integrity adversary, with plaintexts in `W`, ciphertexts in `Ct`
+and associated data in `AD` (by default `W`). -/
+inductive FSIntQuery (W Ct : Type) (AD : Type := W) where
+  /-- The sender encrypts the message `m` (plaintext, associated data) under the next key of its
+  chain. -/
+  | enc (m : W × AD)
   /-- The receiver decrypts the ciphertext `c` with associated data `ad` at the position `j`. -/
-  | dec (j : ℕ) (ad : W) (c : Ct)
+  | dec (j : ℕ) (ad : AD) (c : Ct)
   /-- The state of the sender is returned; later decryptions are refused. -/
   | corrupt
 
@@ -320,21 +324,22 @@ inductive FSIntAns (Sa Ct W : Type) where
 
 /-- The state of the FS-AEAD integrity game: the current state of the sender's chain, the
 initial state of the epoch (the state of the receiver), the log of the honest ciphertexts
-(position, plaintext, associated data, ciphertext) and the flag of the corruption. -/
-structure FSIntSt (Sa W Ct : Type) where
+(position, plaintext, associated data of type `AD`, by default `W`, ciphertext) and the flag of
+the corruption. -/
+structure FSIntSt (Sa W Ct : Type) (AD : Type := W) where
   /-- The current state of the sender. -/
   cur : Sa
   /-- The initial state of the epoch, held by the receiver. -/
   init : Sa
   /-- The honest ciphertexts: position, plaintext, associated data, ciphertext. -/
-  log : List (ℕ × W × W × Ct)
+  log : List (ℕ × W × AD × Ct)
   /-- The sender has been corrupted. -/
   corr : Bool
 
 omit [SampleableType W] [SampleableType Ct] in
 /-- Decryption from the log of the FS-AEAD integrity game: the plaintext of the honest
 ciphertext `c` with associated data `ad` at the position `j`, or `none`. -/
-def FSIntSt.logDec (s : FSIntSt Sa W Ct) (j : ℕ) (ad : W) (c : Ct) : Option W :=
+def FSIntSt.logDec (s : FSIntSt Sa W Ct AD) (j : ℕ) (ad : AD) (c : Ct) : Option W :=
   (s.log.find? fun l => decide (l.1 = j ∧ l.2.2.1 = ad ∧ l.2.2.2 = c)).map fun l => l.2.1
 
 /-- The oracle of the FS-AEAD integrity game of the generator `G` and the AEAD `D` (the
@@ -343,8 +348,9 @@ decryption): `enc m` encrypts under the next key `(G cur).1`, logs the ciphertex
 position and moves the state to `(G cur).2`; `dec j ad c` decrypts under the key at the position
 `j` of the chain from the initial state (`ideal = false`) or from the log (`ideal = true`), and
 is refused after a corruption; `corrupt` returns the current state of the sender. -/
-noncomputable def fsIntOracle (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
-    (s : FSIntSt Sa W Ct) : FSIntQuery W Ct → PMF (FSIntAns Sa Ct W × FSIntSt Sa W Ct)
+noncomputable def fsIntOracle (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool)
+    (s : FSIntSt Sa W Ct AD) :
+    FSIntQuery W Ct AD → PMF (FSIntAns Sa Ct W × FSIntSt Sa W Ct AD)
   | .enc m =>
     PMF.pure (.ct (D.encrypt (G.stretch s.cur).1 m.1 m.2),
       { s with cur := (G.stretch s.cur).2,
@@ -357,15 +363,15 @@ variable [Fintype Sa] [Nonempty Sa]
 
 /-- **The FS-AEAD integrity game**: a uniform initial state of the epoch, and the run of the
 adversary against `fsIntOracle`. -/
-noncomputable def fsaead_int_game (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
-    (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) : SPComp Bool :=
+noncomputable def fsaead_int_game (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ideal : Bool) (A : OracleAdv (FSIntQuery W Ct AD) (FSIntAns Sa Ct W) Bool) : SPComp Bool :=
   liftPMF ((PMF.uniformFintype Sa).bind fun sa =>
     (OracleAdv.run (fsIntOracle G D ideal) A ⟨sa, sa, [], false⟩).map Prod.fst)
 
 /-- **FS-AEAD integrity advantage** of the adversary `A`: real decryption against decryption
 from the log. -/
-noncomputable def FSAEAD_Int_Advantage (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) : ℝ≥0∞ :=
+noncomputable def FSAEAD_Int_Advantage (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (A : OracleAdv (FSIntQuery W Ct AD) (FSIntAns Sa Ct W) Bool) : ℝ≥0∞ :=
   Advantage (fsaead_int_game G D false A) (fsaead_int_game G D true A)
 
 end FSInt

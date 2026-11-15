@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Tactics.TransportAlong
 public import CatCryptCore.Crypto.SDistrLift
-public import CatCryptCore.Quantum.QRealizesMem
 public import Mathlib.CategoryTheory.Monoidal.Transport
 
 /-!

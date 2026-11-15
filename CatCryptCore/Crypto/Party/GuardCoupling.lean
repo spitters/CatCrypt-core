@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Relational.CouplingMass
-public import CatCryptCore.Relational.Rules
+import CatCryptCore.Relational.Rules
 public import CatCryptCore.Crypto.Party.Call
 
 /-!

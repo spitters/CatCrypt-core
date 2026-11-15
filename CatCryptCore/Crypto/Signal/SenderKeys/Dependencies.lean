@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.CryptoWord
 public import CatCryptCore.Crypto.Assumptions.AEAD
 public import CatCryptCore.Crypto.Assumptions.OWF
 public import CatCryptCore.Crypto.Signatures.Scheme

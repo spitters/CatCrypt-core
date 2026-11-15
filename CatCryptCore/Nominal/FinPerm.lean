@@ -5,7 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Nominal.FinPerm
+import Mathlib.Data.Finset.Attr
+import Mathlib.Tactic.SetLike
+import Mathlib.Tactic.Finiteness.Attr
 
 /-!
 # `CatCryptCore.Nominal.FinPerm` (shim)

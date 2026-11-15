@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCMonad.RoundM
-public import CatCryptCore.Crypto.UCAdmClass.SPCompInstance
+public import CatCryptCore.Crypto.UCLevels
 
 /-!
 # `UCMonadCompDist` instance for `RoundM`

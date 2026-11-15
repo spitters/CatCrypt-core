@@ -5,8 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Consensus.PoSNSB.Prob.Hash
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
+public import CatCryptCore.Consensus.PoSNSB.Prob.Slots
 
 /-!
 # PoS-NSB with signed blocks: real and ideal executions

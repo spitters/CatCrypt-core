@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.RCL3
 public import CatCryptCore.Crypto.UCAdmClass.SPCompInstance
+import CatCryptCore.Crypto.RC
 
 /-!
 # Parallel composition at level 3 for `SPComp`

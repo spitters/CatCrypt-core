@@ -138,7 +138,8 @@ theorem signal_session_extracted_drOpen (u : Doubleratchet.Uninitialized_T)
     (Doubleratchet.Uninitialized_establish u g (X3dh.initiate_checked ctx ik ek bundle true).1 sk
         pk rpk).1 =
       drOpen (drInitSession (X3dh.initiate_checked ctx ik ek bundle true).1 sk₀ pk₀ rpk) sk pk := by
-  simp only [drOpen, drInitSession, Doubleratchet.Session, Doubleratchet.«Session.recv_ck»,
+  simp only [drOpen, drInitSession, Doubleratchet.ratchet_init_responder,
+    Doubleratchet.RatchetState, Doubleratchet.Session, Doubleratchet.«Session.recv_ck»,
     Doubleratchet.«Session.root_key», Doubleratchet.«Session.remote_pk»,
     Doubleratchet.Uninitialized_establish]
 

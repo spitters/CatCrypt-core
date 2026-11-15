@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.PKE.Games
-public import CatCryptCore.Crypto.OracleAdversaryRelabelTimed
 
 /-!
 # Sealed Sender: sender anonymity from IND-CCA public-key encryption

@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Messaging.SMCorrupt
 public import CatCryptCore.Crypto.Messaging.CKAPrekey
+public import CatCryptCore.Crypto.Messaging.SMHdr
 
 /-!
 # Secure messaging with state corruption at a given initial key pair
@@ -35,6 +36,8 @@ challenge epoch `1` rests on the initial root key.
 * `sm_corrupt_advantage_le_first` — the bound at challenge epoch `1`
 * `SMCorruptAdv.first`, `SMCorruptAdv.later`, `SM_Corrupt_Advantage_le_split` — the split
 * `sm_dh_corrupt_advantage_le_pair` — the Diffie–Hellman double ratchet at the prekey pair
+* `acdHdrSM_dh_corruptAdvantage_le_pair` — the same with message headers in the associated
+  data (`acdHdrSM`), at the wrapper adversary `A.toHdr hdrAD`
 -/
 
 set_option autoImplicit false
@@ -51,7 +54,7 @@ open scoped ENNReal
 
 section RootFirst
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- The opening of an epoch by party `p` in the simulator of the first-epoch root hop: at the
@@ -71,8 +74,8 @@ noncomputable def smRootRatchetFirst (C : CKADef Sc Msg Key) [CKACoins C Rand]
 /-- The simulator of the first-epoch root hop with the challenge epoch `t`: the simulator
 `smRootImplOf` with the root step at the challenge epoch asked to the `prng` oracle. -/
 noncomputable def smRootImplFirst (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (q : SMQuery W) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (q : SMQuery W AD) :
     OracleAdv (PPQuery RK Key) (RK × Sa) (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :=
   match q with
   | .ratchet p => smRootRatchetFirst C R t s p
@@ -86,9 +89,9 @@ challenge epoch of the adversary and a root key, and runs the adversary against 
 `smRootImplFirst` from the pair `i`. The drawn root key is never read at challenge epoch `1`;
 the initial root key of the game is the hidden root state of the PRF-PRNG game. -/
 noncomputable def smRootTreeFirst (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fintype RK]
-    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (i : Msg × Sc × Sc) (tStar : PMF ℕ)
-    (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    (play : ℕ → Msg → OracleAdv (SMQuery W AD) (SMAns Sc Msg RK Sa Ct) Bool) :
     OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
   .rand tStar fun t =>
     .rand (PMF.uniformFintype RK) fun rk =>
@@ -98,8 +101,8 @@ noncomputable def smRootTreeFirst (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fin
 /-- **The PRF-PRNG reduction of the first epoch** `smcRootRedFirst C R G D ΔFS ΔPCS ideal i A`:
 the tree `smRootTreeFirst` at the pair `i` and the interaction of `A`. -/
 noncomputable def smcRootRedFirst (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fintype RK]
-    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (ideal : Bool) (i : Msg × Sc × Sc) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (i : Msg × Sc × Sc) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
     OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
   smRootTreeFirst C R G D ΔFS ΔPCS ideal i A.tStar A.play
 
@@ -183,9 +186,9 @@ theorem ne_zero_of_allowCorr_one {St M : Type} {ΔFS ΔPCS : ℕ} (hPCS : 2 ≤ 
 
 /-- Every call of the secure-messaging oracle keeps `smOutInv`. -/
 theorem smOracleOf_outInv (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa)
-    (hs : smOutInv s) (q : SMQuery W) (x)
+    (hs : smOutInv s) (q : SMQuery W AD) (x)
     (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support) : smOutInv x.2 := by
   cases q with
   | ratchet p =>
@@ -240,10 +243,10 @@ theorem smOracleOf_outInv (C : CKADef Sc Msg Key) [CKACoins C Rand]
 asks no query and answers, through `smFirstAbs`, as the secure-messaging oracle with any root
 step at the challenge epoch. -/
 theorem smRootFirst_step_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     {ΔFS ΔPCS : ℕ} (hPCS : 2 ≤ ΔPCS) (ideal : Bool) (root : RK → Key → PMF (RK × Sa))
     (O' : PPSt RK Key (RK × Sa) → PPQuery RK Key → PMF ((RK × Sa) × PPSt RK Key (RK × Sa)))
-    (s : SMSt Sc Msg RK Sa) (u : PPSt RK Key (RK × Sa)) (hs : smOutInv s) (q : SMQuery W)
+    (s : SMSt Sc Msg RK Sa) (u : PPSt RK Key (RK × Sa)) (hs : smOutInv s) (q : SMQuery W AD)
     (hc : smCrit 1 s q = false) :
     (OracleAdv.simOracle (smRootImplFirst C R G D ΔFS ΔPCS 1 ideal) O' (s, u) q).map
         (Prod.map id fun x => smFirstAbs x.2.rk x.1) =
@@ -304,8 +307,8 @@ theorem smRootFirst_step_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
 /-- Away from the opening of the challenge epoch, the simulator of the first-epoch root hop is
 the simulator of the root hop. -/
 theorem smRootImplFirst_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (q : SMQuery W)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (q : SMQuery W AD)
     (hc : smCrit t s q = false) :
     smRootImplFirst C R G D ΔFS ΔPCS t ideal s q = smRootImplOf C R G D ΔFS ΔPCS t ideal s q := by
   cases q with
@@ -317,10 +320,10 @@ theorem smRootImplFirst_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 /-- A state map step of the first-epoch root hop keeps `smOutInv`. -/
 theorem smRootFirst_outInv_of_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa))
     (O' : PPSt RK Key (RK × Sa) → PPQuery RK Key → PMF ((RK × Sa) × PPSt RK Key (RK × Sa)))
-    (x : SMSt Sc Msg RK Sa × PPSt RK Key (RK × Sa)) (q : SMQuery W) (hx : smOutInv x.1)
+    (x : SMSt Sc Msg RK Sa × PPSt RK Key (RK × Sa)) (q : SMQuery W AD) (hx : smOutInv x.1)
     (hO : (OracleAdv.simOracle (smRootImplFirst C R G D ΔFS ΔPCS 1 ideal) O' x q).map
         (Prod.map id fun x => smFirstAbs x.2.rk x.1) =
       smOracleOf C R G D ΔFS ΔPCS 1 ideal root (smFirstAbs x.2.rk x.1) q) :
@@ -342,9 +345,9 @@ variable [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonempty Sa] [DecidableEq RK]
 call of the simulator of the first-epoch root hop against the real PRF-PRNG oracle is, through
 `smFirstAbs`, the call of the real game. -/
 theorem smRootFirst_step_real (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     {ΔFS ΔPCS : ℕ} (hPCS : 2 ≤ ΔPCS) (ideal : Bool) (s : SMSt Sc Msg RK Sa)
-    (u : PPSt RK Key (RK × Sa)) (hs : smOutInv s) (q : SMQuery W) :
+    (u : PPSt RK Key (RK × Sa)) (hs : smOutInv s) (q : SMQuery W AD) :
     (OracleAdv.simOracle (smRootImplFirst C R G D ΔFS ΔPCS 1 ideal)
         (ppOracle (rootFn R) false false) (s, u) q).map
         (Prod.map id fun x => smFirstAbs x.2.rk x.1) =
@@ -367,10 +370,10 @@ oracle is empty, each call of the simulator of the first-epoch root hop against 
 PRF-PRNG oracle is, through `smFirstAbs`, the call of the game with a uniform root output at the
 challenge epoch `1`. -/
 theorem smRootFirst_step_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     {ΔFS ΔPCS : ℕ} (hPCS : 2 ≤ ΔPCS) (ideal : Bool) (s : SMSt Sc Msg RK Sa)
     (u : PPSt RK Key (RK × Sa)) (hs : smOutInv s) (hu : u.tL = [] ∨ smOpened 1 s)
-    (q : SMQuery W) :
+    (q : SMQuery W AD) :
     (OracleAdv.simOracle (smRootImplFirst C R G D ΔFS ΔPCS 1 ideal)
         (ppOracle (rootFn R) true true) (s, u) q).map
         (Prod.map id fun x => smFirstAbs x.2.rk x.1) =
@@ -400,8 +403,8 @@ omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [D
 distribution. -/
 theorem sm_corrupt_gameOf_atInit_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (i : Msg × Sc × Sc) (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (ΔFS ΔPCS : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa))
-    (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    (D : AEADDef W Ct AD) (ΔFS ΔPCS : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa))
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
     sm_corrupt_gameOf (C.atInit i) R G D ΔFS ΔPCS ideal root A =
       liftPMF (A.tStar.bind fun t => (PMF.uniformFintype RK).bind fun rk =>
         (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal root) (A.play t i.1)
@@ -413,8 +416,8 @@ theorem sm_corrupt_gameOf_atInit_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
 /-- **The real side of the first-epoch root hop.** At challenge epoch `1`, the real PRF-PRNG
 game of `smcRootRedFirst` is the real game of `C.atInit i`. -/
 theorem smRootFirst_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand] (i : Msg × Sc × Sc)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    {ΔFS ΔPCS : ℕ} (hPCS : 2 ≤ ΔPCS) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    {ΔFS ΔPCS : ℕ} (hPCS : 2 ≤ ΔPCS) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD)
     (hA : A.tStar = PMF.pure 1) :
     pp_game (rootFn R) false false (smcRootRedFirst C R G D ΔFS ΔPCS ideal i A) =
       sm_corrupt_gameOf (C.atInit i) R G D ΔFS ΔPCS ideal (realRoot R) A := by
@@ -449,8 +452,8 @@ theorem smRootFirst_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand] (i : Msg �
 game of `smcRootRedFirst` is the game of `C.atInit i` with a uniform root output at the
 challenge epoch. -/
 theorem smRootFirst_ideal_eq (C : CKADef Sc Msg Key) [CKACoins C Rand] (i : Msg × Sc × Sc)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    {ΔFS ΔPCS : ℕ} (hPCS : 2 ≤ ΔPCS) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    {ΔFS ΔPCS : ℕ} (hPCS : 2 ≤ ΔPCS) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD)
     (hA : A.tStar = PMF.pure 1) :
     pp_game (rootFn R) true true (smcRootRedFirst C R G D ΔFS ΔPCS ideal i A) =
       sm_corrupt_gameOf (C.atInit i) R G D ΔFS ΔPCS ideal unifRoot A := by
@@ -513,8 +516,8 @@ initial root key as a `prng` query, plus the FS-AEAD advantage with corruption o
 `smcFSRed C R G D ΔFS ΔPCS (PMF.pure i) A`. No CKA term occurs. -/
 theorem sm_corrupt_advantage_le_first (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (i : Msg × Sc × Sc) (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 2 ≤ ΔPCS)
-    (A : SMCorruptAdv Sc Msg RK Sa W Ct) (hA : A.tStar = PMF.pure 1) :
+    (D : AEADDef W Ct AD) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 2 ≤ ΔPCS)
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) (hA : A.tStar = PMF.pure 1) :
     SM_Corrupt_Advantage (C.atInit i) R G D ΔFS ΔPCS A ≤
       ∑ b : Bool, PRFPRNG_Advantage R (smcRootRedFirst C R G D ΔFS ΔPCS b i A) +
         FSAEAD_Corrupt_Advantage G D (smcFSRed C R G D ΔFS ΔPCS (PMF.pure i) A) := by
@@ -632,7 +635,7 @@ theorem advantage_bind_split (w : PMF ℕ) (g₀ g₁ : ℕ → PMF Bool) (h0 : 
   exact (absDiff_add_add_le _ _ _ _ _).trans
     (add_le_add (absDiff_mul_le _ _ _ hw1) (absDiff_mul_le _ _ _ hS1))
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct]
 
 /-- A party with a sending chain has opened an epoch. -/
@@ -640,9 +643,9 @@ def smSndInv (s : SMSt Sc Msg RK Sa) : Prop := ∀ p, s.loc.snd p ≠ none → 1
 
 /-- Every call of the secure-messaging oracle keeps `smSndInv`. -/
 theorem smOracleOf_sndInv (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa)
-    (hs : smSndInv s) (q : SMQuery W) (x)
+    (hs : smSndInv s) (q : SMQuery W AD) (x)
     (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support) : smSndInv x.2 := by
   have hmono := smOracleOf_t_mono C R G D ΔFS ΔPCS t ideal root s q x hx
   intro p' hp'
@@ -699,9 +702,9 @@ theorem smOracleOf_sndInv (C : CKADef Sc Msg Key) [CKACoins C Rand]
 /-- **No challenge at epoch `0`.** Under `smSndInv`, the oracle with the challenge epoch `0` does
 not depend on the challenge mode. -/
 theorem smOracleOf_zero_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     (ΔFS ΔPCS : ℕ) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa)
-    (hs : smSndInv s) (q : SMQuery W) :
+    (hs : smSndInv s) (q : SMQuery W AD) :
     smOracleOf C R G D ΔFS ΔPCS 0 true root s q = smOracleOf C R G D ΔFS ΔPCS 0 false root s q := by
   cases q with
   | chall p m =>
@@ -719,13 +722,13 @@ theorem smOracleOf_zero_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
 variable [Fintype RK] [Nonempty RK]
 
 /-- The adversary `A` with the challenge epoch `1`. -/
-noncomputable def SMCorruptAdv.first (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
-    SMCorruptAdv Sc Msg RK Sa W Ct :=
+noncomputable def SMCorruptAdv.first (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
+    SMCorruptAdv Sc Msg RK Sa W Ct AD :=
   ⟨PMF.pure 1, A.play⟩
 
 /-- The adversary `A` with its challenge epoch conditioned on `t ≥ 2` (`tStarLater`). -/
-noncomputable def SMCorruptAdv.later (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
-    SMCorruptAdv Sc Msg RK Sa W Ct :=
+noncomputable def SMCorruptAdv.later (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
+    SMCorruptAdv Sc Msg RK Sa W Ct AD :=
   ⟨tStarLater A.tStar, A.play⟩
 
 /-- **Split of the challenge epoch.** If the CKA initialisation of `C` is the lift of `initP`,
@@ -734,8 +737,8 @@ advantage of `A.later` (challenge epoch conditioned on `t ≥ 2`); the challenge
 challenge. -/
 theorem SM_Corrupt_Advantage_le_split (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS : ℕ) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (ΔFS ΔPCS : ℕ) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) :
     SM_Corrupt_Advantage C R G D ΔFS ΔPCS A ≤
       SM_Corrupt_Advantage C R G D ΔFS ΔPCS A.first +
         SM_Corrupt_Advantage C R G D ΔFS ΔPCS A.later := by
@@ -765,7 +768,7 @@ end Split
 
 section DHPair
 
-variable {RK Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
+variable {RK Sa W Ct AD : Type} [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
   [Fintype Sa] [Nonempty Sa] [DecidableEq RK]
   {G : Type} [CG : CyclicGroup G] [DecidableEq G] {Sk : Type} [Fintype Sk] [Nonempty Sk]
   [Inhabited Sk]
@@ -784,8 +787,8 @@ under `decE` against the uniform exponent, and let `2 ≤ ΔFS`, `2 ≤ ΔPCS`. 
 theorem sm_dh_corrupt_advantage_le_pair (decE : Sk → CG.Exp) (c : SamplerCert CG.Exp)
     (hμ : c.μ = (SDistr.uniform Sk).bind fun x => SDistr.pure (decE x))
     (hν : c.ν = SDistr.uniform CG.Exp) (R : PRGDef (RK × G) (RK × Sa)) (F : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 2 ≤ ΔPCS) (x₀ : Sk)
-    (A : SMCorruptAdv (G × Sk) G RK Sa W Ct) :
+    (D : AEADDef W Ct AD) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 2 ≤ ΔPCS) (x₀ : Sk)
+    (A : SMCorruptAdv (G × Sk) G RK Sa W Ct AD) :
     SM_Corrupt_Advantage ((dhCKAOf G decE).atInit (dhPairInit decE x₀)) R F D ΔFS ΔPCS A ≤
       (∑ b : Bool, PRFPRNG_Advantage R
           (smcRootRedFirst (dhCKAOf G decE) R F D ΔFS ΔPCS b (dhPairInit decE x₀) A.first) +
@@ -819,6 +822,50 @@ theorem sm_dh_corrupt_advantage_le_pair (decE : Sk → CG.Exp) (c : SamplerCert 
     calc _ ≤ _ := add_le_add (hC true) (hC false)
       _ = _ := by ring
   exact add_le_add (add_le_add hsum le_rfl) le_rfl
+
+omit [DecidableEq G] [Fintype Sk] [Nonempty Sk] in
+/-- The states of the signed-prekey pair `dhPairInit decE x₀` are related by `dhKeyRel`: the
+public value held by the first sender is the public value of the key `x₀` of the first
+receiver. -/
+theorem dhPairInit_rel (decE : Sk → CG.Exp) (x₀ : Sk) :
+    ∀ i ∈ (PMF.pure (dhPairInit decE x₀)).support, dhKeyRel G decE i.2.1 i.2.2 := by
+  intro i hi
+  rw [PMF.support_pure, Set.mem_singleton_iff] at hi
+  subst hi
+  rfl
+
+/-- **Secure messaging with state corruption for the Diffie–Hellman double ratchet with message
+headers at the signed-prekey pair.** Under the hypotheses of `sm_dh_corrupt_advantage_le_pair`,
+for every adversary `A` of the game over `acdHdrSM ((dhCKAOf G decE).atInit (dhPairInit decE x₀))
+R F D hdrAD`, the advantage of `A` is at most the bound of `sm_dh_corrupt_advantage_le_pair` at
+the wrapper adversary `A.toHdr hdrAD` (`acdHdrSM_corruptAdvantage_eq` along `dhKeyRel`). -/
+theorem acdHdrSM_dh_corruptAdvantage_le_pair (decE : Sk → CG.Exp) (c : SamplerCert CG.Exp)
+    (hμ : c.μ = (SDistr.uniform Sk).bind fun x => SDistr.pure (decE x))
+    (hν : c.ν = SDistr.uniform CG.Exp) (R : PRGDef (RK × G) (RK × Sa)) (F : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct AD) (hdrAD : W → (G × ℕ) × ℕ → AD) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (hPCS : 2 ≤ ΔPCS) (x₀ : Sk) (A : SMSchemeAdv G W Ct (SMHdrSt (G × Sk) RK Sa G)) :
+    (acdHdrSM ((dhCKAOf G decE).atInit (dhPairInit decE x₀)) R F D hdrAD).corruptAdvantage
+        ΔFS ΔPCS A ≤
+      (∑ b : Bool, PRFPRNG_Advantage R
+          (smcRootRedFirst (dhCKAOf G decE) R F D ΔFS ΔPCS b (dhPairInit decE x₀)
+            (A.toHdr hdrAD).first) +
+        FSAEAD_Corrupt_Advantage F D
+          (smcFSRed (dhCKAOf G decE) R F D ΔFS ΔPCS (PMF.pure (dhPairInit decE x₀))
+            (A.toHdr hdrAD).first)) +
+      (∑ b : Bool, DDH_Advantage G
+          (ckaCorruptDDHRedAt decE x₀ ΔFS ΔPCS
+            (smcCKARed (Rand := Sk) R F D b (A.toHdr hdrAD).later)) +
+        8 * c.δ +
+        ∑ b : Bool, PRFPRNG_Advantage R
+          (smcRootRed (dhCKAOf G decE) R F D ΔFS ΔPCS b (PMF.pure (dhPairInit decE x₀))
+            (A.toHdr hdrAD).later) +
+        FSAEAD_Corrupt_Advantage F D
+          (smcFSRed (dhCKAOf G decE) R F D ΔFS ΔPCS (PMF.pure (dhPairInit decE x₀))
+            (A.toHdr hdrAD).later)) := by
+  rw [acdHdrSM_corruptAdvantage_eq ((dhCKAOf G decE).atInit (dhPairInit decE x₀))
+    ⟨(dhCKAOf_correct G decE).key, (dhCKAOf_correct G decE).next⟩
+    (PMF.pure (dhPairInit decE x₀)) (liftPMF_pure _) (dhPairInit_rel decE x₀)]
+  exact sm_dh_corrupt_advantage_le_pair decE c hμ hν R F D hFS hPCS x₀ _
 
 end DHPair
 

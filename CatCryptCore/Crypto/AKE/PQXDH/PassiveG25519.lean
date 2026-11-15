@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.AKE.PQXDHPassiveKeygen
 public import CatCryptCore.Crypto.Libcrux.Bridge_X25519Group
+import CatCryptCore.Tactics.Basic
 
 /-!
 # PQXDH over X25519 from a KEM assumption and DDH in the prime-order subgroup of Curve25519

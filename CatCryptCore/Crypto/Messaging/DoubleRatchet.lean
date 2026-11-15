@@ -22,7 +22,8 @@ instance encrypts the messages of the epoch under the outputs of the generator `
 The secure-messaging game `sm_real`/`sm_ideal` gives the adversary the public value of the CKA
 initialisation, the CKA messages of the `n` epochs and the ciphertexts of all epochs; in the
 ideal game the ciphertexts are uniform. This is the confidentiality of messages in epochs
-without state compromise.
+without state compromise. A message is a pair of a plaintext in `W` and associated data in the
+type `AD` of the AEAD `AEADDef W Ct AD`.
 
 The proof has three hybrid phases: the CKA keys are replaced by uniform keys one epoch at a
 time (CKA advantage of `smCKARed`), the outputs of the root KDF one epoch at a time (PRG
@@ -82,7 +83,7 @@ end HKDFRoot
 
 section Det
 
-variable {Msg Key RK Sa W Ct : Type} [SampleableType W] [SampleableType Ct]
+variable {Msg Key RK Sa W Ct AD : Type} [SampleableType W] [SampleableType Ct]
 
 /-- The FS-AEAD states of the epochs: from the root key `rk`, the root KDF `R` maps the root key
 and the CKA key of each epoch to the next root key and the FS-AEAD state of the epoch. -/
@@ -92,25 +93,25 @@ def rootRun (R : PRGDef (RK × Key) (RK × Sa)) : RK → List Key → List Sa
 
 /-- The ciphertexts of the messages `ms` of one epoch, encrypted under the outputs of the
 generator `G` from the FS-AEAD state `sa`. -/
-def encEpoch (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (sa : Sa) (ms : List (W × W)) :
+def encEpoch (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (sa : Sa) (ms : List (W × AD)) :
     List Ct :=
   encAll D (fsprgRun G ms.length sa).1 ms
 
 /-- The ciphertexts of the epochs from their FS-AEAD states `sas`, epoch by epoch. -/
-def smCts (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (sas : List Sa)
-    (msgs : List (List (W × W))) : List (List Ct) :=
+def smCts (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (sas : List Sa)
+    (msgs : List (List (W × AD))) : List (List Ct) :=
   List.zipWith (encEpoch G D) sas msgs
 
 /-- The number of messages of epoch `j`. -/
-def epochLen (msgs : List (List (W × W))) (j : ℕ) : ℕ := (msgs.getD j []).length
+def epochLen (msgs : List (List (W × AD))) (j : ℕ) : ℕ := (msgs.getD j []).length
 
 /-- Uniform ciphertexts of the first `t` epochs: for each epoch `j < t`, one ciphertext per
 message. -/
-abbrev IdealCts (Ct : Type) (msgs : List (List (W × W))) (t : ℕ) : Type :=
+abbrev IdealCts (Ct : Type) (msgs : List (List (W × AD))) (t : ℕ) : Type :=
   (j : Fin t) → Fin (epochLen msgs j) → Ct
 
 /-- The ciphertext lists of the vector `v` of uniform ciphertexts. -/
-def ctsOf {msgs : List (List (W × W))} {t : ℕ} (v : IdealCts Ct msgs t) : List (List Ct) :=
+def ctsOf {msgs : List (List (W × AD))} {t : ℕ} (v : IdealCts Ct msgs t) : List (List Ct) :=
   List.ofFn fun j => List.ofFn (v j)
 
 /-- The view of the secure-messaging adversary: the public value of the CKA initialisation and
@@ -121,7 +122,7 @@ end Det
 
 /-! ## The secure-messaging game -/
 
-variable {Sc Msg Key RK Sa W Ct : Type} [Fintype Key] [Nonempty Key] [Fintype RK]
+variable {Sc Msg Key RK Sa W Ct AD : Type} [Fintype Key] [Nonempty Key] [Fintype RK]
   [Nonempty RK] [Fintype Sa] [Nonempty Sa] [SampleableType W] [SampleableType Ct]
 
 /-- The public value of the initialisation and the messages of `n` epochs of `C`. -/
@@ -132,7 +133,7 @@ noncomputable def ckaPub (C : CKADef Sc Msg Key) (n : ℕ) : SPComp (Msg × List
 /-- Secure-messaging real game over the epochs with the messages `msgs`: a CKA run of one
 epoch per entry of `msgs`, a uniform initial root key, and the ciphertexts of the epochs. -/
 noncomputable def sm_real (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) :
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) :
     SPComp (SMView Msg Ct) :=
   SPComp.bind C.init fun i =>
     SPComp.bind (ckaRun C msgs.length i.2.1 i.2.2) fun p =>
@@ -140,7 +141,7 @@ noncomputable def sm_real (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK ×
         SPComp.pure ((i.1, p.1.map Prod.fst), smCts G D (rootRun R rk (p.1.map Prod.snd)) msgs)
 
 /-- Secure-messaging ideal game: the CKA run, and uniform ciphertexts. -/
-noncomputable def sm_ideal (C : CKADef Sc Msg Key) (msgs : List (List (W × W))) :
+noncomputable def sm_ideal (C : CKADef Sc Msg Key) (msgs : List (List (W × AD))) :
     SPComp (SMView Msg Ct) :=
   SPComp.bind (ckaPub C msgs.length) fun c =>
     SPComp.bind (SPComp.sample (IdealCts Ct msgs msgs.length)) fun v =>
@@ -148,7 +149,7 @@ noncomputable def sm_ideal (C : CKADef Sc Msg Key) (msgs : List (List (W × W)))
 
 /-- Secure-messaging confidentiality advantage of the distinguisher `A`. -/
 noncomputable def SM_Advantage (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W)))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD)))
     (A : SMView Msg Ct → SPComp Bool) : ℝ≥0∞ :=
   AdvantageA (sm_real C R G D msgs) (sm_ideal C msgs) A
 
@@ -168,7 +169,7 @@ omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] [SampleableType Ct]
 the heap does not touch the heap. -/
 theorem sm_real_isPure (C : CKADef Sc Msg Key) (hi : SPComp.IsPure C.init)
     (hs : ∀ s, SPComp.IsPure (C.send s)) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) :
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) :
     SPComp.IsPure (sm_real C R G D msgs) :=
   SPComp.bind_isPure hi fun i =>
     SPComp.bind_isPure (ckaRun_isPure C hs msgs.length i.2.1 i.2.2) fun _ =>
@@ -179,7 +180,7 @@ omit [Fintype Key] [Nonempty Key] [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonem
 /-- The ideal secure-messaging game of a CKA whose initialisation and send steps do not touch
 the heap does not touch the heap. -/
 theorem sm_ideal_isPure (C : CKADef Sc Msg Key) (hi : SPComp.IsPure C.init)
-    (hs : ∀ s, SPComp.IsPure (C.send s)) (msgs : List (List (W × W))) :
+    (hs : ∀ s, SPComp.IsPure (C.send s)) (msgs : List (List (W × AD))) :
     SPComp.IsPure (sm_ideal (Ct := Ct) C msgs) :=
   SPComp.bind_isPure (ckaPub_isPure C hi hs msgs.length) fun _ =>
     SPComp.bind_isPure (SPComp.sample_isPure _) fun _ => SPComp.pure_isPure _
@@ -203,8 +204,8 @@ noncomputable def smPubRedOf {X Y P L : Type} [Fintype X] [Nonempty X] (pub : SP
 
 /-- The view of the CKA reduction at epoch `t` with `m` epochs after it, from the uniform keys
 `x.1` of the epochs before `t`, the root key `x.2` and the CKA view `v`. -/
-def smCKAView (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) (t : ℕ) (x : (Fin t → Key) × RK) (v : CKAView Msg Key) :
+def smCKAView (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (msgs : List (List (W × AD))) (t : ℕ) (x : (Fin t → Key) × RK) (v : CKAView Msg Key) :
     SMView Msg Ct :=
   ((v.1, v.2.1.map Prod.fst ++ v.2.2.1.1 :: v.2.2.2.map Prod.fst),
     smCts G D (rootRun R x.2 (List.ofFn x.1 ++ v.2.2.1.2 :: v.2.2.2.map Prod.snd)) msgs)
@@ -212,34 +213,34 @@ def smCKAView (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D :
 /-- The CKA distinguisher of epoch `t`: uniform keys for the epochs before `t`, the challenge
 key for epoch `t`, the real keys after it. -/
 noncomputable def smCKARed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (msgs : List (List (W × W))) (t : ℕ)
+    (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t : ℕ)
     (A : SMView Msg Ct → SPComp Bool) : CKAView Msg Key → SPComp Bool :=
   smSampleRedOf (smCKAView R G D msgs t) A
 
 /-- The ciphertexts of the root-KDF reduction at epoch `t` with `r` epochs after it, from the
 uniform FS-AEAD states `x.1` of the epochs before `t`, the uniform CKA keys `x.2` after it and
 the challenge `y` of the next root key and the FS-AEAD state of epoch `t`. -/
-def smRootView (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) (t r : ℕ) (x : (Fin t → Sa) × (Fin r → Key)) (y : RK × Sa) :
+def smRootView (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (msgs : List (List (W × AD))) (t r : ℕ) (x : (Fin t → Sa) × (Fin r → Key)) (y : RK × Sa) :
     List (List Ct) :=
   smCts G D (List.ofFn x.1 ++ y.2 :: rootRun R y.1 (List.ofFn x.2)) msgs
 
 /-- The PRG distinguisher of the root KDF at epoch `t`. -/
 noncomputable def smRootRed (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t r : ℕ)
     (A : SMView Msg Ct → SPComp Bool) : RK × Sa → SPComp Bool :=
   smPubRedOf (ckaPub C msgs.length) (smRootView R G D msgs t r) A
 
 /-- The ciphertexts of the FS-AEAD reduction at epoch `t` with `r` epochs after it, from the
 uniform ciphertexts `x.1` of the epochs before `t`, the uniform FS-AEAD states `x.2` after it
 and the FS-AEAD challenge `y`. -/
-def smAEADView (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W)))
+def smAEADView (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD)))
     (t r : ℕ) (x : IdealCts Ct msgs t × (Fin r → Sa)) (y : List Ct × Sa) : List (List Ct) :=
   ctsOf x.1 ++ y.1 :: smCts G D (List.ofFn x.2) (msgs.drop (t + 1))
 
 /-- The FS-AEAD distinguisher of epoch `t`. -/
-noncomputable def smAEADRed (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) (t r : ℕ) (A : SMView Msg Ct → SPComp Bool) :
+noncomputable def smAEADRed (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (msgs : List (List (W × AD))) (t r : ℕ) (A : SMView Msg Ct → SPComp Bool) :
     List Ct × Sa → SPComp Bool :=
   smPubRedOf (ckaPub C msgs.length) (smAEADView G D msgs t r) A
 
@@ -247,7 +248,7 @@ noncomputable def smAEADRed (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa)) (D
 
 /-- CKA hybrid `t`: the CKA keys of the first `t` epochs are uniform. -/
 noncomputable def smHybK (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t : ℕ) :
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t : ℕ) :
     SPComp (SMView Msg Ct) :=
   SPComp.bind C.init fun i =>
     SPComp.bind (ckaRun C msgs.length i.2.1 i.2.2) fun p =>
@@ -259,7 +260,7 @@ noncomputable def smHybK (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × 
 /-- Root hybrid `(t, r)`: the FS-AEAD states of the first `t` epochs are uniform, those of the
 next `r` epochs come from the root chain from a uniform root key with uniform CKA keys. -/
 noncomputable def smHybP (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ) :
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t r : ℕ) :
     SPComp (SMView Msg Ct) :=
   SPComp.bind (SPComp.sample (Fin t → Sa)) fun u =>
     SPComp.bind (SPComp.sample (Fin r → Key)) fun ks =>
@@ -269,8 +270,8 @@ noncomputable def smHybP (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × 
 
 /-- FS-AEAD hybrid `(t, r)`: the ciphertexts of the first `t` epochs are uniform, those of the
 next `r` epochs are encryptions from uniform FS-AEAD states. -/
-noncomputable def smHybF (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) (t r : ℕ) : SPComp (SMView Msg Ct) :=
+noncomputable def smHybF (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (msgs : List (List (W × AD))) (t r : ℕ) : SPComp (SMView Msg Ct) :=
   SPComp.bind (SPComp.sample (IdealCts Ct msgs t)) fun vc =>
     SPComp.bind (SPComp.sample (Fin r → Sa)) fun vs =>
       SPComp.bind (ckaPub C msgs.length) fun c =>
@@ -312,7 +313,7 @@ theorem ckaRun_bind_congr {β : Type} (C : CKADef Sc Msg Key) (n : ℕ) (s r : S
 omit [Fintype Sa] [Nonempty Sa] [SampleableType Ct] in
 /-- CKA hybrid `0` is the real game. -/
 theorem smHybK_zero (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) :
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) :
     smHybK C R G D msgs 0 = sm_real C R G D msgs := by
   simp only [smHybK, sm_real, sample_bind_unique, List.ofFn_zero, List.nil_append,
     List.drop_zero]
@@ -320,7 +321,7 @@ theorem smHybK_zero (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
 omit [Fintype Sa] [Nonempty Sa] [SampleableType Ct] in
 /-- CKA hybrid `t` is the real CKA game at the challenge epoch `t` of `smCKARed`. -/
 theorem smHybK_bind_eq_real (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t m : ℕ)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t m : ℕ)
     (hm : msgs.length = t + (m + 1)) (A : SMView Msg Ct → SPComp Bool) :
     (smHybK C R G D msgs t).bind A = (cka_real C t m).bind (smCKARed R G D msgs t A) := by
   simp only [smHybK, cka_real, smCKARed, smSampleRedOf, smCKAView, SPComp.monad_bind_eq,
@@ -340,7 +341,7 @@ theorem smHybK_bind_eq_real (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK 
 omit [Fintype Sa] [Nonempty Sa] [SampleableType Ct] in
 /-- CKA hybrid `t + 1` is the ideal CKA game at the challenge epoch `t` of `smCKARed`. -/
 theorem smHybK_succ_bind_eq_ideal (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t m : ℕ)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t m : ℕ)
     (hm : msgs.length = t + (m + 1)) (A : SMView Msg Ct → SPComp Bool) :
     (smHybK C R G D msgs (t + 1)).bind A =
       (cka_ideal C t m).bind (smCKARed R G D msgs t A) := by
@@ -366,7 +367,7 @@ theorem smHybK_succ_bind_eq_ideal (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key
 omit [SampleableType Ct] in
 /-- CKA hybrid `n` is root hybrid `(0, n)`. -/
 theorem smHybK_self_bind (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W)))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD)))
     (A : SMView Msg Ct → SPComp Bool) :
     (smHybK C R G D msgs msgs.length).bind A = (smHybP C R G D msgs 0 msgs.length).bind A := by
   have h : (smHybK C R G D msgs msgs.length).bind A =
@@ -390,7 +391,7 @@ theorem smHybK_self_bind (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × 
 omit [SampleableType Ct] in
 /-- Root hybrid `(t, r + 1)` is the real PRG game of `smRootRed`. -/
 theorem smHybP_bind_eq_real (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t r : ℕ)
     (A : SMView Msg Ct → SPComp Bool) :
     (smHybP C R G D msgs t (r + 1)).bind A = (prg_real R).bind (smRootRed C R G D msgs t r A) := by
   simp only [smHybP, prg_real, smRootRed, smPubRedOf, smRootView, SPComp.monad_bind_eq,
@@ -405,7 +406,7 @@ theorem smHybP_bind_eq_real (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK 
 omit [SampleableType Ct] in
 /-- Root hybrid `(t + 1, r)` is the ideal PRG game of `smRootRed`. -/
 theorem smHybP_succ_bind_eq_ideal (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t r : ℕ)
     (A : SMView Msg Ct → SPComp Bool) :
     (smHybP C R G D msgs (t + 1) r).bind A =
       (prg_ideal (Output := RK × Sa)).bind (smRootRed C R G D msgs t r A) := by
@@ -419,7 +420,7 @@ theorem smHybP_succ_bind_eq_ideal (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key
 
 /-- Root hybrid `(n, 0)` is FS-AEAD hybrid `(0, n)`. -/
 theorem smHybP_self_bind (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W)))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD)))
     (A : SMView Msg Ct → SPComp Bool) :
     (smHybP C R G D msgs msgs.length 0).bind A = (smHybF C G D msgs 0 msgs.length).bind A := by
   simp only [smHybP, smHybF, SPComp.bind_assoc, SPComp.pure_bind, sample_bind_unique,
@@ -432,14 +433,14 @@ omit [Fintype Key] [Nonempty Key] [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonem
   [SampleableType Ct] in
 /-- Uniform ciphertexts of `t + 1` epochs are those of epoch `t` and those of the first `t`
 epochs. -/
-def idealCtsSnoc (msgs : List (List (W × W))) (t : ℕ) :
+def idealCtsSnoc (msgs : List (List (W × AD))) (t : ℕ) :
     (Fin (msgs.getD t []).length → Ct) × IdealCts Ct msgs t ≃ IdealCts Ct msgs (t + 1) :=
   Fin.snocEquiv fun j : Fin (t + 1) => Fin (epochLen msgs j) → Ct
 
 omit [Fintype Key] [Nonempty Key] [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonempty Sa]
   [SampleableType W] [SampleableType Ct] in
 /-- The ciphertext lists of uniform ciphertexts of `t + 1` epochs, split at the last epoch. -/
-theorem ctsOf_idealCtsSnoc (msgs : List (List (W × W))) (t : ℕ)
+theorem ctsOf_idealCtsSnoc (msgs : List (List (W × AD))) (t : ℕ)
     (a : Fin (msgs.getD t []).length → Ct) (v : IdealCts Ct msgs t) :
     ctsOf (idealCtsSnoc msgs t (a, v)) = ctsOf v ++ [List.ofFn a] := by
   have h : idealCtsSnoc msgs t (a, v) =
@@ -451,8 +452,8 @@ theorem ctsOf_idealCtsSnoc (msgs : List (List (W × W))) (t : ℕ)
 
 omit [Fintype Key] [Nonempty Key] in
 /-- FS-AEAD hybrid `(t, r + 1)` is the real FS-AEAD game of epoch `t` of `smAEADRed`. -/
-theorem smHybF_bind_eq_real (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) {t : ℕ} (ht : t < msgs.length) (r : ℕ)
+theorem smHybF_bind_eq_real (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (msgs : List (List (W × AD))) {t : ℕ} (ht : t < msgs.length) (r : ℕ)
     (A : SMView Msg Ct → SPComp Bool) :
     (smHybF C G D msgs t (r + 1)).bind A =
       (fsaead_real G D (msgs.getD t [])).bind (smAEADRed C G D msgs t r A) := by
@@ -470,7 +471,7 @@ theorem smHybF_bind_eq_real (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa)) (D
 omit [Fintype Key] [Nonempty Key] in
 /-- FS-AEAD hybrid `(t + 1, r)` is the ideal FS-AEAD game of epoch `t` of `smAEADRed`. -/
 theorem smHybF_succ_bind_eq_ideal (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t r : ℕ)
     (A : SMView Msg Ct → SPComp Bool) :
     (smHybF C G D msgs (t + 1) r).bind A =
       (fsaead_ideal (St := Sa) (msgs.getD t [])).bind (smAEADRed C G D msgs t r A) := by
@@ -483,8 +484,8 @@ theorem smHybF_succ_bind_eq_ideal (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × S
 
 omit [Fintype Key] [Nonempty Key] in
 /-- FS-AEAD hybrid `(n, 0)` is the ideal game. -/
-theorem smHybF_self (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) :
+theorem smHybF_self (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (msgs : List (List (W × AD))) :
     smHybF C G D msgs msgs.length 0 = sm_ideal C msgs := by
   simp only [smHybF, sm_ideal, sample_bind_unique, List.ofFn_zero, List.drop_length, smCts,
     List.zipWith_nil_left, List.append_nil]
@@ -498,7 +499,7 @@ over the epochs `t` of the CKA advantage of `smCKARed` at the challenge epoch `t
 advantage of the root KDF `R` at `smRootRed`, and the FS-AEAD advantage of the messages of
 epoch `t` at `smAEADRed` (Alwen, Coretti and Dodis, Theorem 6, confidentiality part). -/
 theorem sm_advantage_le (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W)))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD)))
     (A : SMView Msg Ct → SPComp Bool) :
     SM_Advantage C R G D msgs A ≤
       ∑ t ∈ Finset.range msgs.length,
@@ -560,8 +561,8 @@ omit [Fintype Key] [Nonempty Key] in
 `dhCKA` over the cyclic group `G`, the CKA terms of `sm_advantage_le` are the DDH advantages
 of `ckaDDHRed` at the reductions `smCKARed`. -/
 theorem sm_dh_advantage_le (G : Type) [CG : CyclicGroup G]
-    (R : PRGDef (RK × G) (RK × Sa)) (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) (A : SMView G Ct → SPComp Bool) :
+    (R : PRGDef (RK × G) (RK × Sa)) (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (msgs : List (List (W × AD))) (A : SMView G Ct → SPComp Bool) :
     SM_Advantage (dhCKA G) R F D msgs A ≤
       ∑ t ∈ Finset.range msgs.length,
           DDH_Advantage G (ckaDDHRed t (msgs.length - (t + 1)) (smCKARed R F D msgs t A)) +
@@ -622,7 +623,7 @@ theorem smPubRedOf.tree.timeBound_timed {X Y P L : Type} [Fintype X] [Nonempty X
 /-- The costed form of `smCKARed`: the costed tree of `smSampleRedOf` at the view `smCKAView`
 of cost `viewCost`. -/
 noncomputable def smCKARed.timed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (msgs : List (List (W × W))) (t : ℕ)
+    (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t : ℕ)
     (viewCost : (Fin t → Key) × RK → CKAView Msg Key → ℕ)
     (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ) (v : CKAView Msg Key) :
     ℕ × SPTree.Timed Bool :=
@@ -632,7 +633,7 @@ omit [Fintype Sa] [Nonempty Sa] [SampleableType Ct] in
 /-- The costed form of `smCKARed` erases and compiles to `smCKARed` at the erased
 adversary. -/
 theorem smCKARed.erase_timed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (msgs : List (List (W × W))) (t : ℕ)
+    (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t : ℕ)
     (viewCost : (Fin t → Key) × RK → CKAView Msg Key → ℕ)
     (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ) (v : CKAView Msg Key) :
     (smCKARed.timed R G D msgs t viewCost A ACost v).2.erase.compile =
@@ -645,7 +646,7 @@ omit [Fintype Sa] [Nonempty Sa] [SampleableType Ct] in
 `smCKAView` of cost at most `tv`; the view costs the root chain and the encryptions of the
 epochs. -/
 theorem smCKARed.timeBound_timed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (msgs : List (List (W × W))) (t : ℕ)
+    (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t : ℕ)
     (viewCost : (Fin t → Key) × RK → CKAView Msg Key → ℕ)
     (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ) {T a tv : ℕ}
     (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ a) (hv : ∀ x v, viewCost x v ≤ tv)
@@ -656,7 +657,7 @@ theorem smCKARed.timeBound_timed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef
 /-- The costed form of `smRootRed`: the costed tree of `smPubRedOf` at the view `smRootView`
 of cost `viewCost`, with the costed CKA run `pubT`. -/
 noncomputable def smRootRed.timed (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t r : ℕ)
     (viewCost : (Fin t → Sa) × (Fin r → Key) → RK × Sa → ℕ)
     (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ)
     (pubT : SPTree.Timed (Msg × List Msg)) (y : RK × Sa) : ℕ × SPTree.Timed Bool :=
@@ -667,7 +668,7 @@ omit [Fintype RK] [Nonempty RK] [SampleableType Ct] in
 /-- The costed form of `smRootRed` with a costed CKA run that compiles to `ckaPub` erases and
 compiles to `smRootRed` at the erased adversary. -/
 theorem smRootRed.erase_timed (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t r : ℕ)
     (viewCost : (Fin t → Sa) × (Fin r → Key) → RK × Sa → ℕ)
     (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ)
     (pubT : SPTree.Timed (Msg × List Msg)) (hpub : pubT.erase.compile = ckaPub C msgs.length)
@@ -681,7 +682,7 @@ omit [Fintype RK] [Nonempty RK] [SampleableType Ct] in
 /-- **Time of `smRootRed`**, the bound of `smPubRedOf.tree.timeBound_timed` at the view
 `smRootView` of cost at most `tv` and the costed CKA run of time at most `tp`. -/
 theorem smRootRed.timeBound_timed (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t r : ℕ)
     (viewCost : (Fin t → Sa) × (Fin r → Key) → RK × Sa → ℕ)
     (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ)
     (pubT : SPTree.Timed (Msg × List Msg)) {T a tv tp : ℕ} (hA : ∀ x, (A x).time ≤ T)
@@ -694,7 +695,7 @@ theorem smRootRed.timeBound_timed (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key
 /-- The costed form of `smAEADRed`: the costed tree of `smPubRedOf` at the view `smAEADView`
 of cost `viewCost`, with the costed CKA run `pubT`. -/
 noncomputable def smAEADRed.timed (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t r : ℕ)
     (viewCost : IdealCts Ct msgs t × (Fin r → Sa) → List Ct × Sa → ℕ)
     (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ)
     (pubT : SPTree.Timed (Msg × List Msg)) (y : List Ct × Sa) : ℕ × SPTree.Timed Bool :=
@@ -705,7 +706,7 @@ omit [Fintype Key] [Nonempty Key] in
 /-- The costed form of `smAEADRed` with a costed CKA run that compiles to `ckaPub` erases and
 compiles to `smAEADRed` at the erased adversary. -/
 theorem smAEADRed.erase_timed (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t r : ℕ)
     (viewCost : IdealCts Ct msgs t × (Fin r → Sa) → List Ct × Sa → ℕ)
     (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ)
     (pubT : SPTree.Timed (Msg × List Msg)) (hpub : pubT.erase.compile = ckaPub C msgs.length)
@@ -719,7 +720,7 @@ omit [Fintype Key] [Nonempty Key] in
 /-- **Time of `smAEADRed`**, the bound of `smPubRedOf.tree.timeBound_timed` at the view
 `smAEADView` of cost at most `tv` and the costed CKA run of time at most `tp`. -/
 theorem smAEADRed.timeBound_timed (C : CKADef Sc Msg Key) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (D : AEADDef W Ct AD) (msgs : List (List (W × AD))) (t r : ℕ)
     (viewCost : IdealCts Ct msgs t × (Fin r → Sa) → List Ct × Sa → ℕ)
     (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ)
     (pubT : SPTree.Timed (Msg × List Msg)) {T a tv tp : ℕ} (hA : ∀ x, (A x).time ≤ T)
