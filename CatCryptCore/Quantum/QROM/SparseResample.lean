@@ -104,8 +104,7 @@ theorem prOutMRGen_resample_oracle_le {Ω : Type} [Fintype Ω] (A : QAdvMRGen m 
     refine (sum_mul_rpow_half_le μ _ hμ).trans ?_
     have hsum : ∑ ω, μ ω * (Q * prFindMRGen A H₀ f (D ω)) =
         Q * ∑ ω, μ ω * prFindMRGen A H₀ f (D ω) := by
-      rw [Finset.mul_sum]
-      exact Finset.sum_congr rfl fun _ _ => by ring
+      simp only [Finset.mul_sum, mul_left_comm]
     rw [hsum]
     gcongr
   have harith : 4 * (Q * (4 * Q * lam)) ^ (1 / 2 : ℝ) = 8 * Q * lam ^ (1 / 2 : ℝ) := by
@@ -124,8 +123,7 @@ theorem prOutMRGen_resample_oracle_le {Ω : Type} [Fintype Ω] (A : QAdvMRGen m 
         gcongr with ω
         exact (absDiff_mul_left_le _ _ _).trans (by gcongr; exact hstep ω)
     _ = 4 * ∑ ω, μ ω * (Q * prFindMRGen A H₀ f (D ω)) ^ (1 / 2 : ℝ) := by
-        rw [Finset.mul_sum]
-        exact Finset.sum_congr rfl fun ω _ => by ring
+        simp only [Finset.mul_sum, mul_left_comm]
     _ ≤ 4 * (Q * (4 * Q * lam)) ^ (1 / 2 : ℝ) := by gcongr
     _ = 8 * Q * lam ^ (1 / 2 : ℝ) := harith
 

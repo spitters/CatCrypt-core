@@ -97,19 +97,13 @@ theorem nrm_sub_mulVec_le_two_nrm_proj {O₁ O₂ P : Matrix (Fin d) (Fin d) ℂ
     (hagree : O₁ * (1 - P) = O₂ * (1 - P)) (v : Fin d → ℂ) :
     nrm ((O₁ - O₂) *ᵥ v) ≤ 2 * nrm (P *ᵥ v) := by
   have hP : O₁ - O₂ = (O₁ - O₂) * P := by
-    have h0 : (O₁ - O₂) * (1 - P) = 0 := by rw [sub_mul, hagree, sub_self]
-    calc O₁ - O₂ = (O₁ - O₂) * P + (O₁ - O₂) * (1 - P) := by
-          rw [← mul_add, add_sub_cancel, mul_one]
-      _ = (O₁ - O₂) * P := by rw [h0, add_zero]
+    rw [← sub_eq_zero, ← mul_one_sub, sub_mul, hagree, sub_self]
   rw [hP, ← mulVec_mulVec, sub_mulVec]
   calc nrm (O₁ *ᵥ (P *ᵥ v) - O₂ *ᵥ (P *ᵥ v))
       ≤ nrm (O₁ *ᵥ (P *ᵥ v)) + nrm (O₂ *ᵥ (P *ᵥ v)) := by
-        unfold nrm
-        rw [WithLp.toLp_sub]
-        exact norm_sub_le _ _
+        simpa only [nrm, WithLp.toLp_sub] using norm_sub_le _ _
     _ = 2 * nrm (P *ᵥ v) := by
-        rw [nrm_mulVec_of_mem_unitaryGroup hO₁, nrm_mulVec_of_mem_unitaryGroup hO₂]
-        ring
+        rw [nrm_mulVec_of_mem_unitaryGroup hO₁, nrm_mulVec_of_mem_unitaryGroup hO₂, two_mul]
 
 /-- The real inequality behind `abs_nrm_sq_proj_sub_le`: with `a² + c² = r²`,
 `b² + e² = r²`, `|a − b| ≤ u`, `|c − e| ≤ v` and `u² + v² = T²`,
@@ -192,9 +186,8 @@ theorem abs_nrm_sq_runOp_sub_le (B : QAdv m n w q) (H₁ H₂ : Fin m → Fin n)
       (oracleU_mul_one_sub_projS (w := w) H₁ H₂ S hS) _
   calc _ ≤ nrm (runOp B H₁ *ᵥ ψ) * nrm (runOp B H₁ *ᵥ ψ - runOp B H₂ *ᵥ ψ) :=
         abs_nrm_sq_proj_sub_le B.final_mul_self B.final_conjTranspose (h₁.trans h₂.symm)
-    _ ≤ nrm ψ * (2 * ∑ j, nrm (projS m n w S *ᵥ plainState B H₂ ψ j)) := by
-        rw [h₁]
-        exact mul_le_mul_of_nonneg_left hdiff (nrm_nonneg ψ)
+    _ ≤ nrm ψ * (2 * ∑ j, nrm (projS m n w S *ᵥ plainState B H₂ ψ j)) :=
+        mul_le_mul h₁.le hdiff (nrm_nonneg _) (nrm_nonneg _)
     _ = _ := by ring
 
 /-- The query hybrid for an adversary with any initial state: two oracles that
@@ -208,9 +201,8 @@ theorem absDiff_prOut_le_two_sum_rpow_guessProb (B : QAdv m n w q) (H₁ H₂ : 
   have hout : ∀ H, prOut B H =
       ENNReal.ofReal (∑ k, nrm (B.final *ᵥ (runOp B H *ᵥ ψ k)) ^ 2) := by
     intro H
-    unfold prOut prTrue_Q
-    rw [run_branch_true, hρ, trace_mul_sum_vecMulVec_mul_conjTranspose, Complex.ofReal_re]
-    simp only [mulVec_mulVec]
+    simp only [prOut, prTrue_Q, run_branch_true, hρ, trace_mul_sum_vecMulVec_mul_conjTranspose,
+      Complex.ofReal_re, mulVec_mulVec]
   have hnorm : ∑ k, nrm (ψ k) ^ 2 = 1 := by
     have h := B.init.tr_one
     rw [hρ, trace_sum_vecMulVec] at h
@@ -221,8 +213,7 @@ theorem absDiff_prOut_le_two_sum_rpow_guessProb (B : QAdv m n w q) (H₁ H₂ : 
     guessProb_eq_sum_nrm_sq B H₂ S j ψ hρ
   have hcs : ∀ j, ∑ k, nrm (ψ k) * δ j k ≤ Real.sqrt (∑ k, δ j k ^ 2) := by
     intro j
-    have h := Real.sum_mul_le_sqrt_mul_sqrt Finset.univ (fun k => nrm (ψ k)) (δ j)
-    rwa [hnorm, Real.sqrt_one, one_mul] at h
+    simpa [hnorm] using Real.sum_mul_le_sqrt_mul_sqrt Finset.univ (fun k => nrm (ψ k)) (δ j)
   have hreal : |∑ k, nrm (B.final *ᵥ (runOp B H₁ *ᵥ ψ k)) ^ 2 -
       ∑ k, nrm (B.final *ᵥ (runOp B H₂ *ᵥ ψ k)) ^ 2| ≤
       2 * ∑ j, Real.sqrt (∑ k, δ j k ^ 2) := by
@@ -235,19 +226,15 @@ theorem absDiff_prOut_le_two_sum_rpow_guessProb (B : QAdv m n w q) (H₁ H₂ : 
       _ = 2 * ∑ j, ∑ k, nrm (ψ k) * δ j k := by
           simp only [Finset.mul_sum, mul_assoc]
           exact Finset.sum_comm
-      _ ≤ 2 * ∑ j, Real.sqrt (∑ k, δ j k ^ 2) := by
-          gcongr with j
-          exact hcs j
+      _ ≤ 2 * ∑ j, Real.sqrt (∑ k, δ j k ^ 2) := by grw [Finset.sum_le_sum fun j _ => hcs j]
   rw [hout, hout]
   refine (absDiff_ofReal_le (Finset.sum_nonneg fun k _ => sq_nonneg _)
     (Finset.sum_nonneg fun k _ => sq_nonneg _)).trans
     ((ENNReal.ofReal_le_ofReal hreal).trans (le_of_eq ?_))
   rw [ENNReal.ofReal_mul (by norm_num), ENNReal.ofReal_ofNat,
     ENNReal.ofReal_sum_of_nonneg (fun j _ => Real.sqrt_nonneg _)]
-  congr 1
-  refine Finset.sum_congr rfl fun j _ => ?_
-  rw [hguess j, Real.sqrt_eq_rpow,
-    ENNReal.ofReal_rpow_of_nonneg (Finset.sum_nonneg fun k _ => sq_nonneg _) (by norm_num)]
+  simp only [hguess, Real.sqrt_eq_rpow, ENNReal.ofReal_rpow_of_nonneg
+    (Finset.sum_nonneg fun k _ => sq_nonneg _) (by norm_num : (0 : ℝ) ≤ 1 / 2)]
 
 end Adv
 
@@ -305,51 +292,30 @@ theorem prOutMRGen_resample_gentle_le {Ω : Type} [Fintype Ω] (A : QAdvMRGen m 
           refine sum_mul_boole_mul_le_of_fiber (fun ω => (H₂ ω, f ω)) μ (fun ω => g ω j x)
             (fun ω => x ∈ D ω) lam ?_ ?_
           · intro ω ω' h
-            simp only [Prod.mk.injEq] at h
-            simp only [g, h.1, h.2]
+            simp_all only [Prod.mk.injEq, g]
           · intro ω₀
-            have e₁ : ∀ ω, μ ω * (if (H₂ ω, f ω) = (H₂ ω₀, f ω₀) then 1 else 0) *
-                (if x ∈ D ω then 1 else 0) =
-                μ ω * (if H₂ ω = H₂ ω₀ ∧ f ω = f ω₀ ∧ x ∈ D ω then 1 else 0) := by
-              intro ω
-              simp only [Prod.mk.injEq]
-              split_ifs <;> simp_all
-            have e₂ : ∀ ω, μ ω * (if (H₂ ω, f ω) = (H₂ ω₀, f ω₀) then 1 else 0) =
-                μ ω * (if H₂ ω = H₂ ω₀ ∧ f ω = f ω₀ then 1 else 0) := by
-              intro ω
-              simp only [Prod.mk.injEq]
-            rw [Finset.sum_congr rfl fun ω _ => e₁ ω, Finset.sum_congr rfl fun ω _ => e₂ ω]
-            exact hsparse x (H₂ ω₀) (f ω₀)
+            simpa only [Prod.mk.injEq, mul_assoc, ite_zero_mul_ite_zero, mul_one, and_assoc] using
+              hsparse x (H₂ ω₀) (f ω₀)
       _ = lam * ∑ ω, μ ω * ∑ x, g ω j x := by
-          rw [← Finset.mul_sum]
-          congr 1
-          simp only [Finset.mul_sum]
-          exact Finset.sum_comm
+          simp only [Finset.mul_sum]; exact Finset.sum_comm
       _ ≤ lam * ∑ ω, μ ω * 1 := by
           gcongr with ω
           exact sum_guessProb_singleton_le_one_mixed _ _ j
       _ = lam := by simp only [mul_one, hμ]
-  have hjensen : ∀ j, ∑ ω, μ ω * G ω j ^ (1 / 2 : ℝ) ≤ lam ^ (1 / 2 : ℝ) := by
-    intro j
-    refine (sum_mul_rpow_half_le μ _ hμ).trans ?_
-    gcongr
-    exact havg j
+  have hjensen : ∀ j, ∑ ω, μ ω * G ω j ^ (1 / 2 : ℝ) ≤ lam ^ (1 / 2 : ℝ) := fun j =>
+    (sum_mul_rpow_half_le μ _ hμ).trans (by gcongr; exact havg j)
   calc absDiff (∑ ω, μ ω * prOutMRGen A (H₁ ω) (f ω)) (∑ ω, μ ω * prOutMRGen A (H₂ ω) (f ω))
       ≤ ∑ ω, absDiff (μ ω * prOutMRGen A (H₁ ω) (f ω)) (μ ω * prOutMRGen A (H₂ ω) (f ω)) :=
         absDiff_sum_le _ _
-    _ ≤ ∑ ω, μ ω * (2 * ∑ j, G ω j ^ (1 / 2 : ℝ)) := by
-        gcongr with ω
-        exact (absDiff_mul_left_le _ _ _).trans (by gcongr; exact hstep ω)
+    _ ≤ ∑ ω, μ ω * (2 * ∑ j, G ω j ^ (1 / 2 : ℝ)) :=
+        Finset.sum_le_sum fun ω _ =>
+          (absDiff_mul_left_le _ _ _).trans (mul_le_mul_right (hstep ω) _)
     _ = 2 * ∑ j, ∑ ω, μ ω * G ω j ^ (1 / 2 : ℝ) := by
-        simp only [Finset.mul_sum]
-        rw [Finset.sum_comm]
-        exact Finset.sum_congr rfl fun j _ => Finset.sum_congr rfl fun ω _ => by ring
-    _ ≤ 2 * ∑ _j : Fin (flatQ q k q), lam ^ (1 / 2 : ℝ) := by
-        gcongr with j
-        exact hjensen j
+        simp only [Finset.mul_sum, mul_left_comm]; exact Finset.sum_comm
+    _ ≤ 2 * ∑ _j : Fin (flatQ q k q), lam ^ (1 / 2 : ℝ) :=
+        mul_le_mul_right (Finset.sum_le_sum fun j _ => hjensen j) _
     _ = 2 * (flatQ q k q : ℝ≥0∞) * lam ^ (1 / 2 : ℝ) := by
-        simp only [Finset.sum_const, Finset.card_univ, Fintype.card_fin, nsmul_eq_mul]
-        ring
+        simp only [Finset.sum_const, Finset.card_univ, Fintype.card_fin, nsmul_eq_mul, mul_assoc]
 
 end Resample
 

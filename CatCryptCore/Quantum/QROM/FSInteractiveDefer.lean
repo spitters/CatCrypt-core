@@ -152,8 +152,7 @@ theorem trace_sum_kr_ancProj_mul_roundV (e : Fin (d * c) ≃ Fin d') (R : Classi
     rw [← liftU_mul_kr_mul_conjTranspose, Submonoid.coe_mul, conjTranspose_mul]
     simp only [Matrix.mul_assoc]
   rw [h1, roundV_mul_kr_ancProj_zero, Finset.sum_mul, trace_sum]
-  simp only [Finset.mul_sum, trace_sum, trace_kr_ancProj_mul_kr_ancUnit]
-  simp [ite_and]
+  simp [Finset.mul_sum, trace_sum, trace_kr_ancProj_mul_kr_ancUnit, ite_and]
 
 end Defer
 
@@ -168,11 +167,8 @@ theorem projS_singleton_mul_of_ne {x y : Fin m} (h : x ≠ y) :
     projS m n w {x} * projS m n w {y} = 0 := by
   rw [projS_eq_diagonal, projS_eq_diagonal, diagonal_mul_diagonal]
   ext i j
-  by_cases hij : i = j
-  · subst hij
-    simp only [diagonal_apply_eq, indS, Finset.mem_singleton, Matrix.zero_apply]
-    grind
-  · simp [hij]
+  by_cases hij : i = j <;> simp [hij, indS]
+  grind
 
 /-- The measurement of the query register as a classical round with the answer unitary
     `ans x` on the outcome `x`. -/
@@ -204,8 +200,7 @@ theorem verProj_mul_self (V : QVerifier m n w) (θ : Fin n) :
     verProj V θ * verProj V θ = verProj V θ := by
   unfold verProj
   rw [Finset.sum_mul_sum]
-  simp only [kr_mul, ancProj_mul_ancProj]
-  simp [apply_ite, kr_zero_right, V.proj_mul_self, Finset.sum_ite_eq]
+  simp [kr_mul, ancProj_mul_ancProj, apply_ite, kr_zero_right, V.proj_mul_self, Finset.sum_ite_eq]
 
 /-- The deferred unitary of the interactive game on the slot `t` with the challenge `θ`: the
     prefix unitary of the run of `A` against `H`, the record of the commitment `x` into the
@@ -244,8 +239,7 @@ theorem trace_verProj_mul_projS (V : QVerifier m n w) (θ : Fin n) (y : Fin m)
         kr (ancE m n w m) (projS m n w {y}) 1 * M).trace := by
     rw [← Matrix.mul_assoc, Matrix.trace_mul_comm, Matrix.mul_assoc, Matrix.mul_assoc]
   rw [hc]
-  unfold verProj
-  simp only [Finset.mul_sum, Finset.sum_mul, kr_mul, one_mul, mul_one]
+  simp only [verProj, Finset.mul_sum, Finset.sum_mul, kr_mul, one_mul, mul_one]
 
 /-- The trace of the accepting branch of the deferred adversary is the sum over the
     commitment `x` and the measured query register `y` of `tr (V(x, θ) Π_y N_x Π_y)`, with
@@ -278,8 +272,7 @@ theorem trace_fsDefer (A : QAdv m n w q) (V : QVerifier m n w) (H : Fin m → Fi
     id _ (fun _ => verProj V θ) (liftInit (c := m) A.init).val).trans ?_
   rw [Finset.sum_comm]
   refine Finset.sum_congr rfl fun y _ => ?_
-  simp only [measXRound, id, OneMemClass.coe_one, one_mul]
-  rw [trace_verProj_mul_projS]
+  simp only [measXRound, id, OneMemClass.coe_one, one_mul, trace_verProj_mul_projS]
   refine (trace_sum_kr_ancProj_mul_roundV (ancE m n w m)
     (measXRound m n w fun x => fsSufU A H t x θ) id _
     (fun x => projS m n w {y} * V.proj x θ * projS m n w {y}) A.init.val).trans ?_

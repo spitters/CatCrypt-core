@@ -1891,6 +1891,37 @@ theorem tvW_oCpl_eq (eY : Tgt ≃ Fin n) (pk : PK) :
   simp only [tvW, imgN, domDistAt, hn]
   exact Equiv.sum_comp eY.symm fun θ => S.imgW pk θ - (n : ℝ≥0∞)⁻¹
 
+omit [DecidableEq Salt] [Nonempty Salt] [NeZero m] [NeZero c] in
+/-- A game over a uniform oracle and a table `v`, whose winning probability `Z H v` is that of
+    the adversary `F v` at `H`, written with the uniform oracle as the first outputs of
+    independent couplings of the uniform value and the image law. -/
+private theorem sum_unif_eq_cpl (eY : Tgt ≃ Fin n) (eA : Option (Salt × Sig) ≃ Fin a) (pk : PK)
+    (F : (Msg × Fin T → Salt × (Tgt → Option Sig)) →
+      QAdvMRGen m n (ancW c k w * (m * n) * (m * n)) (q + 1 + 1) k c a)
+    (Z : (Fin m → Fin n) → (Msg × Fin T → Salt × (Tgt → Option Sig)) → ℝ≥0∞)
+    (hZ : ∀ v H, prOutMRGen (F v) H (fun _ => eA none) = Z H v) :
+    ∑ H : Fin m → Fin n, (Fintype.card (Fin m → Fin n) : ℝ≥0∞)⁻¹ *
+        ∑ v : Msg × Fin T → Salt × (Tgt → Option Sig),
+          (∏ y, (Fintype.card Salt : ℝ≥0∞)⁻¹ * S.simSamplerW pk (v y).2) * Z H v =
+      ∑ v : Msg × Fin T → Salt × (Tgt → Option Sig),
+        (∏ y, (Fintype.card Salt : ℝ≥0∞)⁻¹ * S.simSamplerW pk (v y).2) *
+          ∑ u : Fin m → Bool × Fin n × Fin n × Fin n, (∏ x, S.oCplW eY pk (u x)) *
+            prOutMRGen (F v) (fun x => cplFst (u x)) (fun _ => eA none) := by
+  simp only [Finset.mul_sum]
+  rw [Finset.sum_comm]
+  refine Finset.sum_congr rfl fun v _ => ?_
+  have hpi := sum_pi_comp_eq (ι := Fin m) (fun _ => S.oCplW eY pk)
+    (fun _ _ => (n : ℝ≥0∞)⁻¹) (fun _ => cplFst) (fun _ z => z)
+    (fun _ g => maxCouplingW_sum_fst (S.oCplW_laws eY pk).1 (S.oCplW_laws eY pk).2 g)
+    (fun H => prOutMRGen (F v) H (fun _ => eA none))
+  simp only [← Finset.mul_sum]
+  rw [hpi]
+  simp only [Finset.mul_sum]
+  refine Finset.sum_congr rfl fun H _ => ?_
+  rw [hZ, Finset.prod_const, Finset.card_univ, Fintype.card_fin, Fintype.card_fun,
+    Fintype.card_fin, Fintype.card_fin, Nat.cast_pow, ENNReal.inv_pow]
+  ring
+
 /-- `offGameAt` with the uniform oracle written as the first outputs of independent couplings
     of the uniform value and the image law, and the forgery adversary `forgeImgGen`. -/
 theorem offGameAt_eq_cpl (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n)
@@ -1903,20 +1934,9 @@ theorem offGameAt_eq_cpl (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n)
             prOutMRGen (S.forgeImgGen eX eY eQ eA A pk v) (fun x => cplFst (u x))
               (fun _ => eA none) := by
   unfold offGameAt
-  simp only [Finset.mul_sum]
-  rw [Finset.sum_comm]
-  refine Finset.sum_congr rfl fun v _ => ?_
-  have hpi := sum_pi_comp_eq (ι := Fin m) (fun _ => S.oCplW eY pk)
-    (fun _ _ => (n : ℝ≥0∞)⁻¹) (fun _ => cplFst) (fun _ z => z)
-    (fun _ g => maxCouplingW_sum_fst (S.oCplW_laws eY pk).1 (S.oCplW_laws eY pk).2 g)
-    (fun H => prOutMRGen (S.forgeImgGen eX eY eQ eA A pk v) H (fun _ => eA none))
-  simp only [← Finset.mul_sum]
-  rw [hpi]
-  simp only [Finset.mul_sum]
-  refine Finset.sum_congr rfl fun H _ => ?_
-  rw [prOutMRGen_forgeImgGen, Finset.prod_const, Finset.card_univ, Fintype.card_fin,
-    Fintype.card_fun, Fintype.card_fin, Fintype.card_fin, Nat.cast_pow, ENNReal.inv_pow]
-  ring
+  exact S.sum_unif_eq_cpl eY eA pk _
+    (fun H v => prOutMRGen (S.forgeOffGen eX eY eQ A pk H v) H (simTab eQ eA (hashOf eX eY H) v))
+    fun v H => S.prOutMRGen_forgeImgGen eX eY eQ eA A pk v H _
 
 /-- `imgGameAt` with the programmed oracle written as the second outputs of the couplings at
     the salted points and the first outputs elsewhere, and the forgery adversary
@@ -1978,16 +1998,26 @@ theorem sum_tab_cpl_fail_le (eY : Tgt ≃ Fin n) (pk : PK)
     exact le_of_eq (by ring)
   · simp [hP]
 
-/-- Hop B at one public key: programming the oracle at the salted points of the table with the
-    image law of a domain sample changes the winning probability of `offGameAt` by at most
-    `4 (flatQ q k q + 2 (k + 1)) domDistAt^(1/2)`. The forgery test and the signing rounds are
-    oracle queries of `forgeImgGen`, which has `q + 2` queries per segment, and the bound is
-    `prOutMRGen_resample_gentle_fiber_le` twice, from each of the two oracles to the common
-    values of the couplings, indexed by the table. -/
-theorem hopImageAt (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n) (eQ : Msg × Fin T ≃ Fin c)
-    (eA : Option (Salt × Sig) ≃ Fin a) (A : QSigAdv m n w q k c a T Msg PK (Salt × Sig))
-    (pk : PK) :
-    absDiff (S.offGameAt eX eY eQ eA A pk) (S.imgGameAt eX eY eQ eA A pk) ≤
+omit [DecidableEq Salt] [NeZero m] in
+/-- The two steps of `prOutMRGen_resample_gentle_fiber_le` in hops B: against the forgery
+    adversaries `F v` over the couplings, the first outputs and an oracle `O` that agrees with
+    the common values off the failure set give winning probabilities within
+    `4 (flatQ q k q + 2 (k + 1)) domDistAt^(1/2)`. -/
+private theorem hopCplAt (eY : Tgt ≃ Fin n) (eA : Option (Salt × Sig) ≃ Fin a) (pk : PK)
+    (F : (Msg × Fin T → Salt × (Tgt → Option Sig)) →
+      QAdvMRGen m n (ancW c k w * (m * n) * (m * n)) (q + 1 + 1) k c a)
+    (O : (Msg × Fin T → Salt × (Tgt → Option Sig)) → (Fin m → Bool × Fin n × Fin n × Fin n) →
+      Fin m → Fin n)
+    (hO : ∀ v u x, (u x).1 = false → O v u x = (u x).2.1) (X Y : ℝ≥0∞)
+    (hX : X = ∑ v : Msg × Fin T → Salt × (Tgt → Option Sig),
+      (∏ y, (Fintype.card Salt : ℝ≥0∞)⁻¹ * S.simSamplerW pk (v y).2) *
+        ∑ u : Fin m → Bool × Fin n × Fin n × Fin n, (∏ x, S.oCplW eY pk (u x)) *
+          prOutMRGen (F v) (fun x => cplFst (u x)) (fun _ => eA none))
+    (hY : Y = ∑ v : Msg × Fin T → Salt × (Tgt → Option Sig),
+      (∏ y, (Fintype.card Salt : ℝ≥0∞)⁻¹ * S.simSamplerW pk (v y).2) *
+        ∑ u : Fin m → Bool × Fin n × Fin n × Fin n, (∏ x, S.oCplW eY pk (u x)) *
+          prOutMRGen (F v) (O v u) (fun _ => eA none)) :
+    absDiff X Y ≤
       4 * ((flatQ q k q + 2 * (k + 1) : ℕ) : ℝ≥0∞) * S.domDistAt pk ^ (1 / 2 : ℝ) := by
   classical
   set μ : (Msg × Fin T → Salt × (Tgt → Option Sig)) × (Fin m → Bool × Fin n × Fin n × Fin n) →
@@ -2005,10 +2035,9 @@ theorem hopImageAt (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n) (eQ : Msg �
     simp only [mul_one] at h
     rw [h, sum_prod_eq_one _ fun _ => S.sum_oCplW eY pk]
     simp only [mul_one]
-    have h2 := sum_prod_eq_one (ι := Msg × Fin T) (β := Salt × (Tgt → Option Sig))
+    exact sum_prod_eq_one (ι := Msg × Fin T) (β := Salt × (Tgt → Option Sig))
       (fun _ x => (Fintype.card Salt : ℝ≥0∞)⁻¹ * S.simSamplerW pk x.2)
       fun _ => S.sum_salt_sim_mass pk
-    exact h2
   set D : (Msg × Fin T → Salt × (Tgt → Option Sig)) ×
       (Fin m → Bool × Fin n × Fin n × Fin n) → Finset (Fin m) :=
     fun ω => Finset.univ.filter fun x => (ω.2 x).1 = true with hD
@@ -2022,25 +2051,37 @@ theorem hopImageAt (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n) (eQ : Msg �
     exact S.sum_tab_cpl_fail_le eY pk
       (fun v => ∏ y, (Fintype.card Salt : ℝ≥0∞)⁻¹ * S.simSamplerW pk (v y).2) j x h
       ((fun _ : Fin c => eA none) = g)
-  have h1 := prOutMRGen_resample_gentle_fiber_le (S.forgeImgGen eX eY eQ eA A pk) Prod.fst μ hμ
+  have h1 := prOutMRGen_resample_gentle_fiber_le F Prod.fst μ hμ
     (fun ω x => cplFst (ω.2 x)) (fun ω x => (ω.2 x).2.1) (fun _ _ => eA none) D lam
     (fun ω x hx => by simp_all [cplFst]) hsp
-  have h3 := prOutMRGen_resample_gentle_fiber_le (S.forgeImgGen eX eY eQ eA A pk) Prod.fst μ hμ
-    (fun ω x => if salted eX ω.1 x then cplSnd (ω.2 x) else cplFst (ω.2 x))
-    (fun ω x => (ω.2 x).2.1) (fun _ _ => eA none) D lam
-    (fun ω x hx => by split_ifs <;> simp_all [cplFst, cplSnd]) hsp
-  have hE1 := S.offGameAt_eq_cpl eX eY eQ eA A pk
-  have hE3 := S.imgGameAt_eq_cpl eX eY eQ eA A pk
-  rw [← hsplit] at hE1 hE3
+  have h3 := prOutMRGen_resample_gentle_fiber_le F Prod.fst μ hμ
+    (fun ω x => O ω.1 ω.2 x) (fun ω x => (ω.2 x).2.1) (fun _ _ => eA none) D lam
+    (fun ω x hx => hO ω.1 ω.2 x (by simpa [hD] using hx)) hsp
+  rw [← hsplit] at hX hY
   have hQ : flatQ (q + 1 + 1) k (q + 1 + 1) = flatQ q k q + 2 * (k + 1) := by
     rw [flatQ_succ_succ, flatQ_succ_succ]
     ring
-  beta_reduce at h1 h3
   rw [absDiff_comm] at h3
   have key := (absDiff_triangle _ _ _).trans (add_le_add h1 h3)
-  rw [hE1, hE3, ← hQ, ← S.tvW_oCpl_eq eY pk, ← hlam]
+  rw [hX, hY, ← hQ, ← S.tvW_oCpl_eq eY pk, ← hlam]
   refine key.trans (le_of_eq ?_)
   ring
+
+/-- Hop B at one public key: programming the oracle at the salted points of the table with the
+    image law of a domain sample changes the winning probability of `offGameAt` by at most
+    `4 (flatQ q k q + 2 (k + 1)) domDistAt^(1/2)`. The forgery test and the signing rounds are
+    oracle queries of `forgeImgGen`, which has `q + 2` queries per segment, and the bound is
+    `prOutMRGen_resample_gentle_fiber_le` twice, from each of the two oracles to the common
+    values of the couplings, indexed by the table. -/
+theorem hopImageAt (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n) (eQ : Msg × Fin T ≃ Fin c)
+    (eA : Option (Salt × Sig) ≃ Fin a) (A : QSigAdv m n w q k c a T Msg PK (Salt × Sig))
+    (pk : PK) :
+    absDiff (S.offGameAt eX eY eQ eA A pk) (S.imgGameAt eX eY eQ eA A pk) ≤
+      4 * ((flatQ q k q + 2 * (k + 1) : ℕ) : ℝ≥0∞) * S.domDistAt pk ^ (1 / 2 : ℝ) :=
+  S.hopCplAt eY eA pk (S.forgeImgGen eX eY eQ eA A pk)
+    (fun v u x => if salted eX v x then cplSnd (u x) else cplFst (u x))
+    (fun v u x hx => by split_ifs <;> simp_all [cplFst, cplSnd]) _ _
+    (S.offGameAt_eq_cpl eX eY eQ eA A pk) (S.imgGameAt_eq_cpl eX eY eQ eA A pk)
 
 variable [Fintype PK] [Fintype SK]
 
@@ -2070,8 +2111,7 @@ theorem saltedPSF_hopImage (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n)
           (absDiff_mul_left_le _ _ _).trans (by gcongr; exact S.hopImageAt eX eY eQ eA A ks.1)
     _ = 4 * ((flatQ q k q + 2 * (k + 1) : ℕ) : ℝ≥0∞) *
           ∑ ks, S.keygen ks * S.domDistAt ks.1 ^ (1 / 2 : ℝ) := by
-        rw [Finset.mul_sum]
-        exact Finset.sum_congr rfl fun ks _ => by ring
+        simp only [Finset.mul_sum, mul_left_comm]
     _ ≤ _ := by
         gcongr
         exact sum_mul_rpow_half_le (fun ks => S.keygen ks) (fun ks => S.domDistAt ks.1) hkey
@@ -2231,17 +2271,19 @@ theorem imgGameAt_eq_ans (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n)
     (fun o => S.offWin eX eY eQ eA A pk H (ansTab r o))
   exact hpi
 
-omit [Fintype Tgt] in
-/-- Reindexing the answers of the entries by the salted points: the entries that repeat no
-    salt have distinct salted points, and only their answers are read. -/
-theorem sum_ans_eq_sum_pt (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n)
-    (eQ : Msg × Fin T ≃ Fin c) (eA : Option (Salt × Sig) ≃ Fin a)
-    (A : QSigAdv m n w q k c a T Msg PK (Salt × Sig)) (pk : PK) (r : Msg × Fin T → Salt)
-    (H : Fin m → Fin n) :
+omit [Fintype Tgt] [Fintype Salt] [Nonempty Salt] [NeZero n] [NeZero c] in
+/-- Reindexing the answers of the entries by the salted points, for a winning probability `W`
+    that reads the answers of a table only through the simulated table. -/
+private theorem sum_ans_eq_sum_pt_of (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n)
+    (eQ : Msg × Fin T ≃ Fin c) (eA : Option (Salt × Sig) ≃ Fin a) (pk : PK)
+    (r : Msg × Fin T → Salt) (H : Fin m → Fin n)
+    (W : (Msg × Fin T → Salt × (Tgt → Option Sig)) → ℝ≥0∞)
+    (hW : ∀ o o', simTab eQ eA (hashOf eX eY H) (ansTab r o) =
+      simTab eQ eA (hashOf eX eY H) (ansTab r o') → W (ansTab r o) = W (ansTab r o')) :
     ∑ o : Msg × Fin T → Option Sig, (∏ y, S.simW pk (hashOf eX eY H (y.1, r y)) (o y)) *
-        S.offWin eX eY eQ eA A pk H (ansTab r o) =
+        W (ansTab r o) =
       ∑ o : Fin m → Option Sig, (∏ x, S.simW pk (eY.symm (H x)) (o x)) *
-        S.offWin eX eY eQ eA A pk H (ansTab r fun y => o (eX (y.1, r y))) := by
+        W (ansTab r fun y => o (eX (y.1, r y))) := by
   let N : Finset (Msg × Fin T) :=
     Finset.univ.filter fun y => collides (fun y => (r y, ())) y = false
   have hinj : Set.InjOn (fun y : Msg × Fin T => eX (y.1, r y)) N := by
@@ -2259,20 +2301,31 @@ theorem sum_ans_eq_sum_pt (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n)
     · simp [hc y' y h1.symm h2.symm hgt] at hy
   refine sum_prod_comp_eq_of_injOn (fun y => eX (y.1, r y)) N hinj
     (fun x => S.simW pk (eY.symm (H x))) (fun x => S.sum_simW pk _)
-    (fun o => S.offWin eX eY eQ eA A pk H (ansTab r o)) ?_
+    (fun o => W (ansTab r o)) ?_
   intro o o' hoo
-  have hT : simTab eQ eA (hashOf eX eY H) (ansTab r o) =
-      simTab eQ eA (hashOf eX eY H) (ansTab r o') := by
-    funext i
-    simp only [simTab, collides_congr (ansTab r o) (fun y => (r y, ())) (fun _ => rfl),
-      collides_congr (ansTab r o') (fun y => (r y, ())) (fun _ => rfl)]
-    split_ifs with hcol
-    · rfl
-    · simp only [honestTab, ansTab]
-      rw [hoo _ (by simp [N, hcol])]
-  unfold offWin
-  rw [hT]
-  rfl
+  refine hW o o' (funext fun i => ?_)
+  simp only [simTab, collides_congr (ansTab r o) (fun y => (r y, ())) (fun _ => rfl),
+    collides_congr (ansTab r o') (fun y => (r y, ())) (fun _ => rfl)]
+  split_ifs with hcol
+  · rfl
+  · simp only [honestTab, ansTab]
+    rw [hoo _ (by simp [N, hcol])]
+
+omit [Fintype Tgt] in
+/-- Reindexing the answers of the entries by the salted points: the entries that repeat no
+    salt have distinct salted points, and only their answers are read. -/
+theorem sum_ans_eq_sum_pt (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n)
+    (eQ : Msg × Fin T ≃ Fin c) (eA : Option (Salt × Sig) ≃ Fin a)
+    (A : QSigAdv m n w q k c a T Msg PK (Salt × Sig)) (pk : PK) (r : Msg × Fin T → Salt)
+    (H : Fin m → Fin n) :
+    ∑ o : Msg × Fin T → Option Sig, (∏ y, S.simW pk (hashOf eX eY H (y.1, r y)) (o y)) *
+        S.offWin eX eY eQ eA A pk H (ansTab r o) =
+      ∑ o : Fin m → Option Sig, (∏ x, S.simW pk (eY.symm (H x)) (o x)) *
+        S.offWin eX eY eQ eA A pk H (ansTab r fun y => o (eX (y.1, r y))) :=
+  S.sum_ans_eq_sum_pt_of eX eY eQ eA pk r H (S.offWin eX eY eQ eA A pk H) fun o o' h => by
+    unfold offWin
+    rw [h]
+    rfl
 
 omit [Fintype Tgt] in
 /-- At fixed salts, the programmed oracle and the preimages at its points have the law of the
@@ -2842,22 +2895,8 @@ theorem condGameAt_eq_cpl (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n)
             prOutMRGen (S.forgeAllGen eX eY eQ eA A pk v) (fun x => cplFst (u x))
               (fun _ => eA none) := by
   unfold condGameAt
-  simp only [Finset.mul_sum]
-  rw [Finset.sum_comm]
-  refine Finset.sum_congr rfl fun v _ => ?_
-  have hpi := sum_pi_comp_eq (ι := Fin m) (fun _ => S.oCplW eY pk)
-    (fun _ _ => (n : ℝ≥0∞)⁻¹) (fun _ => cplFst) (fun _ z => z)
-    (fun _ g => maxCouplingW_sum_fst (S.oCplW_laws eY pk).1 (S.oCplW_laws eY pk).2 g)
-    (fun H => prOutMRGen (S.forgeAllGen eX eY eQ eA A pk v) H (fun _ => eA none))
-  simp only [← Finset.mul_sum]
-  rw [hpi]
-  simp only [Finset.mul_sum]
-  refine Finset.sum_congr rfl fun H _ => ?_
-  rw [prOutMRGen_forgeAllGen]
-  unfold allWin
-  rw [Finset.prod_const, Finset.card_univ, Fintype.card_fin, Fintype.card_fun, Fintype.card_fin,
-    Fintype.card_fin, Nat.cast_pow, ENNReal.inv_pow]
-  ring
+  exact S.sum_unif_eq_cpl eY eA pk _ (S.allWin eX eY eQ eA A pk)
+    fun v H => S.prOutMRGen_forgeAllGen eX eY eQ eA A pk v H _
 
 /-- `allGameAt` with the programmed oracle written as the second outputs of the couplings and
     the forgery adversary `forgeAllGen`. -/
@@ -2889,57 +2928,10 @@ theorem hopAllAt (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n) (eQ : Msg × 
     (eA : Option (Salt × Sig) ≃ Fin a) (A : QSigAdv m n w q k c a T Msg PK (Salt × Sig))
     (pk : PK) :
     absDiff (S.condGameAt eX eY eQ eA A pk) (S.allGameAt eX eY eQ eA A pk) ≤
-      4 * ((flatQ q k q + 2 * (k + 1) : ℕ) : ℝ≥0∞) * S.domDistAt pk ^ (1 / 2 : ℝ) := by
-  classical
-  set μ : (Msg × Fin T → Salt × (Tgt → Option Sig)) × (Fin m → Bool × Fin n × Fin n × Fin n) →
-      ℝ≥0∞ := fun ω =>
-    (∏ y, (Fintype.card Salt : ℝ≥0∞)⁻¹ * S.simSamplerW pk (ω.1 y).2) *
-      ∏ x, S.oCplW eY pk (ω.2 x) with hμdef
-  have hsplit : ∀ G : (Msg × Fin T → Salt × (Tgt → Option Sig)) →
-      (Fin m → Bool × Fin n × Fin n × Fin n) → ℝ≥0∞,
-      ∑ ω, μ ω * G ω.1 ω.2 = ∑ v, (∏ y, (Fintype.card Salt : ℝ≥0∞)⁻¹ *
-        S.simSamplerW pk (v y).2) * ∑ u, (∏ x, S.oCplW eY pk (u x)) * G v u := by
-    intro G
-    simp only [hμdef, Fintype.sum_prod_type, Finset.mul_sum, mul_assoc]
-  have hμ : ∑ ω, μ ω = 1 := by
-    have h := hsplit fun _ _ => 1
-    simp only [mul_one] at h
-    rw [h, sum_prod_eq_one _ fun _ => S.sum_oCplW eY pk]
-    simp only [mul_one]
-    exact sum_prod_eq_one (ι := Msg × Fin T) (β := Salt × (Tgt → Option Sig))
-      (fun _ x => (Fintype.card Salt : ℝ≥0∞)⁻¹ * S.simSamplerW pk x.2)
-      fun _ => S.sum_salt_sim_mass pk
-  set D : (Msg × Fin T → Salt × (Tgt → Option Sig)) ×
-      (Fin m → Bool × Fin n × Fin n × Fin n) → Finset (Fin m) :=
-    fun ω => Finset.univ.filter fun x => (ω.2 x).1 = true with hD
-  set lam := tvW (fun _ : Fin n => (n : ℝ≥0∞)⁻¹) (S.imgN eY pk) with hlam
-  have hsp : ∀ j x h (g : Fin c → Fin a),
-      ∑ ω, μ ω * (if ω.1 = j ∧ (fun x' => (ω.2 x').2.1) = h ∧ (fun _ => eA none) = g ∧
-        x ∈ D ω then 1 else 0) ≤
-      lam * ∑ ω, μ ω * (if ω.1 = j ∧ (fun x' => (ω.2 x').2.1) = h ∧
-        (fun _ => eA none) = g then 1 else 0) := by
-    intro j x h g
-    exact S.sum_tab_cpl_fail_le eY pk
-      (fun v => ∏ y, (Fintype.card Salt : ℝ≥0∞)⁻¹ * S.simSamplerW pk (v y).2) j x h
-      ((fun _ : Fin c => eA none) = g)
-  have h1 := prOutMRGen_resample_gentle_fiber_le (S.forgeAllGen eX eY eQ eA A pk) Prod.fst μ hμ
-    (fun ω x => cplFst (ω.2 x)) (fun ω x => (ω.2 x).2.1) (fun _ _ => eA none) D lam
-    (fun ω x hx => by simp_all [cplFst]) hsp
-  have h3 := prOutMRGen_resample_gentle_fiber_le (S.forgeAllGen eX eY eQ eA A pk) Prod.fst μ hμ
-    (fun ω x => cplSnd (ω.2 x)) (fun ω x => (ω.2 x).2.1) (fun _ _ => eA none) D lam
-    (fun ω x hx => by simp_all [cplSnd]) hsp
-  have hE1 := S.condGameAt_eq_cpl eX eY eQ eA A pk
-  have hE3 := S.allGameAt_eq_cpl eX eY eQ eA A pk
-  rw [← hsplit] at hE1 hE3
-  have hQ : flatQ (q + 1 + 1) k (q + 1 + 1) = flatQ q k q + 2 * (k + 1) := by
-    rw [flatQ_succ_succ, flatQ_succ_succ]
-    ring
-  beta_reduce at h1 h3
-  rw [absDiff_comm] at h3
-  have key := (absDiff_triangle _ _ _).trans (add_le_add h1 h3)
-  rw [hE1, hE3, ← hQ, ← S.tvW_oCpl_eq eY pk, ← hlam]
-  refine key.trans (le_of_eq ?_)
-  ring
+      4 * ((flatQ q k q + 2 * (k + 1) : ℕ) : ℝ≥0∞) * S.domDistAt pk ^ (1 / 2 : ℝ) :=
+  S.hopCplAt eY eA pk (S.forgeAllGen eX eY eQ eA A pk) (fun _ u x => cplSnd (u x))
+    (fun v u x hx => by simp_all [cplSnd]) _ _
+    (S.condGameAt_eq_cpl eX eY eQ eA A pk) (S.allGameAt_eq_cpl eX eY eQ eA A pk)
 
 variable [Fintype PK] [Fintype SK]
 
@@ -2969,8 +2961,7 @@ theorem saltedPSF_hopAll (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n)
           (absDiff_mul_left_le _ _ _).trans (by gcongr; exact S.hopAllAt eX eY eQ eA A ks.1)
     _ = 4 * ((flatQ q k q + 2 * (k + 1) : ℕ) : ℝ≥0∞) *
           ∑ ks, S.keygen ks * S.domDistAt ks.1 ^ (1 / 2 : ℝ) := by
-        rw [Finset.mul_sum]
-        exact Finset.sum_congr rfl fun ks _ => by ring
+        simp only [Finset.mul_sum, mul_left_comm]
     _ ≤ _ := by
         gcongr
         exact sum_mul_rpow_half_le (fun ks => S.keygen ks) (fun ks => S.domDistAt ks.1) hkey
@@ -3046,37 +3037,10 @@ theorem sum_ans_eq_sum_pt_all (eX : Msg × Salt ≃ Fin m) (eY : Tgt ≃ Fin n)
     ∑ o : Msg × Fin T → Option Sig, (∏ y, S.simW pk (hashOf eX eY H (y.1, r y)) (o y)) *
         S.allWin eX eY eQ eA A pk H (ansTab r o) =
       ∑ o : Fin m → Option Sig, (∏ x, S.simW pk (eY.symm (H x)) (o x)) *
-        S.allWin eX eY eQ eA A pk H (ansTab r fun y => o (eX (y.1, r y))) := by
-  let N : Finset (Msg × Fin T) :=
-    Finset.univ.filter fun y => collides (fun y => (r y, ())) y = false
-  have hinj : Set.InjOn (fun y : Msg × Fin T => eX (y.1, r y)) N := by
-    intro y hy y' hy' h
-    simp only [N, Finset.coe_filter, Finset.mem_univ, true_and, Set.mem_ofPred_eq] at hy hy'
-    obtain ⟨h1, h2⟩ := Prod.mk.inj (eX.injective h)
-    have hc : ∀ z z' : Msg × Fin T, z.1 = z'.1 → r z = r z' → z.2 < z'.2 →
-        collides (fun y => (r y, ())) z' = true := fun z z' e1 e2 hlt => by
-      simp only [collides, decide_eq_true_eq]
-      refine ⟨z.2, hlt, ?_⟩
-      rw [show ((z'.1, z.2) : Msg × Fin T) = z from Prod.ext e1.symm rfl, e2]
-    rcases lt_trichotomy y.2 y'.2 with hlt | heq | hgt
-    · simp [hc y y' h1 h2 hlt] at hy'
-    · exact Prod.ext h1 heq
-    · simp [hc y' y h1.symm h2.symm hgt] at hy
-  refine sum_prod_comp_eq_of_injOn (fun y => eX (y.1, r y)) N hinj
-    (fun x => S.simW pk (eY.symm (H x))) (fun x => S.sum_simW pk _)
-    (fun o => S.allWin eX eY eQ eA A pk H (ansTab r o)) ?_
-  intro o o' hoo
-  have hT : simTab eQ eA (hashOf eX eY H) (ansTab r o) =
-      simTab eQ eA (hashOf eX eY H) (ansTab r o') := by
-    funext i
-    simp only [simTab, collides_congr (ansTab r o) (fun y => (r y, ())) (fun _ => rfl),
-      collides_congr (ansTab r o') (fun y => (r y, ())) (fun _ => rfl)]
-    split_ifs with hcol
-    · rfl
-    · simp only [honestTab, ansTab]
-      rw [hoo _ (by simp [N, hcol])]
-  unfold allWin
-  rw [hT]
+        S.allWin eX eY eQ eA A pk H (ansTab r fun y => o (eX (y.1, r y))) :=
+  S.sum_ans_eq_sum_pt_of eX eY eQ eA pk r H (S.allWin eX eY eQ eA A pk H) fun o o' h => by
+    unfold allWin
+    rw [h]
 
 omit [Fintype Tgt] [NeZero m] [Fintype Msg] in
 /-- At fixed salts, the oracle of the image law at every point and the preimages at its points
@@ -3229,8 +3193,7 @@ theorem sum_domW_self_le [Finite Tgt] (pk : PK) (Φ : Tgt → Sig → ℝ≥0∞
         exact Finset.sum_le_sum fun θ _ => Finset.sum_le_sum fun s _ =>
           mul_le_mul_left (S.domW_mul_ite_le pk θ s) _
     _ = S.preMassAt pk * ∑ θ, S.imgW pk θ * ∑ s', Φ θ s' := by
-        simp only [Finset.mul_sum]
-        exact Finset.sum_congr rfl fun θ _ => Finset.sum_congr rfl fun s _ => by ring
+        simp only [Finset.mul_sum, mul_left_comm, mul_assoc]
     _ = _ := by rw [himg fun θ => ∑ s', Φ θ s']
 
 /-- The answer of the collision reduction read from a basis state of its register: the
@@ -3565,8 +3528,7 @@ theorem sum_collCoins_eq (G : (Msg × Fin T → Salt) × (Fin m → S.DCoins) �
   rw [hR, hD, Fintype.card_prod, Nat.cast_mul, ENNReal.mul_inv (Or.inr (ht _)) (Or.inl (ht _)),
     Fintype.sum_prod_type]
   refine Finset.sum_congr rfl fun r _ => ?_
-  rw [Finset.mul_sum]
-  exact Finset.sum_congr rfl fun d _ => by ring
+  simp only [Finset.mul_sum, mul_left_comm, mul_assoc]
 
 variable [Fintype PK] [Fintype SK]
 

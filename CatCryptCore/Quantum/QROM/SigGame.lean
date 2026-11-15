@@ -135,9 +135,8 @@ def QAdv.withFinalB (A : QAdv m n w q) (g : Fin (m * n * w) → Bool) : QAdv m n
 /-- The product of two diagonal projectors is the projector of the conjunction. -/
 theorem diagB_mul_diagB {d : ℕ} (f g : Fin d → Bool) :
     diagB f * diagB g = diagB (fun k => f k && g k) := by
-  rw [diagB, diagB, diagB, Matrix.diagonal_mul_diagonal]
-  congr 1; funext k
-  cases f k <;> cases g k <;> simp
+  simp only [diagB, Matrix.diagonal_mul_diagonal]
+  grind
 
 /-- The trace of a matrix conjugated by a diagonal projector is the sum of its diagonal
     entries on the basis states of the projector. -/
@@ -145,8 +144,7 @@ theorem trace_diagB_conj {d : ℕ} (f : Fin d → Bool) (M : Matrix (Fin d) (Fin
     (diagB f * M * (diagB f)ᴴ).trace = ∑ k, if f k then M k k else 0 := by
   rw [diagB_conjTranspose]
   simp only [diagB, Matrix.trace, Matrix.diag, Matrix.diagonal_mul, Matrix.mul_diagonal]
-  refine Finset.sum_congr rfl fun k _ => ?_
-  cases f k <;> simp
+  grind
 
 /-- The diagonal entries of a positive semidefinite matrix have nonnegative real part. -/
 theorem re_diag_nonneg {d : ℕ} {M : Matrix (Fin d) (Fin d) ℂ} (hM : M.PosSemidef) (k : Fin d) :
@@ -173,11 +171,9 @@ theorem chainOp_postU (O : Matrix (Fin d) (Fin d) ℂ) (P : Matrix.unitaryGroup 
       chainOp O q (postU P U) = (P : Matrix (Fin d) (Fin d) ℂ) * chainOp O q U
   | 0, U => by simp [chainOp, postU]
   | q + 1, U => by
-    have ht : Fin.tail (postU P U) = postU P (Fin.tail U) := by
-      funext i
-      simp [Fin.tail, postU]
-    have h0 : postU P U 0 = U 0 := by
-      simp [postU]
+    have ht : Fin.tail (postU P U) = postU P (Fin.tail U) :=
+      funext fun i => by simp [Fin.tail, postU]
+    have h0 : postU P U 0 = U 0 := by simp [postU]
     simp only [chainOp, ht, h0, chainOp_postU O P q, Matrix.mul_assoc]
 
 /-- The chain operator of lifted unitaries and a lifted oracle is the lift of the chain
@@ -187,10 +183,8 @@ theorem chainOp_liftU {c d' : ℕ} (e : Fin (d * c) ≃ Fin d') (O : Matrix (Fin
       chainOp (kr e O 1) q (liftU e ∘ U) = kr e (chainOp O q U) 1
   | 0, U => rfl
   | q + 1, U => by
-    have ih := chainOp_liftU e O q (Fin.tail U)
-    simp only [chainOp]
-    rw [show Fin.tail (liftU e ∘ U) = liftU e ∘ Fin.tail U from rfl, ih]
-    simp [kr_mul]
+    simp [chainOp, show Fin.tail (liftU e ∘ U) = liftU e ∘ Fin.tail U from rfl,
+      chainOp_liftU e O q (Fin.tail U), kr_mul]
 
 end Chain
 
@@ -238,9 +232,7 @@ theorem xPart_regIdx (t : (Fin m × Fin n) × Fin w) (z : Fin m) :
 /-- The projector onto the query value `x` is the diagonal projector of `xPart = x`. -/
 theorem projS_singleton_eq_diagB (x : Fin m) :
     projS m n w {x} = diagB fun j => decide (xPart m n w j = x) := by
-  rw [projS_eq_diagonal, diagB]
-  congr 1; funext j
-  simp [indS]
+  simp [projS_eq_diagonal, diagB, indS]
 
 variable [NeZero m]
 
@@ -305,8 +297,7 @@ theorem prOut_withFinalB_eq_sum_prOutAt (F : QAdv m n w q) (p : Fin (m * n * w) 
         diagB (fun k => g k (H (p k))) * N * (diagB fun k => g k (H (p k)))ᴴ := by
       simp only [hN, QAdv.withFinalB, runOp, conjTranspose_mul, Matrix.mul_assoc]
     rw [hc, trace_diagB_conj, Complex.re_sum]
-    refine congrArg _ (Finset.sum_congr rfl fun k _ => ?_)
-    split_ifs <;> simp
+    simp [apply_ite]
   have hR : ∀ x, prOutAt ((moveAdv F p).withVerifier (QVerifier.ofPred (moveAcc p g)) x (H x))
       H x = ENNReal.ofReal
         (∑ j, if (moveAcc p g x (H x) j && decide (xPart m n (w * m) j = x)) then (M j j).re
@@ -320,8 +311,7 @@ theorem prOut_withFinalB_eq_sum_prOutAt (F : QAdv m n w q) (p : Fin (m * n * w) 
         D * R * ρ * (D * R)ᴴ = D * (R * ρ * Rᴴ) * Dᴴ := fun D R ρ => by
       simp only [conjTranspose_mul, Matrix.mul_assoc]
     rw [hc, trace_diagB_conj, Complex.re_sum]
-    refine congrArg _ (Finset.sum_congr rfl fun k _ => ?_)
-    split_ifs <;> simp [hMdef, runOp]
+    simp [apply_ite, hMdef, runOp]
   have hM : ∀ j, M j j =
       kr (ancE m n w m) N (ancProj 0) ((movePerm p).symm j) ((movePerm p).symm j) := by
     have hkr : kr (ancE m n w m) (runOp F H) 1 * kr (ancE m n w m) F.init.val (ancProj 0) *
@@ -332,18 +322,13 @@ theorem prOut_withFinalB_eq_sum_prOutAt (F : QAdv m n w q) (p : Fin (m * n * w) 
       rw [hMdef, runOp_moveAdv, ← permUnitary_conj, ← hkr]
       change _ * kr (ancE m n w m) F.init.val (ancProj 0) * _ = _
       simp only [conjTranspose_mul, Matrix.mul_assoc]
-    intro j
-    rw [hMe, Matrix.submatrix_apply]
+    exact fun j => congrFun (congrFun hMe j) j
   have hsum : ∀ j, (∑ x : Fin m,
       if (moveAcc p g x (H x) j && decide (xPart m n (w * m) j = x)) then (M j j).re else 0) =
       if moveAcc p g (xPart m n (w * m) j) (H (xPart m n (w * m) j)) j then (M j j).re
         else 0 := by
     intro j
-    rw [Finset.sum_eq_single (xPart m n (w * m) j)]
-    · simp
-    · intro b _ hb
-      simp [Ne.symm hb]
-    · simp
+    rw [Finset.sum_eq_single (xPart m n (w * m) j)] <;> grind
   rw [hL, Finset.sum_congr rfl fun x _ => hR x, ← ENNReal.ofReal_sum_of_nonneg]
   · congr 1
     rw [Finset.sum_comm]
@@ -352,16 +337,9 @@ theorem prOut_withFinalB_eq_sum_prOutAt (F : QAdv m n w q) (p : Fin (m * n * w) 
     simp only [Equiv.symm_apply_apply]
     rw [← (regIdx m n w).sum_comp, Fintype.sum_prod_type, ← (oracleIndex m n w).sum_comp]
     refine Finset.sum_congr rfl fun t _ => ?_
-    rw [Finset.sum_eq_single 0]
-    · simp [movePerm_regIdx, kr_regIdx_apply, movePermAux, xPart_regIdx, moveAcc, ancProj]
-    · intro z _ hz
-      simp [kr_regIdx_apply, ancProj, hz]
-    · simp
-  · intro x _
-    refine Finset.sum_nonneg fun j _ => ?_
-    split_ifs
-    · exact re_diag_nonneg hMpsd j
-    · exact le_rfl
+    rw [Finset.sum_eq_single 0] <;> simp +contextual [movePerm_regIdx, kr_regIdx_apply,
+      movePermAux, xPart_regIdx, moveAcc, ancProj]
+  · exact fun x _ => Finset.sum_nonneg fun j _ => ite_nonneg (re_diag_nonneg hMpsd j) le_rfl
 
 end Move
 

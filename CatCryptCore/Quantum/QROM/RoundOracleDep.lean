@@ -63,10 +63,8 @@ theorem rounds_upto_bad_local_dep {Ω K : Type} [Fintype Ω] [DecidableEq K]
     badW1_nonneg _ _ _ _ _ _ _ _ _ (B j).init.psd
   have hWsum : ∀ j h g, ∑ y, W j h g y ≤ k := by
     intro j h g
-    have := sum_badW1_singleton_le (oracleQ m n w h) g k q
-      (fun i => ((B j).seg 0 i).toQComp) (fun j' i => (Fin.tail (B j).seg j' i).toQComp)
+    simpa [(B j).init.tr_one] using sum_badW1_singleton_le (oracleQ m n w h) g k q _ _
       (B j).rounds (B j).init.val (B j).init.psd
-    rwa [(B j).init.tr_one, Complex.one_re, mul_one] at this
   have hstep : ∀ ω, absDiff (prOutMRGen (B (κ ω)) (H ω) (f ω))
       (prOutMRGen (B (κ ω)) (H ω) (f' ω)) ≤
       ∑ y, (if y ∈ E ω then 1 else 0) * ENNReal.ofReal (W (κ ω) (H ω) (f ω) y) := by
@@ -83,17 +81,7 @@ theorem rounds_upto_bad_local_dep {Ω K : Type} [Fintype Ω] [DecidableEq K]
         ((κ ω, H ω, fun y' => if y' = y then none else some (f ω y')) =
           (κ ω₀, H ω₀, fun y' => if y' = y then none else some (f ω₀ y'))) ↔
         (κ ω = κ ω₀ ∧ H ω = H ω₀ ∧ ∀ y', y' ≠ y → f ω y' = f ω₀ y') := by
-      intro ω ω₀
-      constructor
-      · intro he
-        refine ⟨congrArg Prod.fst he, congrArg (fun p => p.2.1) he, fun y' hy' => ?_⟩
-        have := congrFun (congrArg (fun p => p.2.2) he) y'
-        simpa [hy'] using this
-      · rintro ⟨h₀, h₁, h₂⟩
-        refine Prod.ext h₀ (Prod.ext h₁ (funext fun y' => ?_))
-        by_cases hy' : y' = y
-        · simp [hy']
-        · simp [hy', h₂ y' hy']
+      simp only [Prod.mk.injEq, funext_iff]; grind
     refine sum_mul_boole_mul_le_of_fiber
       (fun ω => (κ ω, H ω, fun y' => if y' = y then none else some (f ω y'))) μ _
       (fun ω => y ∈ E ω) lam ?_ ?_
@@ -101,9 +89,7 @@ theorem rounds_upto_bad_local_dep {Ω K : Type} [Fintype Ω] [DecidableEq K]
       obtain ⟨h₀, h₁, h₂⟩ := (hκ ω ω').mp he
       simp only [hWdef, h₀, h₁]
       rw [badW1_congr _ (f := f ω') (f' := f ω) (fun y' hy' => h₂ y' (by simpa using hy'))]
-    · intro ω₀
-      simp only [hκ]
-      exact hlam (κ ω₀) y (H ω₀) (f ω₀)
+    · simpa only [hκ] using fun ω₀ => hlam (κ ω₀) y (H ω₀) (f ω₀)
   calc absDiff (∑ ω, μ ω * prOutMRGen (B (κ ω)) (H ω) (f ω))
         (∑ ω, μ ω * prOutMRGen (B (κ ω)) (H ω) (f' ω))
       ≤ ∑ ω, absDiff (μ ω * prOutMRGen (B (κ ω)) (H ω) (f ω))
@@ -113,26 +99,19 @@ theorem rounds_upto_bad_local_dep {Ω K : Type} [Fintype Ω] [DecidableEq K]
           (prOutMRGen (B (κ ω)) (H ω) (f' ω)) :=
         Finset.sum_le_sum fun ω _ => absDiff_mul_left_le _ _ _
     _ ≤ ∑ ω, μ ω * ∑ y, (if y ∈ E ω then 1 else 0) *
-          ENNReal.ofReal (W (κ ω) (H ω) (f ω) y) := by
-        gcongr with ω
-        exact hstep ω
+          ENNReal.ofReal (W (κ ω) (H ω) (f ω) y) :=
+        Finset.sum_le_sum fun ω _ => mul_le_mul_right (hstep ω) _
     _ = ∑ y, ∑ ω, μ ω * (if y ∈ E ω then 1 else 0) *
           ENNReal.ofReal (W (κ ω) (H ω) (f ω) y) := by
-        simp only [Finset.mul_sum]
-        rw [Finset.sum_comm]
-        exact Finset.sum_congr rfl fun y _ => Finset.sum_congr rfl fun ω _ => by ring
+        simp only [Finset.mul_sum, mul_assoc]; rw [Finset.sum_comm]
     _ ≤ ∑ y, lam * ∑ ω, μ ω * ENNReal.ofReal (W (κ ω) (H ω) (f ω) y) :=
         Finset.sum_le_sum fun y _ => hfib y
     _ = lam * ∑ ω, μ ω * ENNReal.ofReal (∑ y, W (κ ω) (H ω) (f ω) y) := by
-        rw [← Finset.mul_sum, Finset.sum_comm]
-        congr 1
-        refine Finset.sum_congr rfl fun ω _ => ?_
-        rw [ENNReal.ofReal_sum_of_nonneg fun y _ => hW _ _ _ y, Finset.mul_sum]
+        simp only [ENNReal.ofReal_sum_of_nonneg fun y _ => hW _ _ _ y, Finset.mul_sum]
+        rw [Finset.sum_comm]
     _ ≤ lam * ∑ ω, μ ω * k := by
         gcongr with ω
         exact (ENNReal.ofReal_le_ofReal (hWsum _ _ _)).trans (by simp)
-    _ = lam * ((∑ ω, μ ω) * k) := by rw [Finset.sum_mul]
-    _ ≤ lam * (1 * k) := by gcongr
-    _ = k * lam := by ring
+    _ ≤ k * lam := by grw [← Finset.sum_mul, hμ, one_mul, mul_comm]
 
 end CatCrypt.Quantum.QROM

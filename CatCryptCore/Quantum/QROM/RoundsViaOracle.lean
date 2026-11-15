@@ -76,27 +76,13 @@ variable {c : ℕ}
 
 /-- The conjugate transpose of `|y⟩⟨y'|` is `|y'⟩⟨y|`. -/
 theorem ancUnit_conjTranspose (y y' : Fin c) : (ancUnit y y')ᴴ = ancUnit y' y := by
-  ext i j
-  simp only [conjTranspose_apply, ancUnit, Matrix.of_apply]
-  by_cases h1 : j = y <;> by_cases h2 : i = y' <;> simp [h1, h2]
+  ext i j; simp [ancUnit, and_comm]
 
 /-- The product `|y⟩⟨y'| |z⟩⟨z'|`. -/
 theorem ancUnit_mul_ancUnit (y y' z z' : Fin c) :
     ancUnit y y' * ancUnit z z' = if y' = z then ancUnit y z' else 0 := by
   ext i j
-  simp only [Matrix.mul_apply, ancUnit, Matrix.of_apply]
-  split_ifs with h
-  · subst h
-    rw [Finset.sum_eq_single y']
-    · by_cases h1 : i = y <;> by_cases h2 : j = z' <;> simp [h1, h2]
-    · intro b _ hb
-      simp [hb]
-    · simp
-  · refine Finset.sum_eq_zero fun b _ => ?_
-    by_cases hb : b = y'
-    · subst hb
-      simp [h]
-    · simp [hb]
+  split_ifs with h <;> simp [Matrix.mul_apply, ancUnit, h, ite_and] <;> grind
 
 /-- The shift is unitary. -/
 theorem ancShift_conjTranspose_mul_self [NeZero c] (y : Fin c) :
@@ -130,7 +116,6 @@ def swapE : Fin (m * n * w * (m * n)) ≃ Fin (m * n * (w * (m * n))) :=
 theorem swapE_symm_apply (a : Fin (m * n)) (z : Fin w) (p : Fin (m * n)) :
     (swapE m n w).symm (finProdEquiv (m * n) (w * (m * n)) (a, finProdEquiv w (m * n) (z, p))) =
       finProdEquiv (m * n * w) (m * n) (finProdEquiv (m * n) w (p, z), a) := by
-  rw [Equiv.symm_apply_eq]
   simp [swapE, swapAux]
 
 /-- The permutation of the extended register taking the indices of `ancE` to those of
@@ -146,10 +131,7 @@ def exU : Matrix (Fin (m * n * (w * (m * n)))) (Fin (m * n * (w * (m * n)))) ℂ
 theorem kr_swapE (A : Matrix (Fin (m * n * w)) (Fin (m * n * w)) ℂ)
     (B : Matrix (Fin (m * n)) (Fin (m * n)) ℂ) :
     kr (swapE m n w) A B = exU m n w * kr (ancE m n w (m * n)) A B * (exU m n w)ᴴ := by
-  rw [exU, permUnitary_conj]
-  unfold kr
-  rw [Matrix.submatrix_submatrix]
-  congr 1
+  rw [exU, permUnitary_conj]; rfl
 
 theorem exU_conjTranspose_mul_self : (exU m n w)ᴴ * exU m n w = 1 :=
   star_permUnitary_mul _
@@ -167,9 +149,7 @@ theorem kr_swapE_one_left (X : Matrix (Fin (m * n)) (Fin (m * n)) ℂ) :
   obtain ⟨⟨z, p⟩, rfl⟩ := (finProdEquiv w (m * n)).surjective t
   obtain ⟨⟨a', t'⟩, rfl⟩ := (finProdEquiv (m * n) (w * (m * n))).surjective j
   obtain ⟨⟨z', p'⟩, rfl⟩ := (finProdEquiv w (m * n)).surjective t'
-  simp only [kr, Matrix.submatrix_apply, swapE_symm_apply, kronecker_apply,
-    Equiv.symm_apply_apply, Matrix.one_apply, EmbeddingLike.apply_eq_iff_eq, Prod.mk.injEq]
-  by_cases hp : p = p' <;> by_cases hz : z = z' <;> simp [hp, hz]
+  simp [kr, swapE_symm_apply, kronecker_apply, Matrix.one_apply, and_comm]
 
 variable {m n w}
 
@@ -314,9 +294,8 @@ theorem postOpP_complete (R : ClassicalRound (m * n * w) c a) (g : Fin c → Fin
   rw [← kr_sum_left, R.P_sum, kr_one, Matrix.mul_one, exU_mul_conjTranspose_self]
 
 theorem postOp_complete (R : ClassicalRound (m * n * w) c a) (g : Fin c → Fin n → Fin a) :
-    ∑ i, (postOp R g i)ᴴ * postOp R g i = 1 := by
-  rw [← postOpP_complete R g]
-  exact (finProdEquiv c (m * n)).symm.sum_comp fun yj => (postOpP R g yj)ᴴ * postOpP R g yj
+    ∑ i, (postOp R g i)ᴴ * postOp R g i = 1 :=
+  ((finProdEquiv c (m * n)).symm.sum_comp _).trans (postOpP_complete R g)
 
 /-- The first operation of the gadget. -/
 def gadPre (R : ClassicalRound (m * n * w) c a) (pt : Fin c → Fin m) :
@@ -355,9 +334,7 @@ theorem gadget_anc (H : Fin m → Fin n) (x : Fin m) (j : Fin (m * n)) :
     simp only [conjTranspose_mul, ancUnit_conjTranspose, Matrix.mul_assoc]
   rw [h, ancShift_mul_ancProj_zero_mul_conjTranspose, stdOracleFixedG_conj_ancUnit,
     ancUnit_mul_ancUnit]
-  split_ifs with hj
-  · simp only [ancUnit_mul_ancUnit, hj, ite_true, ancUnit_self]
-  · rw [Matrix.zero_mul]
+  split_ifs with hj <;> simp [ancUnit_mul_ancUnit, hj, ancUnit_self]
 
 /-- On `B ⊗ |0⟩⟨0|` the gadget computes the round `R` with the round function
     `y ↦ g y (H (pt y))` on `B`. -/
@@ -385,27 +362,13 @@ theorem gadget_branch (R : ClassicalRound (m * n * w) c a) (pt : Fin c → Fin m
       simp only [conjTranspose_mul, Matrix.mul_assoc]
     rw [h0, postOp_mul_oracle_mul_preOp, kr_conjTranspose, kr_mul, kr_mul, gadget_anc]
     obtain ⟨y', j⟩ := p
-    by_cases hj : j = fixedIndex m n (pt y, H (pt y))
-    · subst hj
-      by_cases hy : y' = y
-      · subst hy
-        simp only [ite_true, Equiv.symm_apply_apply, R.P_mul_self, conjTranspose_mul,
-          Matrix.mul_assoc]
-      · have hne : (y', fixedIndex m n (pt y, H (pt y))) ≠ (y, fixedIndex m n (pt y, H (pt y))) :=
-          fun h => hy (Prod.mk.inj h).1
-        simp only [ite_true, hne, ite_false, Matrix.mul_assoc]
-        rw [← Matrix.mul_assoc (R.P y') (R.P y), R.P_orth y' y hy]
-        simp [kr_zero_left]
-    · have hne : (y', j) ≠ (y, fixedIndex m n (pt y, H (pt y))) := fun h => hj (Prod.mk.inj h).2
-      simp only [hj, hne, ite_false, kr_zero_right]
+    by_cases hj : j = fixedIndex m n (pt y, H (pt y)) <;> by_cases hy : y' = y <;>
+      simp_all [R.P_mul_self, Matrix.mul_assoc, R.P_orth y' y, kr_zero_left, kr_zero_right]
   rw [qbind_unit_branch, qbind_unit_branch, gadPre, gadPost, krausCh_branch, oracleQ,
     unitaryChannel_branch_apply, krausCh_branch, roundU_branch, kr_sum_left,
     ← (finProdEquiv c (m * n)).sum_comp]
   simp only [postOp, Equiv.symm_apply_apply, Finset.mul_sum, Finset.sum_mul, hT]
-  rw [Finset.sum_comm]
-  refine Finset.sum_congr rfl fun y _ => ?_
-  rw [Finset.sum_ite_eq']
-  simp
+  rw [Finset.sum_comm]; simp
 
 end Gadget
 
@@ -456,12 +419,9 @@ def segOps {c' a' : ℕ} (R : ClassicalRound (m * n * w) c' a') (pt : Fin c' →
 theorem isTP_segOps {c' a' : ℕ} (R : ClassicalRound (m * n * w) c' a') (pt : Fin c' → Fin m)
     (g : Fin c' → Fin n → Fin a') (U : Fin (q + 1) → CPComp (m * n * (w * (m * n))) Unit)
     (hU : ∀ i, IsTP ((U i).toQComp.branch ())) (i : Fin (q + 1 + 1)) :
-    IsTP ((segOps R pt g U i).toQComp.branch ()) := by
-  refine Fin.cases ?_ (fun i => ?_) i
-  · exact isTP_krausCh _ _
-  · refine Fin.cases ?_ (fun i => ?_) i
-    · exact isTP_compCh (isTP_krausCh _ _) (hU 0)
-    · exact hU i.succ
+    IsTP ((segOps R pt g U i).toQComp.branch ()) :=
+  Fin.cases (isTP_krausCh _ _) (Fin.cases (isTP_compCh (isTP_krausCh _ _) (hU 0)) fun i =>
+    hU i.succ) i
 
 /-- A chain whose first operation is `X` followed by `Y` is `X` followed by the chain with
     first operation `Y`. -/
@@ -491,9 +451,8 @@ theorem presAncQ_seg {c' a' : ℕ} (H : Fin m → Fin n) (R : ClassicalRound (m 
           QComp.qbind (oracleQ m n (w * (m * n)) H) fun _ => (gadPost R g).toQComp) fun _ =>
         chainG (oracleQ m n (w * (m * n)) H) q fun i => (U' i).toQComp := by
     have hU' : (fun i => (Fin.cons (α := fun _ => CPComp (m * n * (w * (m * n))) Unit) (U' 0)
-        (fun i => U' i.succ) i).toQComp) = fun i => (U' i).toQComp := by
-      funext i
-      exact congrArg CPComp.toQComp (congrFun (Fin.cons_self_tail U') i)
+        (fun i => U' i.succ) i).toQComp) = fun i => (U' i).toQComp :=
+      funext fun i => congrArg CPComp.toQComp (congrFun (Fin.cons_self_tail U') i)
     simp only [QComp.qbind_assoc]
     change QComp.qbind (gadPre R pt).toQComp (fun _ =>
       QComp.qbind (oracleQ m n (w * (m * n)) H) fun _ =>
@@ -555,9 +514,7 @@ def QAdvMRGen.viaOracle (A : QAdvMRGen m n w q k c a) (π : Fin c → Fin m)
       (liftOps (A.seg 0) (A.seg_tp 0)))
     fun j => segOps (A.rounds j) π g (liftOps (A.seg j.succ) (A.seg_tp j.succ))
   seg_tp j i := by
-    induction j using Fin.cases with
-    | zero => exact isTP_segOps _ _ _ _ (fun i => isTP_liftCh _ _ _) i
-    | succ j => exact isTP_segOps _ _ _ _ (fun i => isTP_liftCh _ _ _) i
+    cases j using Fin.cases <;> exact isTP_segOps _ _ _ _ (fun i => isTP_liftCh _ _ _) i
   rounds j := liftRA (ancE m n w (m * n)) (dephR (A.rounds j))
   init := liftInit A.init
   final := kr (ancE m n w (m * n)) A.final 1
@@ -582,8 +539,7 @@ theorem prOutMRGen_viaOracle_eq (A : QAdvMRGen m n w q k c a) (π : Fin c → Fi
 
 /-- The flattened query count of `A.viaOracle π g` is that of `A` plus `k + 1`. -/
 theorem flatQ_succ_succ (q k : ℕ) : flatQ (q + 1) k (q + 1) = flatQ q k q + (k + 1) := by
-  rw [flatQ_eq, flatQ_eq]
-  ring
+  grind [flatQ_eq]
 
 end ViaOracle
 

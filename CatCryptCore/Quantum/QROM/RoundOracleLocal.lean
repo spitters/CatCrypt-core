@@ -70,9 +70,7 @@ the part at `T \ S`. -/
 theorem roundPart_of_subset (R : ClassicalRound d c a) (f : Fin c → Fin a)
     {S T : Finset (Fin c)} (h : S ⊆ T) (σ : Matrix (Fin d) (Fin d) ℂ) :
     roundPart R f T σ = roundPart R f S σ + roundPart R f (T \ S) σ := by
-  unfold roundPart
-  rw [add_comm]
-  exact (Finset.sum_sdiff h).symm
+  exact (Finset.sum_sdiff h).symm.trans (add_comm _ _)
 
 /-- The first-read weight of `D`: the sum over the rounds of the weight of the
 outcomes in `D`, each measured on the part of the state, in the chain with the
@@ -127,8 +125,7 @@ theorem badW1_le_add (O : QComp d Unit) (f : Fin c → Fin a) (D : Finset (Fin c
     (R : Fin k → ClassicalRound d c a) (σ : Matrix (Fin d) (Fin d) ℂ)
     {τ : Matrix (Fin d) (Fin d) ℂ} (hτ : τ.PosSemidef) :
     badW1 O f D k q₀ head tail R σ ≤ badW1 O f D k q₀ head tail R (σ + τ) := by
-  rw [badW1_add]
-  linarith [badW1_nonneg O f D k q₀ head tail R τ hτ]
+  simpa [badW1_add] using badW1_nonneg O f D k q₀ head tail R τ hτ
 
 /-- The first-read weight of `D` depends on the classical function only
 outside `D`. -/
@@ -160,12 +157,8 @@ theorem badW1_le_sum_singleton (O : QComp d Unit) (f : Fin c → Fin a) :
           badW1 O f {y} k q (tail 0) (Fin.tail tail) (Fin.tail R)
             (roundPart (R 0) f {y}ᶜ σ₁) := by
       intro y hy
-      have hsub : Dᶜ ⊆ ({y} : Finset (Fin c))ᶜ := by
-        intro x hx
-        simp only [Finset.mem_compl, Finset.mem_singleton] at hx ⊢
-        rintro rfl
-        exact hx hy
-      rw [roundPart_of_subset (R 0) f hsub]
+      rw [roundPart_of_subset (R 0) f
+        (Finset.compl_subset_compl.mpr (Finset.singleton_subset_iff.mpr hy))]
       exact badW1_le_add O f {y} k q _ _ _ _ (roundPart_posSemidef (R 0) f _ hσ₁)
     simp only [badW1]
     rw [← hσ₁def, roundBad_eq_sum_singleton, Finset.sum_add_distrib]
@@ -242,7 +235,6 @@ theorem abs_eff_mrChainG_sub_le_badW1 (O : QComp d Unit) (E : QComp d Bool)
     rw [hC, hC', hs, hs', map_add, map_add, map_add, map_add, trace_add, trace_add,
       Complex.add_re, Complex.add_re]
     simp only [badW1]
-    rw [← hσ₁def]
     rw [abs_le] at ih ⊢
     constructor <;> linarith [ih.1, ih.2]
 
@@ -296,7 +288,6 @@ theorem eff_mrChainG_sub_mrPartG_mem (O : QComp d Unit) (E : QComp d Bool)
     rw [trace_roundPart] at a₂
     rw [hC, hs, map_add, map_add, trace_add, Complex.add_re]
     simp only [mrPartG, badW1]
-    rw [← hσ₁def]
     constructor <;> linarith [ih.1, ih.2]
 
 end Rounds
@@ -387,32 +378,13 @@ theorem sum_mul_boole_mul_le_of_fiber {Ω K : Type} [Fintype Ω] [DecidableEq K]
   rw [key, key, Finset.mul_sum]
   refine Finset.sum_le_sum fun j hj => ?_
   obtain ⟨ω₀, -, rfl⟩ := Finset.mem_image.mp hj
-  have hc : ∀ ω ∈ Finset.univ.filter (fun ω => κ ω = κ ω₀), V ω = V ω₀ :=
-    fun ω hω => hV _ _ (Finset.mem_filter.mp hω).2
-  have s₁ : ∑ ω ∈ Finset.univ.filter (fun ω => κ ω = κ ω₀),
-      μ ω * (if p ω then 1 else 0) * V ω =
-      (∑ ω ∈ Finset.univ.filter (fun ω => κ ω = κ ω₀), μ ω * (if p ω then 1 else 0)) *
-        V ω₀ := by
-    rw [Finset.sum_mul]
-    exact Finset.sum_congr rfl fun ω hω => by rw [hc ω hω]
-  have s₂ : ∑ ω ∈ Finset.univ.filter (fun ω => κ ω = κ ω₀), μ ω * V ω =
-      (∑ ω ∈ Finset.univ.filter (fun ω => κ ω = κ ω₀), μ ω) * V ω₀ := by
-    rw [Finset.sum_mul]
-    exact Finset.sum_congr rfl fun ω hω => by rw [hc ω hω]
-  rw [s₁, s₂]
-  have e₁ : ∑ ω ∈ Finset.univ.filter (fun ω => κ ω = κ ω₀), μ ω * (if p ω then 1 else 0) =
-      ∑ ω, μ ω * (if κ ω = κ ω₀ then 1 else 0) * (if p ω then 1 else 0) := by
-    rw [Finset.sum_filter]
-    refine Finset.sum_congr rfl fun ω _ => ?_
-    split_ifs <;> simp
-  have e₂ : ∑ ω ∈ Finset.univ.filter (fun ω => κ ω = κ ω₀), μ ω =
-      ∑ ω, μ ω * (if κ ω = κ ω₀ then 1 else 0) := by
-    rw [Finset.sum_filter]
-    refine Finset.sum_congr rfl fun ω _ => ?_
-    split_ifs <;> simp
-  rw [e₁, e₂, ← mul_assoc]
+  have hs : ∀ g : Ω → ℝ≥0∞, ∑ ω ∈ Finset.univ.filter (fun ω => κ ω = κ ω₀), g ω * V ω =
+      (∑ ω ∈ Finset.univ.filter (fun ω => κ ω = κ ω₀), g ω) * V ω₀ := fun g =>
+    (Finset.sum_congr rfl fun ω hω => by rw [hV _ _ (Finset.mem_filter.mp hω).2]).trans
+      (Finset.sum_mul _ _ _).symm
+  rw [hs, hs, ← mul_assoc]
   gcongr
-  exact h ω₀
+  simpa only [Finset.sum_filter, mul_ite, mul_one, mul_zero, ← ite_and, and_comm] using h ω₀
 
 /-- Up to bad in the classical rounds, conditioned on the oracle and the other
 outcomes: let `f' ω` agree with `f ω` outside `E ω`, and let the event
@@ -452,17 +424,8 @@ theorem rounds_upto_bad_local {Ω : Type} [Fintype Ω] (A : QAdvMRGen m n w q k 
     have hκ : ∀ ω ω₀, ((H ω, fun y' => if y' = y then none else some (f ω y')) =
         (H ω₀, fun y' => if y' = y then none else some (f ω₀ y'))) ↔
         (H ω = H ω₀ ∧ ∀ y', y' ≠ y → f ω y' = f ω₀ y') := by
-      intro ω ω₀
-      constructor
-      · intro he
-        refine ⟨congrArg Prod.fst he, fun y' hy' => ?_⟩
-        have := congrFun (congrArg Prod.snd he) y'
-        simpa [hy'] using this
-      · rintro ⟨h₁, h₂⟩
-        refine Prod.ext h₁ (funext fun y' => ?_)
-        by_cases hy' : y' = y
-        · simp [hy']
-        · simp [hy', h₂ y' hy']
+      simp only [Prod.mk.injEq, funext_iff]
+      grind
     refine sum_mul_boole_mul_le_of_fiber
       (fun ω => (H ω, fun y' => if y' = y then none else some (f ω y'))) μ _
       (fun ω => y ∈ E ω) lam ?_ ?_
@@ -482,16 +445,13 @@ theorem rounds_upto_bad_local {Ω : Type} [Fintype Ω] (A : QAdvMRGen m n w q k 
         gcongr with ω
         exact hstep ω
     _ = ∑ y, ∑ ω, μ ω * (if y ∈ E ω then 1 else 0) * ENNReal.ofReal (W (H ω) (f ω) y) := by
-        simp only [Finset.mul_sum]
-        rw [Finset.sum_comm]
-        exact Finset.sum_congr rfl fun y _ => Finset.sum_congr rfl fun ω _ => by ring
+        simp only [Finset.mul_sum, mul_assoc]
+        exact Finset.sum_comm
     _ ≤ ∑ y, lam * ∑ ω, μ ω * ENNReal.ofReal (W (H ω) (f ω) y) :=
         Finset.sum_le_sum fun y _ => hfib y
     _ = lam * ∑ ω, μ ω * ENNReal.ofReal (∑ y, W (H ω) (f ω) y) := by
-        rw [← Finset.mul_sum, Finset.sum_comm]
-        congr 1
-        refine Finset.sum_congr rfl fun ω _ => ?_
-        rw [ENNReal.ofReal_sum_of_nonneg fun y _ => hW _ _ y, Finset.mul_sum]
+        simp only [ENNReal.ofReal_sum_of_nonneg fun y _ => hW _ _ y, Finset.mul_sum]
+        exact Finset.sum_comm
     _ ≤ lam * ∑ ω, μ ω * k := by
         gcongr with ω
         exact (ENNReal.ofReal_le_ofReal (hWsum _ _)).trans (by simp)

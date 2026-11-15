@@ -1209,6 +1209,10 @@ public import CatCryptCore.Crypto.OT.GamesTimed
 public import CatCryptCore.Crypto.OTExtension.IKNPWake
 public import CatCryptCore.Crypto.OTExtension.IKNPWakeShape
 public import CatCryptCore.Crypto.OTExtension.IKNPPVW
+public import CatCryptCore.Quantum.KronNf
+public import CatCryptCore.Quantum.KronNfAttr
+public import CatCryptCore.Quantum.TensorProductPositivity
+public import CatCryptCore.Quantum.QROM.SaltedPreimageGame
 
 /-! # CatCrypt Core — umbrella
 

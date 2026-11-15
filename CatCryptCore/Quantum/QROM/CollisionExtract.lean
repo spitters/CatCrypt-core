@@ -89,10 +89,9 @@ theorem dbColl_of_outDbColl {p : Fin m × Fin m} {k : Fin ((n + 1) ^ m)}
 theorem dbOp_mem_unitaryGroup (F : Fin m → Matrix (Fin (n + 1)) (Fin (n + 1)) ℂ)
     (hF : ∀ y, F y ∈ Matrix.unitaryGroup (Fin (n + 1)) ℂ) :
     dbOp m n F ∈ Matrix.unitaryGroup (Fin ((n + 1) ^ m)) ℂ := by
-  rw [Matrix.mem_unitaryGroup_iff, star_eq_conjTranspose, dbOp_conjTranspose, dbOp_mul]
-  rw [show (fun y => F y * (F y)ᴴ) = 1 from funext fun y => by
-    rw [← star_eq_conjTranspose]; exact Matrix.mem_unitaryGroup_iff.mp (hF y)]
-  exact dbOp_one
+  rw [Matrix.mem_unitaryGroup_iff, star_eq_conjTranspose, dbOp_conjTranspose, dbOp_mul,
+    show (fun y => F y * (F y)ᴴ) = 1 from funext fun y => Matrix.mem_unitaryGroup_iff.mp (hF y),
+    dbOp_one]
 
 /-- A diagonal operator whose entries depend only on the entries `x` and `x'`
     commutes with an entrywise product operator that is the identity at `x`
@@ -109,9 +108,8 @@ theorem diagonal_mul_dbOp_comm (x x' : Fin m) (g : Fin ((n + 1) ^ m) → ℂ)
   · have hy : ∀ y, F y = 1 → (dbIndex m n).symm i y = (dbIndex m n).symm j y := by
       intro y hy
       by_contra hc
-      apply h
-      rw [dbOp_apply]
-      exact Finset.prod_eq_zero (Finset.mem_univ y) (by rw [hy]; exact Matrix.one_apply_ne hc)
+      simp only [dbOp_apply, Finset.prod_eq_zero_iff] at h
+      exact h ⟨y, Finset.mem_univ y, by simp [hy, hc]⟩
     rw [hg i j (hy x hFx) (hy x' hFx'), mul_comm]
 
 /-- `a² ≤ c b²` with `a, b ≥ 0` gives `a ≤ √c b`. -/
@@ -147,27 +145,19 @@ theorem nrm_sq_diagonal_rDb_le (x : Fin m) (g : Fin ((n + 1) ^ m) → ℂ) (c : 
       _ ≤ wt F * (2 * ∑ e, ‖z (dbIndex m n (Function.update F x e))‖ ^ 2) :=
           mul_le_mul_of_nonneg_left hcs (hw0 F)
       _ = ∑ e, 2 * (wt F * ‖z (dbIndex m n (Function.update F x e))‖ ^ 2) := by
-          rw [Finset.mul_sum, Finset.mul_sum]
-          exact Finset.sum_congr rfl fun e _ => by ring
+          simp only [Finset.mul_sum, mul_left_comm]
   have hnz : nrm z ^ 2 = ∑ G, ‖z (dbIndex m n G)‖ ^ 2 := by
     rw [nrm_sq_eq_sum_norm_sq, ← (dbIndex m n).sum_comp]
   refine hstep.trans ?_
   have key := sum_sum_update_comm x wt (fun G => ‖z (dbIndex m n G)‖ ^ 2)
-  simp only at key
   have hre : ∑ F, ∑ e, 2 * (wt F * ‖z (dbIndex m n (Function.update F x e))‖ ^ 2) =
       ∑ G, 2 * ((∑ e, wt (Function.update G x e)) * ‖z (dbIndex m n G)‖ ^ 2) := by
-    calc ∑ F, ∑ e, 2 * (wt F * ‖z (dbIndex m n (Function.update F x e))‖ ^ 2)
-        = 2 * ∑ F, ∑ e, wt F * ‖z (dbIndex m n (Function.update F x e))‖ ^ 2 := by
-          simp only [Finset.mul_sum]
-      _ = 2 * ∑ G, ∑ e, wt (Function.update G x e) * ‖z (dbIndex m n G)‖ ^ 2 := by
-          rw [key]
-      _ = _ := by simp only [Finset.mul_sum, Finset.sum_mul]
+    simpa only [Finset.mul_sum, Finset.sum_mul] using congrArg (HMul.hMul (2 : ℝ)) key
   rw [hre, hnz, Finset.mul_sum]
   refine Finset.sum_le_sum fun G _ => ?_
   have h1 : ∑ e, wt (Function.update G x e) ≤ c := by
     simpa only [hwt, Function.update_self] using hg G
-  have h2 := mul_le_mul_of_nonneg_right h1 (sq_nonneg ‖z (dbIndex m n G)‖)
-  linarith
+  linarith [mul_le_mul_of_nonneg_right h1 (sq_nonneg ‖z (dbIndex m n G)‖)]
 
 omit [NeZero n] in
 open Classical in
@@ -181,16 +171,8 @@ theorem sum_outDbColl_update_le (p : Fin m × Fin m) (x : Fin m) (hx : x = p.1 �
   have hkey : ∃ e0, ∀ e, outDbColl (m := m) (n := n) p (dbIndex m n (Function.update F x e)) →
       e ≠ Fin.last n ∧ e = e0 := by
     rcases hx with rfl | rfl
-    · refine ⟨F p.2, fun e h => ?_⟩
-      obtain ⟨hne, hl, heq⟩ := h
-      simp only [Equiv.symm_apply_apply, Function.update_self,
-        Function.update_of_ne (Ne.symm hne)] at hl heq
-      exact ⟨hl, heq⟩
-    · refine ⟨F p.1, fun e h => ?_⟩
-      obtain ⟨hne, hl, heq⟩ := h
-      simp only [Equiv.symm_apply_apply, Function.update_self,
-        Function.update_of_ne hne] at hl heq
-      exact ⟨heq ▸ hl, heq.symm⟩
+    · exact ⟨F p.2, fun e ⟨hne, _, _⟩ => by simp_all [Function.update_of_ne (Ne.symm hne)]⟩
+    · exact ⟨F p.1, fun e ⟨_, _, _⟩ => by simp_all⟩
   obtain ⟨e0, he0⟩ := hkey
   have hle : ∀ e, ‖(if outDbColl (m := m) (n := n) p (dbIndex m n (Function.update F x e))
       then (1 : ℂ) else 0)‖ ^ 2 * ‖entryDiff n e‖ ^ 2 ≤ if e = e0 then (1 / n : ℝ) else 0 := by
@@ -199,10 +181,8 @@ theorem sum_outDbColl_update_le (p : Fin m × Fin m) (x : Fin m) (hx : x = p.1 �
     · obtain ⟨hl, rfl⟩ := he0 e h
       rw [ite_eq_left h, ite_eq_left rfl, norm_one, one_pow, one_mul,
         norm_entryDiff_sq_of_ne _ hl]
-    · rw [ite_eq_right h, norm_zero]
-      split_ifs <;> simp
-  calc _ ≤ ∑ e, if e = e0 then (1 / n : ℝ) else 0 := Finset.sum_le_sum fun e _ => hle e
-    _ = 1 / n := by simp
+    · simp [h, apply_ite]
+  exact (Finset.sum_le_sum fun e _ => hle e).trans_eq (by simp)
 
 /-- At an output point `x` of `p`, `rDb x` followed by `outDbProj p` moves at most
     `√(2 / n)` of the norm. -/
@@ -214,19 +194,13 @@ theorem nrm_outDbProj_rDb_le (p : Fin m × Fin m) (x : Fin m) (hx : x = p.1 ∨ 
   have h := nrm_sq_diagonal_rDb_le x
     (fun k => if outDbColl (m := m) (n := n) p k then (1 : ℂ) else 0) (1 / n)
     (sum_outDbColl_update_le p x hx) z
-  calc nrm ((outDbProj m n p * rDb m n x) *ᵥ z) ^ 2
-      = nrm ((Matrix.diagonal (fun k => if outDbColl (m := m) (n := n) p k then (1 : ℂ) else 0) *
-          rDb m n x) *ᵥ z) ^ 2 := by rw [outDbProj]
-    _ ≤ 2 * (1 / n) * nrm z ^ 2 := h
-    _ = 2 / n * nrm z ^ 2 := by ring
+  rwa [outDbProj, ← mul_one_div]
 
 /-- Decompression of the entry `x` is unitary. -/
 theorem decompAt_mem_unitaryGroup (x : Fin m) :
     decompAt m n x ∈ Matrix.unitaryGroup (Fin ((n + 1) ^ m)) ℂ := by
   refine dbOp_mem_unitaryGroup _ fun y => ?_
-  by_cases h : y = x
-  · subst h; rw [Function.update_self]; exact decompEntry_mem_unitaryGroup n
-  · rw [Function.update_of_ne h]; exact one_mem _
+  rcases eq_or_ne y x with rfl | h <;> simp [*, decompEntry_mem_unitaryGroup]
 
 omit [NeZero n] in
 /-- Decompression of the database is decompression at `x` and `x'`, followed by
@@ -237,13 +211,7 @@ theorem decompDB_eq_dbOp_mul_decompAt (x x' : Fin m) (hxx' : x ≠ x') :
   rw [decompAt, decompAt, dbOp_mul, dbOp_mul, decompDB_eq_dbOp]
   congr 1
   funext y
-  by_cases hy : y = x
-  · subst hy
-    simp [hxx']
-  · by_cases hy' : y = x'
-    · subst hy'
-      simp [hy]
-    · simp [hy, hy']
+  by_cases hy : y = x <;> by_cases hy' : y = x' <;> simp_all
 
 /-- The standard and compressed oracle at two output points (Zhandry, Lemma 5): the
     test `outDbProj p` of the decompressed state `z` exceeds the test of the
@@ -257,8 +225,7 @@ theorem nrm_outDbProj_le (p : Fin m × Fin m) (z : Fin ((n + 1) ^ m) → ℂ) :
   · have h0 : outDbProj m n (x, x') = 0 := by
       ext i j
       simp [outDbProj, outDbColl, hp, Matrix.diagonal_apply]
-    simp only [h0, zero_mulVec, nrm_zero, zero_add]
-    exact mul_nonneg (by positivity) (nrm_nonneg z)
+    simpa [h0] using mul_nonneg (by positivity : (0 : ℝ) ≤ 2 * Real.sqrt (2 / n)) (nrm_nonneg z)
   obtain ⟨R, hRu, hQR, hdec⟩ : ∃ R : Matrix (Fin ((n + 1) ^ m)) (Fin ((n + 1) ^ m)) ℂ,
       R ∈ Matrix.unitaryGroup (Fin ((n + 1) ^ m)) ℂ ∧
       outDbProj m n (x, x') * R = R * outDbProj m n (x, x') ∧
@@ -266,10 +233,7 @@ theorem nrm_outDbProj_le (p : Fin m × Fin m) (z : Fin ((n + 1) ^ m) → ℂ) :
     refine ⟨_, dbOp_mem_unitaryGroup _ fun y => ?_,
       diagonal_mul_dbOp_comm x x' _ ?_ _ ?_ ?_, decompDB_eq_dbOp_mul_decompAt x x' hp⟩
     · simp only [Function.update_apply]
-      split_ifs
-      · exact one_mem _
-      · exact one_mem _
-      · exact decompEntry_mem_unitaryGroup n
+      split_ifs <;> simp [one_mem, decompEntry_mem_unitaryGroup]
     · intro i j h1 h2
       simp only [outDbColl, h1, h2]
       congr
@@ -361,10 +325,7 @@ theorem dbSlice_outCollProj_mulVec (out : Fin d → Fin m × Fin m)
     dbSlice (outCollProj m n out *ᵥ v) a = outDbProj m n (out a) *ᵥ dbSlice v a := by
   classical
   funext i
-  simp only [dbSlice, outCollProj, outDbProj, mulVec_diagonal]
-  by_cases h : outDbColl (m := m) (n := n) (out a) i
-  · rw [ite_eq_left ((outColl_finProdEquiv out a i).mpr h), ite_eq_left h]
-  · rw [ite_eq_right (mt (outColl_finProdEquiv out a i).mp h), ite_eq_right h]
+  simp only [dbSlice, outCollProj, outDbProj, mulVec_diagonal, outColl_finProdEquiv]
 
 /-- The test at the output is part of the collision projector. -/
 theorem nrm_sq_outCollProj_le_collProj (out : Fin d → Fin m × Fin m)
@@ -379,8 +340,7 @@ theorem nrm_sq_outCollProj_le_collProj (out : Fin d → Fin m × Fin m)
   rw [outDbProj, collDbProj, mulVec_diagonal, mulVec_diagonal]
   by_cases h : outDbColl (m := m) (n := n) (out a) k
   · simp [h, dbColl_of_outDbColl h]
-  · simp only [h, ite_false, zero_mul, norm_zero]
-    exact pow_le_pow_left₀ le_rfl (norm_nonneg _) 2
+  · simp [h]
 
 /-- The standard and compressed oracle at the output on the total register, squared:
     `‖Π φ‖² ≤ 2 ‖Π D φ‖² + (16 / n) ‖φ‖²` for the decompression `D` of the database. -/
@@ -406,14 +366,7 @@ theorem diagonal_eq_sum_kronecker_single {t : ℕ} (g : Fin (d * t) → ℂ) :
   rw [Matrix.sum_apply]
   simp only [kronecker_apply, Equiv.symm_apply_apply, Matrix.diagonal_apply,
     Matrix.single_apply, (finProdEquiv d t).injective.eq_iff, Prod.mk.injEq]
-  by_cases hab : a = b
-  · by_cases hij : i = j
-    · subst hab hij
-      simp
-    · simp only [hab, hij, and_false, ite_false]
-      refine (Finset.sum_eq_zero fun x _ => ?_).symm
-      rw [ite_eq_right fun (h : x = i ∧ x = j) => hij (h.1.symm.trans h.2), mul_zero]
-  · simp [hab]
+  by_cases hab : a = b <;> by_cases hij : i = j <;> simp [hab, hij, ite_and]
 
 /-- Against a block-diagonal oracle, a block-diagonal test `∑ₖ P k ⊗ |k⟩⟨k|` after the
     chain on `ρ ⊗ σ` has trace `∑ₖ σ k k` times the trace for the oracle `V k` and the
@@ -430,13 +383,8 @@ theorem trace_sum_kronecker_single_chainOp_blockU {t q : ℕ} (P : Fin t → Mat
   rw [chainOp_blockU, sum_kronecker_single_mul, conjTranspose_sum_kronecker_single,
     Finset.sum_mul, Finset.sum_mul, trace_sum]
   refine Finset.sum_congr rfl fun k _ => ?_
-  rw [Finset.mul_sum, trace_sum, Finset.sum_eq_single k]
-  · rw [kronecker_mul_kronecker, kronecker_mul_kronecker, TensorProduct.trace_kronecker,
-      trace_single_mul_mul_single, ite_eq_left rfl, mul_comm]
-  · intro j _ hj
-    rw [kronecker_mul_kronecker, kronecker_mul_kronecker, TensorProduct.trace_kronecker,
-      trace_single_mul_mul_single, ite_eq_right (Ne.symm hj), mul_zero]
-  · simp
+  rw [Finset.mul_sum, trace_sum, Finset.sum_eq_single k] <;>
+    simp +contextual [kronecker_mul_kronecker, TensorProduct.trace_kronecker, mul_comm, eq_comm]
 
 end Total
 
@@ -481,14 +429,7 @@ theorem diagonal_outColl_castSucc_eq_collTest (out : Fin d → Fin m × Fin m)
     (Matrix.diagonal fun a => if outColl (m := m) (n := n) out
       (finProdEquiv d ((n + 1) ^ m) (a, dbIndex m n fun x => (H x).castSucc)) then (1 : ℂ)
         else 0) = collTest out H := by
-  unfold collTest
-  congr 1
-  funext a
-  by_cases h : (out a).1 ≠ (out a).2 ∧ H (out a).1 = H (out a).2
-  · rw [ite_eq_left h,
-      ite_eq_left ((outColl_finProdEquiv out a _).mpr ((outDbColl_castSucc_iff _ H).mpr h))]
-  · rw [ite_eq_right h, ite_eq_right fun h' =>
-      h ((outDbColl_castSucc_iff _ H).mp ((outColl_finProdEquiv out a _).mp h'))]
+  simp only [collTest, outColl_finProdEquiv, outDbColl_castSucc_iff]
 
 /-- The collision probability is the probability of `outCollProj out` after the
     standard oracle on the database register, started from the decompressed empty
@@ -509,17 +450,15 @@ theorem prColl_eq_trace (A : QAdv m n w q) (out : Fin (m * n * w) → Fin m × F
     rw [Complex.mul_re, ← (Complex.nonneg_iff.mp
       ((conjDM (decompDBU m n) (dbEmpty m n)).psd.diag_nonneg (i := k))).2, zero_mul, sub_zero]
   simp only [hre, conjDM_dbEmpty_diag_re]
-  rw [← (dbIndex m n).sum_comp]
-  simp only [Equiv.symm_apply_apply]
+  simp only [← (dbIndex m n).sum_comp, Equiv.symm_apply_apply]
   unfold prColl
   rw [Finset.mul_sum]
   refine Fintype.sum_of_injective (fun (H : Fin m → Fin n) x => (H x).castSucc)
     (fun H H' h => funext fun x => Fin.castSucc_injective n (congrFun h x)) _ _ ?_ ?_
   · intro D hD
-    have : ∃ x, ¬ (((D x : Fin (n + 1)) : ℕ) < n) := by
+    obtain ⟨x, hx⟩ : ∃ x, ¬ (((D x : Fin (n + 1)) : ℕ) < n) := by
       by_contra hc
       exact hD ⟨fun x => ⟨D x, not_not.mp fun hx => hc ⟨x, hx⟩⟩, funext fun x => Fin.ext rfl⟩
-    obtain ⟨x, hx⟩ := this
     rw [Finset.prod_eq_zero (Finset.mem_univ x) (ite_eq_right hx), zero_mul]
   · intro H
     simp only [Fin.val_castSucc, Fin.is_lt, ite_true, Finset.prod_const, Finset.card_univ,
@@ -545,16 +484,13 @@ theorem prColl_le_two_mul_prDbColl_add (A : QAdv m n w q)
       (Fin (m * n * w * (n + 1) ^ m)) ℂ, V = ↑(decompU m n w) := ⟨_, rfl⟩
   have hVu : V ∈ Matrix.unitaryGroup (Fin (m * n * w * (n + 1) ^ m)) ℂ := hV ▸ (decompU m n w).prop
   have hDH : (decompDB m n)ᴴ = decompDB m n := by
-    rw [decompDB_eq_dbOp, dbOp_conjTranspose]
-    simp only [decompEntry_conjTranspose]
+    simp only [decompDB_eq_dbOp, dbOp_conjTranspose, decompEntry_conjTranspose]
   have hVH : Vᴴ =
       (1 : Matrix (Fin (m * n * w)) (Fin (m * n * w)) ℂ) ⊗ₖ decompDB m n := by
     rw [hV, decompU, oneKronU_val, conjTranspose_kronecker, conjTranspose_one]
     exact congrArg _ hDH
-  have hVV : Vᴴ * V = 1 := by
-    rw [← star_eq_conjTranspose]; exact Matrix.mem_unitaryGroup_iff'.mp hVu
-  have hVV' : V * Vᴴ = 1 := by
-    rw [← star_eq_conjTranspose]; exact Matrix.mem_unitaryGroup_iff.mp hVu
+  have hVV : Vᴴ * V = 1 := Matrix.mem_unitaryGroup_iff'.mp hVu
+  have hVV' : V * Vᴴ = 1 := Matrix.mem_unitaryGroup_iff.mp hVu
   have hW : ∀ i, V *
       (tableLiftU ((n + 1) ^ m) (A.U i) : Matrix _ _ ℂ) =
       (tableLiftU ((n + 1) ^ m) (A.U i) : Matrix _ _ ℂ) * V := by
@@ -607,18 +543,13 @@ theorem prColl_le_two_mul_prDbColl_add (A : QAdv m n w q)
     have e1 : (P * C * V) *ᵥ ψ k = P *ᵥ ((C * V) *ᵥ ψ k) := by
       rw [mulVec_mulVec, Matrix.mul_assoc]
     have e2 : (Q * (Vᴴ * C * V)) *ᵥ ψ k = Q *ᵥ (Vᴴ *ᵥ ((C * V) *ᵥ ψ k)) := by
-      rw [mulVec_mulVec, mulVec_mulVec]
-      simp only [Matrix.mul_assoc]
+      simp only [mulVec_mulVec, Matrix.mul_assoc]
     have h5 : nrm ((C * V) *ᵥ ψ k) ^ 2 ≤ nrm (ψ k) ^ 2 := pow_le_pow_left₀ (nrm_nonneg _) hφ 2
     have h6 := mul_le_mul_of_nonneg_left h5 (by positivity : (0 : ℝ) ≤ 16 / n)
     rw [e1, e2]
     linarith
-  calc ∑ k, nrm ((P * C * V) *ᵥ ψ k) ^ 2
-      ≤ ∑ k, (2 * nrm ((Q * (Vᴴ * C * V)) *ᵥ ψ k) ^ 2 + 16 / n * nrm (ψ k) ^ 2) :=
-        Finset.sum_le_sum fun k _ => hk k
-    _ = 2 * ∑ k, nrm ((Q * (Vᴴ * C * V)) *ᵥ ψ k) ^ 2 + 16 / n * ∑ k, nrm (ψ k) ^ 2 := by
-        rw [Finset.sum_add_distrib, Finset.mul_sum, Finset.mul_sum]
-    _ = _ := by rw [hnorm, mul_one]
+  refine (Finset.sum_le_sum fun k _ => hk k).trans_eq ?_
+  rw [Finset.sum_add_distrib, ← Finset.mul_sum, ← Finset.mul_sum, hnorm, mul_one]
 
 /-- The collision bound for a random oracle: a `q`-query adversary outputs a collision
     of a uniformly random `H : Fin m → Fin n` with probability at most

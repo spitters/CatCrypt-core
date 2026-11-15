@@ -2143,14 +2143,10 @@ theorem fsG0s_fsG1_le (P : Sigma) (recom : P.Stmt → P.Ch → P.Resp → P.Com)
         simpa [hβ, hE, hlam] using h
     rw [hL, hR]
     calc ∑ R, NR * ∑ h, NH * (Φ R h * β R) = NR * NH * ∑ h, ∑ R, Φ R h * β R := by
-          simp only [Finset.mul_sum]
-          rw [Finset.sum_comm]
-          exact Finset.sum_congr rfl fun _ _ => Finset.sum_congr rfl fun _ _ => by ring
+          simp only [Finset.mul_sum, mul_left_comm, mul_assoc]; rw [Finset.sum_comm]
       _ ≤ NR * NH * ∑ h, lam * ∑ R, Φ R h := by gcongr with h; exact hpt h
       _ = lam * ∑ R, NR * ∑ h, NH * Φ R h := by
-          simp only [Finset.mul_sum]
-          rw [Finset.sum_comm]
-          exact Finset.sum_congr rfl fun _ _ => Finset.sum_congr rfl fun _ _ => by ring
+          simp only [Finset.mul_sum, mul_left_comm, mul_assoc]; rw [Finset.sum_comm]
 
 /-! ### The bad event: a forgery at an accepted point -/
 

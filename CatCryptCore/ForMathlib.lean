@@ -65,6 +65,9 @@ public import CatCryptCore.ForMathlib.TrotterBound
 public import CatCryptCore.ForMathlib.ZModPow
 public import CatCryptCore.ForMathlib.ZModValCard
 public import CatCryptCore.ForMathlib.CategoryTheory.KleisliPMFMarkov
+public import CatCryptCore.ForMathlib.Tactic.PositivityMatrix
+public import CatCryptCore.ForMathlib.Tactic.TraceNf
+public import CatCryptCore.ForMathlib.Tactic.TraceNfAttr
 
 /-!
 # Lemmas for Mathlib

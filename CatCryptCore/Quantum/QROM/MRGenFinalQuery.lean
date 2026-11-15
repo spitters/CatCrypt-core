@@ -142,14 +142,8 @@ theorem finalRelQ_mrChainG (e : Fin (d * c) ≃ Fin D) {c' a' q : ℕ} (O : QCom
   | k + 1, segs, segs', R, R', hD, hF, hR => by
     simp only [mrChainG, QComp.qbind_assoc]
     refine finalRelQ_qbind (hD 0) (finalRelQ_qbind (hR 0).presAncQ ?_)
-    refine finalRelQ_mrChainG e O O' f M M' k (Fin.tail segs) (Fin.tail segs') (Fin.tail R)
-      (Fin.tail R') (fun j => ?_) ?_ (fun j => hR j.succ)
-    · have h := hD j.succ
-      rw [← Fin.succ_castSucc] at h
-      exact h
-    · have h := hF
-      rw [← Fin.succ_last] at h
-      exact h
+    exact finalRelQ_mrChainG e O O' f M M' k (Fin.tail segs) (Fin.tail segs') (Fin.tail R)
+      (Fin.tail R') (fun j => hD j.succ) hF (fun j => hR j.succ)
 
 end FinalRel
 
@@ -236,8 +230,7 @@ theorem finalRelQ_finalStep (p : Fin (m * n * w) → Fin m) (g : Fin (m * n * w)
       ← permUnitary_conj σ, hσ, ← permUnitary_mul, Submonoid.coe_mul, conjTranspose_mul]
     simp only [Matrix.mul_assoc]
   simp only [qbind_unit_branch, measProj_branch_true]
-  rw [hstate, trace_diagB_conj, trace_diagB_conj]
-  rw [← Equiv.sum_comp σ]
+  rw [hstate, trace_diagB_conj, trace_diagB_conj, ← Equiv.sum_comp σ]
   simp only [Matrix.submatrix_apply, Equiv.symm_apply_apply]
   rw [← (finalRegIdx m n w).sum_comp, Fintype.sum_prod_type, ← (oracleIndex m n w).sum_comp]
   refine Finset.sum_congr rfl fun t _ => ?_
@@ -296,20 +289,16 @@ theorem prOutMRGen_withFinalQuery_eq (B : QAdvMRGen m n w q k c a)
     have h := presAncQ_seg H (trivR (m * n * w)) (fun _ => 0) (fun _ _ => 0) (B.seg j.castSucc)
       (liftOps (B.seg j.castSucc) (B.seg_tp j.castSucc)) fun i => liftsQ_liftCh _ _ _
     rw [roundU_trivR, QComp.qpure_qbind] at h
-    simp only [QAdvMRGen.withFinalQuery, Fin.snoc_castSucc]
-    exact h
+    simpa only [QAdvMRGen.withFinalQuery, Fin.snoc_castSucc] using h
   have hF : FinalRelQ (ancE m n w (m * n))
       (QComp.qbind (chainG (oracleQ m n w H) q fun i => (B.seg (Fin.last k) i).toQComp)
         fun _ => (B.withFinalB fun i => g i (H (p i))).measure)
       (QComp.qbind (chainG (oracleQ m n (w * (m * n)) H) (q + 1)
         fun i => ((B.withFinalQuery p g).seg (Fin.last k) i).toQComp)
         fun _ => (B.withFinalQuery p g).measure) := by
-    simp only [QAdvMRGen.withFinalQuery, Fin.snoc_last]
-    rw [chainG_finalOps]
-    simp only [QComp.qbind_assoc]
-    refine finalRelQ_qbind (liftsQ_chainG _ (liftsQ_oracleQ_padE rfl H) q _ _
-      fun i => liftsQ_liftCh _ _ _).presAncQ ?_
-    exact finalRelQ_finalStep p g H
+    simp only [QAdvMRGen.withFinalQuery, Fin.snoc_last, chainG_finalOps, QComp.qbind_assoc]
+    exact finalRelQ_qbind (liftsQ_chainG _ (liftsQ_oracleQ_padE rfl H) q _ _
+      fun i => liftsQ_liftCh _ _ _).presAncQ (finalRelQ_finalStep p g H)
   have h := finalRelQ_mrChainG (ancE m n w (m * n)) (oracleQ m n w H)
     (oracleQ m n (w * (m * n)) H) f (B.withFinalB fun i => g i (H (p i))).measure
     (B.withFinalQuery p g).measure k (fun j i => (B.seg j i).toQComp)

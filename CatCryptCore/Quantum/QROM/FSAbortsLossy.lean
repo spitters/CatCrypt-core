@@ -116,8 +116,7 @@ theorem sum_prInt_le_card_div (A : QAdv m n w q) (V : QVerifier m n w) (H : Fin 
         exact hat x t
     _ = N⁻¹ * ∑ t, (n : ℝ≥0∞)⁻¹ * ∑ i, ∑ x, f x i t := by
         simp only [← Finset.mul_sum]
-        congr 1
-        congr 1
+        congr 2
         exact Finset.sum_congr rfl fun t _ => Finset.sum_comm
     _ ≤ N⁻¹ * ∑ _t : Option (Fin q × Bool), (n : ℝ≥0∞)⁻¹ * ∑ _i : Fin s, 1 := by
         gcongr with t _ i
@@ -193,20 +192,15 @@ theorem fsAborts_nma_le_lossy {Ω : Type} [Fintype Ω] (P : Sigma)
       have key : ∀ k, x' = p k → g k θ = true → θ ∈ Finset.image eY
           (Finset.univ.filter fun e : P.Ch => ∃ z, P.verify x (eX.symm x').2 e z = true) := by
         intro k hxk hgk
-        rw [hg] at hgk
-        rw [hp] at hxk
-        unfold nmaCheck at hgk
-        unfold nmaPoint at hxk
         cases hf : B'.forge k with
-        | none => simp [hf] at hgk
+        | none => simp [hf, hg, nmaCheck] at hgk
         | some f =>
           obtain ⟨μ, e, z⟩ := f
-          simp only [hf, Option.elim, hSdef, fsAbortSig, Bool.and_eq_true,
-            decide_eq_true_eq] at hgk hxk
+          simp only [hf, hg, hp, nmaCheck, nmaPoint, Option.elim, hSdef, fsAbortSig,
+            Bool.and_eq_true, decide_eq_true_eq] at hgk hxk
           obtain ⟨he, hv⟩ := hgk
           refine Finset.mem_image.mpr ⟨e, Finset.mem_filter.mpr ⟨Finset.mem_univ _, z, ?_⟩, ?_⟩
-          · rw [hxk, Equiv.symm_apply_apply]
-            exact hv
+          · rwa [hxk, Equiv.symm_apply_apply]
           · rw [← he, Equiv.apply_symm_apply]
       obtain ⟨j, hj⟩ : ∃ j, moveAcc p g x' θ j = true := by
         by_contra hne
@@ -220,8 +214,7 @@ theorem fsAborts_nma_le_lossy {Ω : Type} [Fintype Ω] (P : Sigma)
       obtain ⟨x₀, -, hx₀⟩ := Finset.exists_mem_eq_sup (Finset.univ : Finset (Fin m))
         Finset.univ_nonempty fun x' => (Finset.univ.filter fun θ => V.proj x' θ ≠ 0).card
       refine ENNReal.div_le_of_le_mul ?_
-      rw [← hsdef] at hx₀
-      rw [hx₀]
+      rw [hsdef, hx₀]
       exact (Nat.cast_le.mpr (hcount x₀)).trans ((hls _).trans_eq (by rw [hn]))
     have hprog : ∀ H, prOut (B'.adv.withFinalB (nmaTest S eX eY x B' H)) H =
         ∑ x', prOutAt (A'.withVerifier V x' (H x')) H x' := by

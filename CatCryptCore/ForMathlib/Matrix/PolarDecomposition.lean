@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.ForMathlib.Matrix.ProjectorRewinding
 public import CatCryptCore.ForMathlib.Matrix.Schmidt
+public import CatCryptCore.ForMathlib.Tactic.PositivityMatrix
 public import Mathlib.Analysis.Matrix.Order
 
 /-!
@@ -54,7 +55,7 @@ theorem norm_mulVec_le_of_mul_conjTranspose_mul_eq (W : Matrix m n ℂ)
     have : (1 - Wᴴ * W) = (1 - Wᴴ * W)ᴴ * (1 - Wᴴ * W) := by
       simp [Matrix.sub_mul, Matrix.mul_sub, hQ, conjTranspose_sub]
     rw [this]
-    exact Matrix.posSemidef_conjTranspose_mul_self _
+    psd
   have hnn := hpsd.re_dotProduct_nonneg x
   have key : ‖(WithLp.toLp 2 (W *ᵥ x) : EuclideanSpace ℂ m)‖ ^ 2 ≤
       ‖(WithLp.toLp 2 x : EuclideanSpace ℂ n)‖ ^ 2 := by

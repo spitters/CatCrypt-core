@@ -94,37 +94,21 @@ theorem maskR_sum {ι : Type} (s : Finset ι) (r : Fin D → α) (M : ι → Mat
 
 theorem maskR_ite (r : Fin D → α) (p : Prop) [Decidable p] (M : Matrix (Fin D) (Fin D) ℂ) :
     maskR r (if p then M else 0) = if p then maskR r M else 0 := by
-  split_ifs
-  · rfl
-  · exact maskR_zero r
+  split_ifs <;> simp [maskR_zero]
 
 theorem BlockDiag.mul_maskR {r : Fin D → α} {U : Matrix (Fin D) (Fin D) ℂ} (hU : BlockDiag r U)
     (M : Matrix (Fin D) (Fin D) ℂ) : U * maskR r M = maskR r (U * M) := by
   ext i j
   simp only [maskR, mul_apply, of_apply]
-  split_ifs with h
-  · refine Finset.sum_congr rfl fun l _ => ?_
-    split_ifs with hl
-    · rfl
-    · rw [hU i l (fun h' => hl (h'.symm.trans h)), zero_mul, zero_mul]
-  · refine Finset.sum_eq_zero fun l _ => ?_
-    split_ifs with hl
-    · rw [hU i l (fun h' => h (h'.trans hl)), zero_mul]
-    · rw [mul_zero]
+  split_ifs with h <;> [refine Finset.sum_congr rfl fun l _ => ?_;
+    refine Finset.sum_eq_zero fun l _ => ?_] <;> grind [BlockDiag]
 
 theorem BlockDiag.maskR_mul {r : Fin D → α} {U : Matrix (Fin D) (Fin D) ℂ} (hU : BlockDiag r U)
     (M : Matrix (Fin D) (Fin D) ℂ) : maskR r M * U = maskR r (M * U) := by
   ext i j
   simp only [maskR, mul_apply, of_apply]
-  split_ifs with h
-  · refine Finset.sum_congr rfl fun l _ => ?_
-    split_ifs with hl
-    · rfl
-    · rw [hU l j (fun h' => hl (h.trans h'.symm)), mul_zero, mul_zero]
-  · refine Finset.sum_eq_zero fun l _ => ?_
-    split_ifs with hl
-    · rw [hU l j (fun h' => h (hl.trans h')), mul_zero]
-    · rw [zero_mul]
+  split_ifs with h <;> [refine Finset.sum_congr rfl fun l _ => ?_;
+    refine Finset.sum_eq_zero fun l _ => ?_] <;> grind [BlockDiag]
 
 theorem BlockDiag.conj_maskR {r : Fin D → α} {U V : Matrix (Fin D) (Fin D) ℂ}
     (hU : BlockDiag r U) (hV : BlockDiag r V) (M : Matrix (Fin D) (Fin D) ℂ) :
@@ -141,27 +125,20 @@ theorem BlockDiag.mul {r : Fin D → α} {U V : Matrix (Fin D) (Fin D) ℂ} (hU 
     (hV : BlockDiag r V) : BlockDiag r (U * V) := by
   intro i j hij
   rw [mul_apply]
-  refine Finset.sum_eq_zero fun l _ => ?_
-  by_cases hl : r i = r l
-  · rw [hV l j (fun h => hij (hl.trans h)), mul_zero]
-  · rw [hU i l hl, zero_mul]
+  exact Finset.sum_eq_zero fun l _ => by by_cases hl : r i = r l <;> grind [BlockDiag]
 
 theorem BlockDiag.add {r : Fin D → α} {U V : Matrix (Fin D) (Fin D) ℂ} (hU : BlockDiag r U)
-    (hV : BlockDiag r V) : BlockDiag r (U + V) := by
-  intro i j hij
-  rw [Matrix.add_apply, hU i j hij, hV i j hij, add_zero]
+    (hV : BlockDiag r V) : BlockDiag r (U + V) :=
+  fun i j hij => by simp [hU i j hij, hV i j hij]
 
 theorem BlockDiag.sum {ι : Type} {r : Fin D → α} (s : Finset ι)
     {U : ι → Matrix (Fin D) (Fin D) ℂ} (hU : ∀ x, BlockDiag r (U x)) :
-    BlockDiag r (∑ x ∈ s, U x) := by
-  intro i j hij
-  rw [Matrix.sum_apply]
-  exact Finset.sum_eq_zero fun x _ => hU x i j hij
+    BlockDiag r (∑ x ∈ s, U x) :=
+  fun i j hij => by simp [Matrix.sum_apply, hU _ i j hij]
 
 theorem BlockDiag.conjTranspose {r : Fin D → α} {U : Matrix (Fin D) (Fin D) ℂ}
-    (hU : BlockDiag r U) : BlockDiag r Uᴴ := by
-  intro i j hij
-  rw [conjTranspose_apply, hU j i (Ne.symm hij), star_zero]
+    (hU : BlockDiag r U) : BlockDiag r Uᴴ :=
+  fun i j hij => by simp [hU j i (Ne.symm hij)]
 
 theorem BlockDiag.of_isDiag {r : Fin D → α} {U : Matrix (Fin D) (Fin D) ℂ}
     (hU : ∀ i j, i ≠ j → U i j = 0) : BlockDiag r U :=
@@ -187,10 +164,7 @@ variable {D : ℕ} {α : Type} [DecidableEq α]
 theorem trace_mul_maskR {r : Fin D → α} {Y : Matrix (Fin D) (Fin D) ℂ} (hY : BlockDiag r Y)
     (M : Matrix (Fin D) (Fin D) ℂ) : (Y * maskR r M).trace = (Y * M).trace := by
   simp only [Matrix.trace, diag_apply, mul_apply, maskR, of_apply]
-  refine Finset.sum_congr rfl fun i _ => Finset.sum_congr rfl fun j _ => ?_
-  split_ifs with h
-  · rfl
-  · rw [hY i j (fun h' => h h'.symm), zero_mul, zero_mul]
+  exact Finset.sum_congr rfl fun i _ => Finset.sum_congr rfl fun j _ => by grind [BlockDiag]
 
 end MaskTrace
 
@@ -310,11 +284,7 @@ theorem maskR_anc_eq_sum (e : Fin (d * c) ≃ Fin D) (N : Matrix (Fin D) (Fin D)
     maskR (fun i => ((finProdEquiv d c).symm (e.symm i)).2) N =
       ∑ y, kr e 1 (ancProj y) * N * kr e 1 (ancProj y) := by
   ext i j
-  simp only [kr_one_ancProj_eq, diagonal_mul, mul_diagonal, Matrix.sum_apply, maskR, of_apply]
-  split_ifs with h
-  · simp [h, ite_mul, mul_ite]
-  · simp [ite_mul, mul_ite]
-    grind
+  simp [kr_one_ancProj_eq, diagonal_mul, mul_diagonal, Matrix.sum_apply, maskR, ite_mul, mul_ite]
 
 end KrLab
 
@@ -372,10 +342,8 @@ theorem roundC_mul_kr_one_ancProj (e : Fin (d * c) ≃ Fin D) (R : ClassicalRoun
     roundC e R f * kr e 1 (ancProj y) =
       kr e (R.ans (f y) : Matrix (Fin d) (Fin d) ℂ) (ancProj y) := by
   unfold roundC
-  rw [Finset.sum_mul, Finset.sum_eq_single y]
-  · rw [kr_mul, Matrix.mul_one, ancProj_mul_ancProj, ite_eq_left rfl]
-  · intro z _ hz; rw [kr_mul, ancProj_mul_ancProj, ite_eq_right hz, kr_zero_right]
-  · intro h; exact absurd (Finset.mem_univ y) h
+  rw [Finset.sum_mul, Finset.sum_eq_single y] <;>
+    simp +contextual [kr_mul, ancProj_mul_ancProj, kr_zero_right]
 
 omit [NeZero c] in
 theorem kr_one_ancProj_mul_roundC (e : Fin (d * c) ≃ Fin D) (R : ClassicalRound d c a)
@@ -383,10 +351,8 @@ theorem kr_one_ancProj_mul_roundC (e : Fin (d * c) ≃ Fin D) (R : ClassicalRoun
     kr e 1 (ancProj y) * roundC e R f =
       kr e (R.ans (f y) : Matrix (Fin d) (Fin d) ℂ) (ancProj y) := by
   unfold roundC
-  rw [Finset.mul_sum, Finset.sum_eq_single y]
-  · rw [kr_mul, Matrix.one_mul, ancProj_mul_ancProj, ite_eq_left rfl]
-  · intro z _ hz; rw [kr_mul, ancProj_mul_ancProj, ite_eq_right (Ne.symm hz), kr_zero_right]
-  · intro h; exact absurd (Finset.mem_univ y) h
+  rw [Finset.mul_sum, Finset.sum_eq_single y] <;>
+    simp +contextual [kr_mul, ancProj_mul_ancProj, kr_zero_right, eq_comm]
 
 /-- The recorded round is the deferred round `roundV` followed by the pinching of its
     ancilla. -/
@@ -413,9 +379,9 @@ theorem roundU_recordRound (e : Fin (d * c) ≃ Fin D) (R : ClassicalRound d c a
       kr_one_ancProj_mul_roundC]
   have h3 : ∀ y, (roundC e R f)ᴴ * kr e 1 (ancProj y) = kr e 1 (ancProj y) * (roundC e R f)ᴴ :=
     fun y => by
-      have := congrArg conjTranspose (kr_one_ancProj_mul_roundC e R f y)
-      rw [← roundC_mul_kr_one_ancProj] at this
-      simpa [conjTranspose_mul, kr_conjTranspose, ancProj_conjTranspose] using this
+      simpa [conjTranspose_mul, kr_conjTranspose, ancProj_conjTranspose,
+        ← roundC_mul_kr_one_ancProj] using
+        congrArg conjTranspose (kr_one_ancProj_mul_roundC e R f y)
   rw [roundU_branch, maskR_anc_eq_sum]
   refine Finset.sum_congr rfl fun y _ => ?_
   rw [hK]
@@ -555,10 +521,7 @@ omit [NeZero c] in
 theorem MRH.ext_fields {W q₀ K' : ℕ} {X Y : MRH m n W q q₀ K' c a} (h1 : X.head = Y.head)
     (h2 : X.tail = Y.tail) (h3 : X.rounds = Y.rounds) (h4 : X.init = Y.init)
     (h5 : X.final = Y.final) : X = Y := by
-  cases X; cases Y
-  simp only at h1 h2 h3 h4 h5
-  subst h1 h2 h3 h4 h5
-  rfl
+  cases X; cases Y; congr
 
 theorem head_recordFrom : ∀ (j s : ℕ) {W q₀ : ℕ} (X : MRH m n W q q₀ K c a),
     (recordFrom j s X).head = liftKU c j ∘ X.head
@@ -587,27 +550,19 @@ theorem recordFrom_tail_rounds : ∀ (j s : ℕ) {W q₀ q₀' : ℕ} (X : MRH m
         if (i : ℕ) = s then recordRound (ancE m n W c) (t i) else liftR (ancE m n W c) (t i)) hr)
 
 theorem restH_recAt (s : ℕ) {W q₀ : ℕ} (X : MRH m n W q q₀ (K + 1) c a) :
-    restH (recAt (s + 1) X) = recAt s (restH X) := by
-  refine MRH.ext_fields rfl rfl ?_ rfl rfl
-  funext i
-  simp [restH, recAt, Fin.tail]
+    restH (recAt (s + 1) X) = recAt s (restH X) :=
+  MRH.ext_fields rfl rfl (funext fun i => by simp [restH, recAt, Fin.tail]) rfl rfl
 
 theorem restH_recordFrom : ∀ (j s : ℕ) {W q₀ : ℕ} (X : MRH m n W q q₀ (K + 1) c a),
     restH (recordFrom j (s + 1) X) = recordFrom j s (restH X)
   | 0, _, _, _, _ => rfl
-  | j + 1, s, _, _, X => by
-    change restH (recordFrom j (s + 1 + 1) (recAt (s + 1) X)) =
-      recordFrom j (s + 1) (recAt s (restH X))
-    rw [restH_recordFrom j (s + 1), restH_recAt]
+  | j + 1, s, _, _, X =>
+    (restH_recordFrom j (s + 1) (recAt (s + 1) X)).trans (congrArg _ (restH_recAt s X))
 
 theorem rounds_zero_recordFrom : ∀ (j s : ℕ) {W q₀ : ℕ} (X : MRH m n W q q₀ (K + 1) c a),
     (recordFrom j (s + 1) X).rounds 0 = liftKR c j (X.rounds 0)
   | 0, _, _, _, _ => rfl
-  | j + 1, s, W, _, X => by
-    change (recordFrom j (s + 1 + 1) (recAt (s + 1) X)).rounds 0 = _
-    rw [rounds_zero_recordFrom j (s + 1)]
-    simp only [recAt, Fin.val_zero, Nat.zero_ne_add_one, ite_false]
-    rfl
+  | j + 1, s, _, _, X => rounds_zero_recordFrom j (s + 1) (recAt (s + 1) X)
 
 end RecordH
 
@@ -629,10 +584,8 @@ def OracleBD [NeZero n] {W : ℕ} (r : Fin (m * n * W) → α) (H : Fin m → Fi
   BlockDiag r (oracleU m n W H : Matrix _ _ ℂ) ∧ BlockDiag r (projS m n W S)
 
 theorem BlockDiag.one_sub {D : ℕ} {r : Fin D → α} {P : Matrix (Fin D) (Fin D) ℂ}
-    (hP : BlockDiag r P) : BlockDiag r (1 - P) := by
-  intro i j hij
-  rw [Matrix.sub_apply, hP i j hij, sub_zero]
-  exact BlockDiag.one r i j hij
+    (hP : BlockDiag r P) : BlockDiag r (1 - P) :=
+  fun i j hij => by simp [hP i j hij, BlockDiag.one r i j hij]
 
 variable [NeZero c]
 
@@ -647,23 +600,15 @@ theorem MRH.BD.lift_recAt {W q₀ : ℕ} {r : Fin (m * n * W) → α} {X : MRH m
   have hW : ∀ j, BlockDiag (fun i => r (ancSplit m n W c i).1)
       (roundW (ancE m n W c) (X.rounds j)) := fun j => roundW_blockDiag _ _ (hP j)
   refine ⟨fun i => (hh i).kr _ 1, fun j i => (ht j i).kr _ 1, fun j y => ?_, fun j z => ?_⟩
-  all_goals by_cases hj : (j : ℕ) = s
-  · rw [show (recAt s X).rounds j = recordRound (ancE m n W c) (X.rounds j) from ite_eq_left hj]
-    exact ((hW j).conjTranspose.mul ((BlockDiag.one r).kr _ _)).mul (hW j)
-  · rw [show (recAt s X).rounds j = liftR (ancE m n W c) (X.rounds j) from ite_eq_right hj]
-    exact (hP j y).kr _ 1
-  · rw [show (recAt s X).rounds j = recordRound (ancE m n W c) (X.rounds j) from ite_eq_left hj]
-    exact ((hA j z).kr _ 1).mul (hW j)
-  · rw [show (recAt s X).rounds j = liftR (ancE m n W c) (X.rounds j) from ite_eq_right hj]
-    exact (hA j z).kr _ 1
+  all_goals by_cases hj : (j : ℕ) = s <;> simp only [recAt, hj, ↓reduceIte]
+  exacts [((hW j).conjTranspose.mul ((BlockDiag.one r).kr _ _)).mul (hW j), (hP j y).kr _ 1,
+    ((hA j z).kr _ 1).mul (hW j), (hA j z).kr _ 1]
 
 omit [NeZero c] in
 theorem OracleBD.lift [NeZero n] {W : ℕ} {r : Fin (m * n * W) → α} {H : Fin m → Fin n}
     {S : Finset (Fin m)} (h : OracleBD r H S) :
     OracleBD (fun i => r (ancSplit m n W c i).1) H S := by
-  refine ⟨?_, ?_⟩
-  · rw [oracleU_lift]; exact h.1.kr _ 1
-  · rw [projS_lift]; exact h.2.kr _ 1
+  rw [OracleBD, oracleU_lift, projS_lift]; exact ⟨h.1.kr _ 1, h.2.kr _ 1⟩
 
 theorem MRH.BD.recordFrom [NeZero n] {H : Fin m → Fin n} {S : Finset (Fin m)} :
     ∀ (j s : ℕ) {W q₀ : ℕ} (X : MRH m n W q q₀ K c a) (r : Fin (m * n * W) → α),
@@ -677,11 +622,8 @@ theorem covQ_scOracleQ [NeZero n] [DecidableEq α] {W : ℕ} {r : Fin (m * n * W
     {H : Fin m → Fin n} {S : Finset (Fin m)} (h : OracleBD r H S) :
     CovQ r (scOracleQ m n W H S) := by
   intro b M
-  cases b
-  · rw [scOracleQ_branch_false, scOracleQ_branch_false, h.2.one_sub.conj_maskR h.2.one_sub,
-      h.1.conj_maskR h.1.conjTranspose]
-  · rw [scOracleQ_branch_true, scOracleQ_branch_true, h.2.conj_maskR h.2,
-      h.1.conj_maskR h.1.conjTranspose]
+  cases b <;> simp only [scOracleQ_branch_false, scOracleQ_branch_true,
+    h.2.one_sub.conj_maskR h.2.one_sub, h.2.conj_maskR h.2, h.1.conj_maskR h.1.conjTranspose]
 
 theorem covQ_mrChainSC_recordFrom [NeZero n] [DecidableEq α] {H : Fin m → Fin n}
     {S : Finset (Fin m)} (f : Fin c → Fin a) (j s : ℕ) {W q₀ : ℕ} (X : MRH m n W q q₀ K c a)
@@ -721,9 +663,7 @@ theorem trace_pinch_step {D : ℕ} {α : Type} [DecidableEq α] {r : Fin D → �
     trace_sum]
   refine Finset.sum_congr rfl fun b₂ _ => ?_
   rw [hRest, qpure_branch_apply, qpure_branch_apply]
-  split_ifs
-  · exact (trace_mul_maskR hY _).symm
-  · rfl
+  split_ifs <;> [exact (trace_mul_maskR hY _).symm; rfl]
 
 /-- The head-tail adversary after the first round, with that round recorded, is block
     diagonal along the digit of its ancilla. -/
@@ -737,10 +677,7 @@ theorem restH_recAt_zero_BD [NeZero n] {k w q₀ : ℕ} (A : MRH m n w q q₀ (k
     fun i => by simp [restH, recAt, Fin.tail]
   refine ⟨⟨fun i => blockDiag_kr_anc _ _ h1, fun j i => blockDiag_kr_anc _ _ h1,
     fun j y => ?_, fun j z => ?_⟩, ?_, ?_⟩
-  · rw [hr]; exact blockDiag_kr_anc _ _ h1
-  · rw [hr]; exact blockDiag_kr_anc _ _ h1
-  · rw [oracleU_lift]; exact blockDiag_kr_anc _ _ h1
-  · rw [projS_lift]; exact blockDiag_kr_anc _ _ h1
+  all_goals (simp only [hr, oracleU_lift, projS_lift]; exact blockDiag_kr_anc _ _ h1)
 
 /-- One round of the induction: the run of `peel f A` with its rounds recorded and the run of
     `A` with all its rounds recorded agree on every observable block diagonal along the
@@ -770,10 +707,8 @@ theorem trace_record_step [NeZero n] (H : Fin m → Fin n) (S : Finset (Fin m))
   have hZh : (recordFrom (k + 1) 0 A).head = liftKU c k ∘ (liftU (ancE m n w c) ∘ A.head) :=
     head_recordFrom k 1 (recAt 0 A)
   have hZr : (recordFrom (k + 1) 0 A).rounds 0 =
-      liftKR c k (recordRound (ancE m n w c) (A.rounds 0)) := by
-    change (recordFrom k (0 + 1) (recAt 0 A)).rounds 0 = _
-    rw [rounds_zero_recordFrom k 0]
-    simp [recAt]
+      liftKR c k (recordRound (ancE m n w c) (A.rounds 0)) :=
+    rounds_zero_recordFrom k 0 (recAt 0 A)
   change _ = (Y * (QComp.qbind (scChain (scOracleQ m n (ancW c k (w * c)) H S) q₀
     (recordFrom (k + 1) 0 A).head) fun b₁ =>
       QComp.qbind (roundU ((recordFrom (k + 1) 0 A).rounds 0) f) fun _ =>
@@ -803,15 +738,11 @@ theorem trace_flatten_blockDiag [NeZero n] (H : Fin m → Fin n) (S : Finset (Fi
             (recordFrom k 0 A).tail (recordFrom k 0 A).rounds).branch b ρ).trace
   | 0, _, _, _, _, _, _, _ => rfl
   | k + 1, w, q₀, A, Y, hY, b, ρ => by
-    have h1 : BlockDiag (roundOutcomes m n c (k := k) (w := w * c)) Y := by
-      intro i j hij
-      refine hY i j fun h => hij ?_
-      exact congrArg Fin.tail h
-    have h2 : BlockDiag (liftKLab c k fun i => (ancSplit m n w c i).2) Y := by
-      intro i j hij
-      refine hY i j fun h => hij ?_
-      rw [liftKLab_apply, liftKLab_apply]
-      exact congrFun h 0
+    have h1 : BlockDiag (roundOutcomes m n c (k := k) (w := w * c)) Y :=
+      fun i j hij => hY i j fun h => hij (congrArg Fin.tail h)
+    have h2 : BlockDiag (liftKLab c k fun i => (ancSplit m n w c i).2) Y :=
+      fun i j hij => hY i j fun h => hij <| by
+        rw [liftKLab_apply, liftKLab_apply]; exact congrFun h 0
     exact (trace_flatten_blockDiag H S f k (peel f A) Y h1 b ρ).trans
       (trace_record_step H S f A Y h2 b ρ)
 

@@ -524,21 +524,14 @@ theorem nrm_sq_collDb_rDb_le [NeZero n] (x : Fin m) (j : ℕ) (z : Fin ((n + 1) 
       _ ≤ hitWeight x F * (2 * ∑ e, ‖z (dbIndex m n (Function.update F x e))‖ ^ 2) :=
           mul_le_mul_of_nonneg_left hcs (hw0 F)
       _ = ∑ e, 2 * (hitWeight x F * ‖z (dbIndex m n (Function.update F x e))‖ ^ 2) := by
-          rw [Finset.mul_sum, Finset.mul_sum]
-          exact Finset.sum_congr rfl fun e _ => by ring
+          simp only [Finset.mul_sum, mul_left_comm]
   have hnz : nrm z ^ 2 = ∑ G, ‖z (dbIndex m n G)‖ ^ 2 := by
     rw [nrm_sq_eq_sum_norm_sq, ← (dbIndex m n).sum_comp]
   refine hstep.trans ?_
   have key := sum_sum_update_comm x (hitWeight x) (fun G => ‖z (dbIndex m n G)‖ ^ 2)
-  simp only at key
   have hre : ∑ F, ∑ e, 2 * (hitWeight x F * ‖z (dbIndex m n (Function.update F x e))‖ ^ 2) =
       ∑ G, 2 * ((∑ e, hitWeight x (Function.update G x e)) * ‖z (dbIndex m n G)‖ ^ 2) := by
-    calc ∑ F, ∑ e, 2 * (hitWeight x F * ‖z (dbIndex m n (Function.update F x e))‖ ^ 2)
-        = 2 * ∑ F, ∑ e, hitWeight x F * ‖z (dbIndex m n (Function.update F x e))‖ ^ 2 := by
-          simp only [Finset.mul_sum]
-      _ = 2 * ∑ G, ∑ e, hitWeight x (Function.update G x e) * ‖z (dbIndex m n G)‖ ^ 2 := by
-          rw [key]
-      _ = _ := by simp only [Finset.mul_sum, Finset.sum_mul]
+    simpa only [Finset.mul_sum, Finset.sum_mul] using congrArg (HMul.hMul (2 : ℝ)) key
   rw [hre, hnz, Finset.mul_sum]
   refine Finset.sum_le_sum fun G _ => ?_
   by_cases hG : dbWeight (m := m) (n := n) (dbIndex m n G) ≤ j
@@ -670,7 +663,6 @@ theorem sum_nrm_sq_projX (y : Fin (m * n * w * (n + 1) ^ m) → ℂ) :
         rw [Matrix.one_apply_ne h2, mul_zero, zero_mul]
       · rw [Matrix.diagonal_apply_ne _ h1, zero_mul, zero_mul]
     · simp
-  rw [hsq]
   simp only [hsq, hX, norm_mul, mul_pow]
   rw [Finset.sum_comm]
   refine Finset.sum_congr rfl fun K _ => ?_
@@ -739,10 +731,7 @@ theorem nrm_collProj_decompX_le (x : Fin m) (j : ℕ) (z : Fin (m * n * w * (n +
         exact ⟨y, y', hy, hy', hyy, by rwa [← hij y hy], by rw [← hij y hy, ← hij y' hy']; exact h2⟩
       · rintro ⟨y, y', hy, hy', hyy, h1, h2⟩
         exact ⟨y, y', hy, hy', hyy, by rwa [hij y hy], by rw [hij y hy, hij y' hy']; exact h2⟩
-    by_cases hi : offColl (m := m) (n := n) x i
-    · simp [hi, hiff.mp hi]
-    · have hj : ¬ offColl (m := m) (n := n) x j := fun h => hi (hiff.mpr h)
-      simp [hi, hj]
+    split_ifs <;> simp_all
   have hED : E * D = D * E := by
     rw [hDR, Matrix.mul_sub, Matrix.sub_mul, Matrix.mul_one, Matrix.one_mul, hER]
   have hTe : T = P * E * R := by
@@ -971,9 +960,7 @@ theorem prDbColl_le (A : QAdv m n w q) : prDbColl A ≤ 8 * (q : ℝ) ^ 3 / n :=
       (fun i => 2 * Real.sqrt (2 * ((0 + i : ℕ) + 1 : ℝ) / n)) (2 * Real.sqrt (2 * q / n))
       (fun i hi => by
         have hiq : ((0 + i : ℕ) + 1 : ℝ) ≤ q := by
-          have := Finset.mem_range.mp hi
-          rw [zero_add]
-          exact_mod_cast this
+          rw [zero_add]; exact_mod_cast Finset.mem_range.mp hi
         gcongr)
     rw [Finset.card_range, nsmul_eq_mul] at this
     rw [ha]
@@ -1007,7 +994,7 @@ theorem prDbColl_le (A : QAdv m n w q) : prDbColl A ≤ 8 * (q : ℝ) ^ 3 / n :=
     trace_mul_sum_vecMulVec_mul_conjTranspose, Complex.ofReal_re]
   calc ∑ k, nrm ((P * C * Q0) *ᵥ ψ k) ^ 2 ≤ ∑ k, (a * nrm (ψ k)) ^ 2 :=
         Finset.sum_le_sum fun k _ => pow_le_pow_left₀ (nrm_nonneg _) (hbound _) 2
-    _ = a ^ 2 * ∑ k, nrm (ψ k) ^ 2 := by rw [Finset.mul_sum]; simp only [mul_pow]
+    _ = a ^ 2 * ∑ k, nrm (ψ k) ^ 2 := by simp only [Finset.mul_sum, mul_pow]
     _ = 8 * (q : ℝ) ^ 3 / n := by
         rw [hnorm, mul_one, ha, mul_pow, mul_pow, Real.sq_sqrt (by positivity)]
         ring

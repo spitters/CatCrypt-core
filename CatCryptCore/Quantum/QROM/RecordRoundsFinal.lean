@@ -75,18 +75,12 @@ theorem trace_diagW_mul_re (v : Fin d → ℝ) (ρ : Matrix (Fin d) (Fin d) ℂ)
 
 /-- The diagonal projector of `G` is the diagonal observable of the indicator of `G`. -/
 theorem diagB_eq_diagW (G : Fin d → Bool) : diagB G = diagW fun i => if G i then 1 else 0 := by
-  unfold diagB diagW
-  congr 1
-  funext i
-  split_ifs <;> simp_all
+  simp [diagB, diagW, apply_ite]
 
 theorem trace_diagW_sum_re {ι : Type} (s : Finset ι) (p : ι → ℝ) (u : ι → Fin d → ℝ)
     (ρ : Matrix (Fin d) (Fin d) ℂ) :
     (diagW (∑ t ∈ s, p t • u t) * ρ).trace.re = ∑ t ∈ s, p t * (diagW (u t) * ρ).trace.re := by
-  simp only [trace_diagW_mul_re, Finset.sum_apply, Pi.smul_apply, smul_eq_mul, Finset.sum_mul,
-    Finset.mul_sum]
-  rw [Finset.sum_comm]
-  simp only [mul_assoc]
+  simp [trace_diagW_mul_re, Finset.sum_mul, Finset.mul_sum, mul_assoc, Finset.sum_comm (γ := ι)]
 
 theorem trace_diagW_add_re (u v : Fin d → ℝ) (ρ : Matrix (Fin d) (Fin d) ℂ) :
     (diagW (u + v) * ρ).trace.re = (diagW u * ρ).trace.re + (diagW v * ρ).trace.re := by
@@ -95,13 +89,12 @@ theorem trace_diagW_add_re (u v : Fin d → ℝ) (ρ : Matrix (Fin d) (Fin d) �
 theorem trace_diagW_mono_re {u v : Fin d → ℝ} (huv : u ≤ v) {ρ : Matrix (Fin d) (Fin d) ℂ}
     (hρ : ρ.PosSemidef) : (diagW u * ρ).trace.re ≤ (diagW v * ρ).trace.re := by
   rw [trace_diagW_mul_re, trace_diagW_mul_re]
-  refine Finset.sum_le_sum fun i _ => mul_le_mul_of_nonneg_right (huv i) ?_
-  exact (Complex.nonneg_iff.mp (hρ.diag_nonneg (i := i))).1
+  exact Finset.sum_le_sum fun i _ =>
+    mul_le_mul_of_nonneg_right (huv i) (Complex.nonneg_iff.mp hρ.diag_nonneg).1
 
 theorem trace_diagW_nonneg_re {v : Fin d → ℝ} (hv : 0 ≤ v) {ρ : Matrix (Fin d) (Fin d) ℂ}
     (hρ : ρ.PosSemidef) : 0 ≤ (diagW v * ρ).trace.re := by
-  have h := trace_diagW_mono_re hv hρ
-  simpa [diagW] using h
+  simpa [diagW] using trace_diagW_mono_re hv hρ
 
 end Weighted
 
@@ -159,8 +152,7 @@ theorem prOut_withFinalB_add (B : QAdv m n w q) (G b : Fin (m * n * w) → Bool)
   rw [prOut_withFinalB_eq_prOutW, prOut_withFinalB_eq_prOutW, prOut_withFinalB_eq_prOutW,
     ← ENNReal.ofReal_add (prOutW_nonneg B (fun i => by dsimp only; split_ifs <;> simp) H)
       (prOutW_nonneg B (fun i => by dsimp only; split_ifs <;> simp) H), ← prOutW_add]
-  congr 2
-  funext i
+  congr 2 with i
   cases hGi : G i <;> cases hbi : b i <;> simp [hGi, hbi]
 
 end Single
@@ -177,8 +169,7 @@ theorem prOutMRGen_recordGen_add (A : QAdvMR m n w q k c a) (f : Fin c → Fin a
     (G b : Fin (m * n * ancW c k w) → Bool) (H : Fin m → Fin n) :
     prOutMRGen (recordGen A G) H f = prOutMRGen (recordGen A fun i => G i && b i) H f +
       prOutMRGen (recordGen A fun i => G i && !b i) H f := by
-  rw [← prOut_withFinalB_toQAdv_eq, ← prOut_withFinalB_toQAdv_eq, ← prOut_withFinalB_toQAdv_eq]
-  exact prOut_withFinalB_add _ G b H
+  simpa only [← prOut_withFinalB_toQAdv_eq] using prOut_withFinalB_add _ G b H
 
 end RecordAdd
 
@@ -194,10 +185,7 @@ def CommCompress (Q : Matrix (Fin d) (Fin d) ℂ) (C : QComp d Unit) : Prop :=
 
 theorem conj_compress {Q K : Matrix (Fin d) (Fin d) ℂ} (hQ : Qᴴ = Q) (hK : K * Q = Q * K)
     (σ : Matrix (Fin d) (Fin d) ℂ) : K * (Q * σ * Q) * Kᴴ = Q * (K * σ * Kᴴ) * Q := by
-  have hK' : Kᴴ * Q = Q * Kᴴ := by
-    have h := congrArg conjTranspose hK
-    rw [conjTranspose_mul, conjTranspose_mul, hQ] at h
-    exact h.symm
+  have hK' : Kᴴ * Q = Q * Kᴴ := by simpa [hQ] using (congrArg conjTranspose hK).symm
   calc K * (Q * σ * Q) * Kᴴ = (K * Q) * σ * (Q * Kᴴ) := by simp only [Matrix.mul_assoc]
     _ = (Q * K) * σ * (Kᴴ * Q) := by rw [hK, hK']
     _ = Q * (K * σ * Kᴴ) * Q := by simp only [Matrix.mul_assoc]
@@ -205,8 +193,7 @@ theorem conj_compress {Q K : Matrix (Fin d) (Fin d) ℂ} (hQ : Qᴴ = Q) (hK : K
 theorem commCompress_unitaryChannel {Q : Matrix (Fin d) (Fin d) ℂ} (hQ : Qᴴ = Q)
     {U : Matrix.unitaryGroup (Fin d) ℂ} (hU : (U : Matrix (Fin d) (Fin d) ℂ) * Q = Q * U) :
     CommCompress Q (unitaryChannel U) := fun σ => by
-  rw [unitaryChannel_branch_apply, unitaryChannel_branch_apply]
-  exact conj_compress hQ hU σ
+  simpa only [unitaryChannel_branch_apply] using conj_compress hQ hU σ
 
 theorem commCompress_chainG {Q : Matrix (Fin d) (Fin d) ℂ} {O : QComp d Unit}
     (hO : CommCompress Q O) :
@@ -245,10 +232,7 @@ theorem BlockDiag.mul_diagB_comm {α : Type} {r : Fin d → α} {U : Matrix (Fin
     U * QROM.diagB (fun i => g (r i)) = QROM.diagB (fun i => g (r i)) * U := by
   ext i j
   simp only [QROM.diagB, mul_diagonal, diagonal_mul]
-  by_cases h : r i = r j
-  · grind
-  · rw [hU i j h]
-    simp
+  by_cases h : r i = r j <;> grind [BlockDiag]
 
 /-- A part of a round whose Kraus operators all lie in the range of `Q` is invariant under the
     compression by `Q`. -/
@@ -287,13 +271,7 @@ theorem diagB_true : diagB (fun _ : Fin d => true) = 1 := by
 
 theorem diagB_mul_ancProj {g : Fin c → Bool} {y : Fin c} (hy : g y = true) :
     diagB g * ancProj y = ancProj y := by
-  unfold diagB ancProj
-  rw [diagonal_mul_diagonal]
-  congr 1
-  funext z
-  by_cases hz : z = y
-  · subst hz; simp [hy]
-  · simp [hz]
+  simp only [diagB, ancProj, diagonal_mul_diagonal]; congr 1 with z; grind
 
 end KrDiag
 
@@ -316,8 +294,7 @@ theorem diagB_liftKLab_mul_liftKR : ∀ (k : ℕ) {W : ℕ} (R : ClassicalRound 
     refine diagB_liftKLab_mul_liftKR k (liftR (ancE m n W c) R) _ z y ?_
     have h1 : diagB (fun i => p (ancSplit m n W c i).1) =
         kr (ancE m n W c) (diagB p) (diagB fun _ => true) := by
-      rw [kr_diagB]
-      simp [ancSplit]
+      simp [kr_diagB, ancSplit]
     change diagB (fun i => p (ancSplit m n W c i).1) *
       (kr (ancE m n W c) (R.ans z : Matrix _ _ ℂ) 1 * kr (ancE m n W c) (R.P y) 1) =
         kr (ancE m n W c) (R.ans z : Matrix _ _ ℂ) 1 * kr (ancE m n W c) (R.P y) 1
@@ -335,14 +312,10 @@ theorem diagB_mul_recordRound {d D : ℕ} (e : Fin (d * c) ≃ Fin D) (R : Class
     rw [recordRound_ans_val]
     change kr e (R.ans z : Matrix (Fin d) (Fin d) ℂ) 1 * roundW e R *
       ((roundW e R)ᴴ * kr e 1 (ancProj y) * roundW e R) = _
-    calc _ = kr e (R.ans z : Matrix (Fin d) (Fin d) ℂ) 1 * (roundW e R * (roundW e R)ᴴ) *
-          kr e 1 (ancProj y) * roundW e R := by simp only [Matrix.mul_assoc]
-      _ = _ := by rw [roundW_mul_conjTranspose_self, Matrix.mul_one, kr_mul, Matrix.mul_one,
-          Matrix.one_mul]
+    grind [Matrix.mul_assoc, roundW_mul_conjTranspose_self, Matrix.mul_one, Matrix.one_mul, kr_mul]
   have hQ : diagB (fun i => decide (((finProdEquiv d c).symm (e.symm i)).2 ∈ Y)) =
       kr e (diagB fun _ => true) (diagB fun y => decide (y ∈ Y)) := by
-    rw [kr_diagB]
-    simp
+    simp [kr_diagB]
   rw [hK, hQ, diagB_true, ← Matrix.mul_assoc, kr_mul, Matrix.one_mul,
     diagB_mul_ancProj (by simpa using hy)]
 
@@ -373,8 +346,7 @@ theorem trace_diagB_recordFrom_eq_mrPartG (H : Fin m → Fin n) (f : Fin c → F
     have hZr : (recordFrom (k + 1) 0 X).rounds 0 =
         liftKR c k (recordRound (ancE m n W c) (X.rounds 0)) := by
       change (recordFrom k (0 + 1) (recAt 0 X)).rounds 0 = _
-      rw [rounds_zero_recordFrom k 0]
-      simp [recAt]
+      simp [rounds_zero_recordFrom k 0, recAt]
     set rest := mrChainG O f k q (unitaryChannel ∘ (recordFrom k 0 X').head)
       (fun j => unitaryChannel ∘ (recordFrom k 0 X').tail j) (recordFrom k 0 X').rounds
       with hrest
@@ -398,8 +370,7 @@ theorem trace_diagB_recordFrom_eq_mrPartG (H : Fin m → Fin n) (f : Fin c → F
     -- the induction hypothesis on the branches whose outcome of round `0` lies outside `Y`
     have hG' : ∀ i, G i = true → ∀ j, roundOutcomes m n c (k := k) (w := W * c) i j ∉ Y := by
       intro i h j
-      have := hG i h j.succ
-      rwa [roundOutcomes_succ, Fin.cons_succ] at this
+      simpa [roundOutcomes_succ] using hG i h j.succ
     have ih := trace_diagB_recordFrom_eq_mrPartG H f Y k X' G hG' (roundPart R₀ f Yᶜ σ₁)
     -- the branches whose outcome of round `0` lies in `Y`
     set ℓ : Fin (m * n * ancW c (k + 1) W) → Fin c :=
@@ -409,8 +380,7 @@ theorem trace_diagB_recordFrom_eq_mrPartG (H : Fin m → Fin n) (f : Fin c → F
     have hQ : Qᴴ = Q := diagB_conjTranspose _
     have hQl : Q = diagB (liftKLab c k fun i => decide ((ancSplit m n W c i).2 ∈ Y)) := by
       rw [hQdef]
-      congr 1
-      funext i
+      congr 1 with i
       grind [liftKLab_apply]
     have hτ : roundPart R₀ f Y σ₁ = Q * roundPart R₀ f Y σ₁ * Q := by
       refine roundPart_eq_compress hQ R₀ f Y (fun y hy => ?_) σ₁
@@ -435,8 +405,8 @@ theorem trace_diagB_recordFrom_eq_mrPartG (H : Fin m → Fin n) (f : Fin c → F
         · rfl
         · have h := hG i hGi 0
           rw [roundOutcomes_succ, Fin.cons_zero] at h
-          have hl : ℓ i = (ancSplit m n W c (ancDigits m n c k (w := W * c) i).1).2 := by
-            exact liftKLab_apply c k _ i
+          have hl : ℓ i = (ancSplit m n W c (ancDigits m n c k (w := W * c) i).1).2 :=
+            liftKLab_apply c k _ i
           simp [hl, h]
       rw [h0]
       ext i j
@@ -444,9 +414,8 @@ theorem trace_diagB_recordFrom_eq_mrPartG (H : Fin m → Fin n) (f : Fin c → F
     have hbad : (diagB G * rest.branch () (roundPart R₀ f Y σ₁)).trace = 0 := by
       rw [hτ, hC, ← Matrix.mul_assoc, ← Matrix.mul_assoc, hGQ, Matrix.zero_mul, Matrix.zero_mul,
         trace_zero]
-    rw [hchain, hpart, roundU_branch_eq_add R₀ f Y σ₁, map_add, Matrix.mul_add, trace_add, hbad,
+    rwa [hchain, hpart, roundU_branch_eq_add R₀ f Y σ₁, map_add, Matrix.mul_add, trace_add, hbad,
       add_zero]
-    exact ih
 
 end Avoid
 
@@ -465,13 +434,9 @@ theorem prOutMRGen_recordGen_eq_prOutAvoidMRGen (A : QAdvMR m n w q k c a)
   rw [prOutMRGen_eq_ofReal, prOutAvoidMRGen]
   have hfin : (recordGen A G).final = diagB G := rfl
   have hseg : (fun i => ((recordGen A G).seg 0 i).toQComp) =
-      unitaryChannel ∘ (recordFrom k 0 A.toMRH).head := by
-    funext i
-    simp [recordGen, recordMR, QAdvMR.toGen]
+      unitaryChannel ∘ (recordFrom k 0 A.toMRH).head := rfl
   have htail : (fun j i => (Fin.tail (recordGen A G).seg j i).toQComp) =
-      fun j => unitaryChannel ∘ (recordFrom k 0 A.toMRH).tail j := by
-    funext j i
-    simp [recordGen, recordMR, QAdvMR.toGen, Fin.tail]
+      fun j => unitaryChannel ∘ (recordFrom k 0 A.toMRH).tail j := rfl
   simp only [QAdvMRGen.measure, measProj_branch_true, hfin, diagB_conjTranspose,
     trace_proj_mul_mul_proj (diagB_mul_self G), hseg, htail]
   exact congrArg (fun t : ℂ => ENNReal.ofReal t.re)

@@ -93,11 +93,7 @@ theorem finalRegIdx_apply (t : (Fin m × Fin n) × Fin w) (a : Fin m × Fin n) :
 theorem ancE_symm_finalRegIdx (t : (Fin m × Fin n) × Fin w) (a : Fin m × Fin n) :
     (ancE m n w (m * n)).symm (finalRegIdx m n w (t, a)) =
       finProdEquiv (m * n * w) (m * n) (oracleIndex m n w t, finProdEquiv m n a) := by
-  apply Fin.ext
-  simp only [finalRegIdx_apply, ancE, oracleIndex, finProdEquiv, finCongr_symm, finCongr_apply,
-    Fin.val_cast, Equiv.trans_apply, Equiv.prodCongr_apply, Equiv.coe_refl, Prod.map,
-    id_eq, finProdFinEquiv_apply_val]
-  ring
+  simp [Fin.ext_iff, finalRegIdx_apply, ancE, oracleIndex, finProdEquiv]; ring
 
 /-- The entries of `kr` at the indices `finalRegIdx` are products of entries. -/
 theorem kr_finalRegIdx_apply (A : Matrix (Fin (m * n * w)) (Fin (m * n * w)) ℂ)
@@ -120,8 +116,7 @@ theorem oraclePerm_finalRegIdx [NeZero n] (H : Fin m → Fin n) (x : Fin m) (y :
 /-- The index of `(0, 0)` is `0`. -/
 theorem finProdEquiv_zero_zero [NeZero m] [NeZero n] :
     finProdEquiv m n (0, 0) = 0 := by
-  apply Fin.ext
-  simp [finProdEquiv]
+  simp [Fin.ext_iff, finProdEquiv]
 
 end Reg
 
@@ -208,8 +203,7 @@ theorem prOut_withFinalB_eq_prOut_finalQAdv (F : QAdv m n w q) (p : Fin (m * n *
         diagB (fun k => g k (H (p k))) * N * (diagB fun k => g k (H (p k)))ᴴ := by
       simp only [hN, QAdv.withFinalB, runOp, conjTranspose_mul, Matrix.mul_assoc]
     rw [hc, trace_diagB_conj, Complex.re_sum]
-    refine congrArg _ (Finset.sum_congr rfl fun k _ => ?_)
-    split_ifs <;> simp
+    simp [apply_ite]
   have hR : prOut (finalQAdv F p g) H =
       ENNReal.ofReal (∑ j, if finalAcc g j then (M j j).re else 0) := by
     unfold prOut prTrue_Q
@@ -220,8 +214,7 @@ theorem prOut_withFinalB_eq_prOut_finalQAdv (F : QAdv m n w q) (p : Fin (m * n *
       simp only [hMdef, conjTranspose_mul, Matrix.mul_assoc]
       rfl
     rw [hc, trace_diagB_conj, Complex.re_sum]
-    refine congrArg _ (Finset.sum_congr rfl fun j _ => ?_)
-    split_ifs <;> simp
+    simp [apply_ite]
   set σ := oraclePerm m n (w * (m * n)) H * finalPerm p with hσ
   have hM : ∀ j, M j j = kr (ancE m n w (m * n)) N (ancProj 0) (σ.symm j) (σ.symm j) := by
     have hkr : kr (ancE m n w (m * n)) (runOp F H) 1 *
@@ -232,8 +225,7 @@ theorem prOut_withFinalB_eq_prOut_finalQAdv (F : QAdv m n w q) (p : Fin (m * n *
       rw [hMdef, runOp_finalQAdv, ← permUnitary_conj, ← hkr]
       change _ * kr (ancE m n w (m * n)) F.init.val (ancProj 0) * _ = _
       simp only [conjTranspose_mul, Matrix.mul_assoc, hσ]
-    intro j
-    rw [hMe, Matrix.submatrix_apply]
+    simp [hMe]
   rw [hL, hR]
   congr 1
   simp_rw [hM]
@@ -245,11 +237,7 @@ theorem prOut_withFinalB_eq_prOut_finalQAdv (F : QAdv m n w q) (p : Fin (m * n *
   · obtain ⟨⟨x, y⟩, z⟩ := t
     simp [hσ, finalPerm_finalRegIdx, finalPermAux, oraclePerm_finalRegIdx, finalAcc,
       kr_finalRegIdx_apply, ancProj, finProdEquiv_zero_zero]
-  · intro a _ ha
-    have hne : finProdEquiv m n a ≠ 0 := by
-      rw [← finProdEquiv_zero_zero]
-      exact fun h => ha ((finProdEquiv m n).injective h)
-    simp [kr_finalRegIdx_apply, ancProj, hne]
+  · simp +contextual [kr_finalRegIdx_apply, ancProj, ← finProdEquiv_zero_zero]
   · simp
 
 end Final
@@ -274,9 +262,8 @@ variable [NeZero n]
 
 /-- The general multi-round adversary of `B` has the acceptance probability of `B`. -/
 theorem prOutMRGen_toMR_toGen (B : QAdv m n w q) (H : Fin m → Fin n) (f : Fin c → Fin a) :
-    prOutMRGen (B.toMR (c := c) (a := a)).toGen H f = prOut B H := by
-  rw [prOutMRGen_toGen]
-  rfl
+    prOutMRGen (B.toMR (c := c) (a := a)).toGen H f = prOut B H :=
+  prOutMRGen_toGen _ _ _
 
 end NoRounds
 
@@ -307,10 +294,7 @@ theorem prOutMRGen_resample_gentle_fiber_le {Ω K : Type} [Fintype Ω] [Finite K
   set M : K → ℝ≥0∞ := fun j => ∑ ω, μ ω * (if κ ω = j then 1 else 0) with hM
   have hsplit : ∀ F : Ω → ℝ≥0∞, ∑ ω, μ ω * F ω =
       ∑ j, ∑ ω, μ ω * (if κ ω = j then 1 else 0) * F ω := by
-    intro F
-    rw [Finset.sum_comm]
-    refine Finset.sum_congr rfl fun ω _ => ?_
-    simp [Finset.sum_ite_eq]
+    simp [Finset.sum_comm (γ := K), Finset.sum_ite_eq]
   have hMsum : ∑ j, M j = 1 := by
     have := hsplit fun _ => 1
     simp only [mul_one] at this
@@ -318,11 +302,7 @@ theorem prOutMRGen_resample_gentle_fiber_le {Ω K : Type} [Fintype Ω] [Finite K
   have hfib : ∀ (j : K) (G : Ω → Fin m → Fin n),
       ∑ ω, μ ω * (if κ ω = j then 1 else 0) * prOutMRGen (B (κ ω)) (G ω) (f ω) =
         ∑ ω, μ ω * (if κ ω = j then 1 else 0) * prOutMRGen (B j) (G ω) (f ω) := by
-    intro j G
-    refine Finset.sum_congr rfl fun ω _ => ?_
-    by_cases h : κ ω = j
-    · rw [h]
-    · simp [h]
+    simp +contextual [ite_mul, Finset.sum_ite]
   have hstep : ∀ j, absDiff
       (∑ ω, μ ω * (if κ ω = j then 1 else 0) * prOutMRGen (B j) (H₁ ω) (f ω))
       (∑ ω, μ ω * (if κ ω = j then 1 else 0) * prOutMRGen (B j) (H₂ ω) (f ω)) ≤ M j * C := by
@@ -330,13 +310,9 @@ theorem prOutMRGen_resample_gentle_fiber_le {Ω K : Type} [Fintype Ω] [Finite K
     by_cases hM0 : M j = 0
     · have hz : ∀ ω, μ ω * (if κ ω = j then 1 else 0) = 0 := fun ω =>
         (Finset.sum_eq_zero_iff.mp hM0) ω (Finset.mem_univ _)
-      simp only [hz, zero_mul, Finset.sum_const_zero]
-      rw [absDiff_self]
-      exact zero_le
+      simp [hz, absDiff_self]
     have hMle : M j ≤ 1 := by
-      rw [← hμ]
-      refine Finset.sum_le_sum fun ω _ => ?_
-      split_ifs <;> simp
+      rw [← hμ]; exact Finset.sum_le_sum fun ω _ => by split_ifs <;> simp
     have hMtop : M j ≠ ⊤ := ne_top_of_le_ne_top ENNReal.one_ne_top hMle
     set ν : Ω → ℝ≥0∞ := fun ω => μ ω * (if κ ω = j then 1 else 0) * (M j)⁻¹ with hν
     have hνsum : ∑ ω, ν ω = 1 := by
@@ -346,26 +322,19 @@ theorem prOutMRGen_resample_gentle_fiber_le {Ω K : Type} [Fintype Ω] [Finite K
         ∑ ω, ν ω * (if P ω then 1 else 0) =
           (M j)⁻¹ * ∑ ω, μ ω * (if κ ω = j ∧ P ω then 1 else 0) := by
       intro P _
-      rw [Finset.mul_sum]
-      refine Finset.sum_congr rfl fun ω _ => ?_
-      simp only [hν]
-      split_ifs <;> simp_all [mul_comm]
+      simp [hν, ite_and, Finset.sum_mul, ite_mul, mul_comm]
     have hsp : ∀ x h g, ∑ ω, ν ω * (if H₂ ω = h ∧ f ω = g ∧ x ∈ D ω then 1 else 0) ≤
         lam * ∑ ω, ν ω * (if H₂ ω = h ∧ f ω = g then 1 else 0) := by
       intro x h g
       rw [hνP, hνP, mul_left_comm]
-      gcongr
-      exact hsparse j x h g
+      exact mul_le_mul_right (hsparse j x h g) _
     have key := prOutMRGen_resample_gentle_le (B j) ν hνsum H₁ H₂ f D lam hagree hsp
     have hX : ∀ G : Ω → Fin m → Fin n,
         ∑ ω, μ ω * (if κ ω = j then 1 else 0) * prOutMRGen (B j) (G ω) (f ω) =
           M j * ∑ ω, ν ω * prOutMRGen (B j) (G ω) (f ω) := by
       intro G
-      rw [Finset.mul_sum]
-      refine Finset.sum_congr rfl fun ω _ => ?_
-      simp only [hν]
-      rw [← mul_assoc, ← mul_assoc, mul_comm (M j), mul_assoc (μ ω * _),
-        ENNReal.mul_inv_cancel hM0 hMtop, mul_one]
+      simp [Finset.mul_sum, hν, mul_assoc, mul_left_comm (M j),
+        ENNReal.inv_mul_cancel_left hM0 hMtop]
     rw [hX, hX]
     exact (absDiff_mul_left_le _ _ _).trans (by gcongr)
   calc absDiff (∑ ω, μ ω * prOutMRGen (B (κ ω)) (H₁ ω) (f ω))

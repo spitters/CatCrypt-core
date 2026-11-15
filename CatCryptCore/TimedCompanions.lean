@@ -84,6 +84,7 @@ import CatCryptCore.Quantum.QROM.QMLWEAuxTimed
 import CatCryptCore.Quantum.QROM.QOwcpaAuxTimed
 import CatCryptCore.Quantum.QROM.QuantumOWCPATimed
 import CatCryptCore.Quantum.QROM.SaltedHashSignTimed
+import CatCryptCore.Quantum.QROM.SaltedPreimageGameTimed
 
 /-!
 # Time-certificate companions below `CatCryptCore`
