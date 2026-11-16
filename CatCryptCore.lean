@@ -1213,6 +1213,21 @@ public import CatCryptCore.Quantum.KronNf
 public import CatCryptCore.Quantum.KronNfAttr
 public import CatCryptCore.Quantum.TensorProductPositivity
 public import CatCryptCore.Quantum.QROM.SaltedPreimageGame
+public import CatCryptCore.ForMathlib.ExpTaylorTail
+public import CatCryptCore.ForMathlib.RayleighRitz
+public import CatCryptCore.ForMathlib.TotientBound
+public import CatCryptCore.ForMathlib.SolovayKitaev.GroupCommutator
+public import CatCryptCore.ForMathlib.SolovayKitaev.HTDense
+public import CatCryptCore.ForMathlib.SolovayKitaev.Recursion
+public import CatCryptCore.ForMathlib.SolovayKitaev.SU2
+public import CatCryptCore.ForMathlib.ZModTwoSpan
+public import CatCryptCore.Crypto.KEM.MlkemFo.Extraction.MlkemFo_haxpipe
+public import CatCryptCore.Crypto.KEM.MlkemFo.SurfaceDeps
+public import CatCryptCore.Crypto.Schnorr.Extraction.Schnorr_haxpipe
+public import CatCryptCore.Crypto.Schnorr.ROMGame
+public import CatCryptCore.Crypto.FiatShamirGeneric.SchnorrInstance
+public import CatCryptCore.Crypto.Schnorr.ROMReduction
+public import CatCryptCore.Crypto.Schnorr.SurfaceDeps
 
 /-! # CatCrypt Core — umbrella
 

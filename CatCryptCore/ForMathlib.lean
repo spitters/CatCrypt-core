@@ -68,6 +68,14 @@ public import CatCryptCore.ForMathlib.CategoryTheory.KleisliPMFMarkov
 public import CatCryptCore.ForMathlib.Tactic.PositivityMatrix
 public import CatCryptCore.ForMathlib.Tactic.TraceNf
 public import CatCryptCore.ForMathlib.Tactic.TraceNfAttr
+public import CatCryptCore.ForMathlib.ExpTaylorTail
+public import CatCryptCore.ForMathlib.RayleighRitz
+public import CatCryptCore.ForMathlib.TotientBound
+public import CatCryptCore.ForMathlib.SolovayKitaev.GroupCommutator
+public import CatCryptCore.ForMathlib.SolovayKitaev.HTDense
+public import CatCryptCore.ForMathlib.SolovayKitaev.Recursion
+public import CatCryptCore.ForMathlib.SolovayKitaev.SU2
+public import CatCryptCore.ForMathlib.ZModTwoSpan
 
 /-!
 # Lemmas for Mathlib

@@ -1,0 +1,4 @@
+# Local build setting: one shared Cargo target directory for the hax crates,
+# so that the dependencies they have in common are compiled once.
+[build]
+target-dir = "../.hax-target"
