@@ -5,9 +5,11 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Quantum.ClassicalLiftReflect
+import CatCryptCore.Quantum.ClassicalLiftReflect
 public import CatCryptCore.Crypto.UCPullbackSemantics
 public import CatCryptCore.Quantum.QPullback
+import CatCryptCore.Quantum.ClassicalLiftFunctor
+public import CatCryptCore.Quantum.ClassicalLiftSys
 
 /-!
 # The classical lift as a pullback of advantage theories

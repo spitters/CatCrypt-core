@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Crypto.Party.Derived
 public import CatCryptCore.Crypto.Party.Relational
-public import CatCryptCore.Crypto.Party.Compose
 
 /-!
 # Refinement of party programs by information flow, and per-event coupling rules

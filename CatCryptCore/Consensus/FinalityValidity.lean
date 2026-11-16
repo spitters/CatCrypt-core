@@ -6,8 +6,12 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Consensus.FinalityExamples
-public import Mathlib.Algebra.Order.Field.Rat
-public import Mathlib.Tactic.Linarith
+import Mathlib.Tactic.NormNum.OfScientific
+import Mathlib.Tactic.NormNum.DivMod
+import Mathlib.Tactic.NormNum.Abs
+import Mathlib.Data.Rat.Cast.Order
+import Mathlib.Tactic.Linarith.Frontend
+public import Mathlib.Data.Rat.Init
 
 /-!
 # Validity and chain-forming of Casper FFG over a chain

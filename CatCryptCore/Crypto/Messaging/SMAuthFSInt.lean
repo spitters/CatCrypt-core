@@ -986,7 +986,7 @@ theorem smAuthFS_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     rw [smAuthFSRed_run]
     refine congrArg _ (funext fun t => congrArg _ (funext fun i =>
       congrArg _ (funext fun rk => congrArg _ (funext fun rkS => ?_))))
-    have h := OracleAdv.run_map_state_inv _ _ (fsIntAbsA rkS) (AuthFSInv k sa)
+    have h := OracleAdv.run_map_state_of_inv _ _ (fsIntAbsA rkS) (AuthFSInv k sa)
       (fun z d hz y hy => smAuthFS_inv C R G D ΔFS ΔPCS t k rkS sa false z hz d y hy)
       (fun z d hz => smAuthFS_step C R G D hFS hPCS t k rkS sa z hz d) (A.play t i.1) _
       (authFSInv_init k rk i sa)

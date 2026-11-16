@@ -247,6 +247,35 @@ one unit, whatever the number of reads. The children
 `fun j => L.get (Fin.castLE h j)` of a node of a transcript tree, `Fin r.k → r.C × Tree Y rs`,
 are tabulated at the cost of the `r.k` reads of the list of kept pairs.
 
+Rule (p), stores in data. Under the option `derive_timed.storeData` (default `false`), a store
+type is a function type `(y₁ : X₁) → … → (yₙ : Xₙ) → Y` whose domains are finite
+(`finiteDomains?`) and whose codomain `Y` does not depend on them and is first-order data
+(`storeTy?`): the class of the stores `Ty.store` and tables `FTy.tab` of the language D
+(`CatCryptCore.Complexity.D.Syntax`), whose reads `Prim.sget`, `Prim.tget` and writes
+`Prim.sset`, `Prim.tset` take one step. At a component of data (a field of a pair, a sum, an
+option, a structure or another constructor) a store has no costed form (`hatComp?`): it is plain
+data, and
+
+* a closure placed at a store is tabulated where it is built (rule (m), `tabulateAt`), for every
+  constructor and also under a type that keeps other functions as costed closures
+  (`unmirroredClosures` with `storesOnly`), as `ptab` evaluates the entries of a table in D;
+* a write `Function.update f a v` into a store is a table write, one unit plus the costs of its
+  arguments;
+* a store applied, read from data (`s.f a`, `(g x).2 a`), is a table read: one unit per argument
+  applied (each a read of one level of a curried store), plus the costs of the data and of the
+  arguments;
+* a store read from data and passed to a function parameter is a table: its companion is zero
+  (`ι`), as for a function drawn by a `sample` node.
+
+Every value at a store is then a table whose construction was charged where it was built (a
+tabulated closure, a table write, a read from data, or an input), so a read at one unit charges
+no work twice and omits none. A function at the top level (a parameter, an argument closure of a
+higher-order call, the accumulator of a fold) keeps its costed closure, as `reflect_d` keeps
+functions as parameters and arguments of λ-terms. A function held in data whose domain is not
+finite is refused, and the refusal names its type and the domain (`storeRefusal`). The option is
+off by default because it changes the costed forms of programs the costed closures already accept
+(a block `Fin 2 → ℕ` in a sum loses its cost companion).
+
 Table writes, registered calls with a function result. The registered arity of a primitive `c`
 is the number of its arguments that its registered cost takes: the binders of `c.timedCost`
 less its cost companions (`registeredArity?`). In data whose type has no costed form (the
@@ -815,6 +844,17 @@ register_option derive_timed.priceProps : Bool := {
     Prop by its unfolded body"
 }
 
+/-- Whether a function with finite domains held in data is a store (option
+`derive_timed.storeData`, rule (p)). -/
+register_option derive_timed.storeData : Bool := {
+  defValue := false
+  descr := "derive_timed, derive_cost and derive_reduction read a function with finite domains \
+    and a first-order codomain at a component of data (a field of a pair, a sum, an option or a \
+    structure) as a store: it is built by tabulation (rule (m)) or by table writes, read at one \
+    unit per argument plus the costs of the data and the arguments, and passed to a function \
+    parameter as a table (rule (p))"
+}
+
 /-- Whether a function type is read through the reducible aliases of its codomains (option
 `derive_timed.reduceFnAliases`). -/
 register_option derive_timed.reduceFnAliases : Bool := {
@@ -850,6 +890,10 @@ def priceProps : CoreM Bool := return (← getOptions).get `derive_timed.pricePr
 /-- The option `derive_timed.reduceFnAliases`, read by its name as `maxDepth` reads its option. -/
 def reduceFnAliases : CoreM Bool :=
   return (← getOptions).get `derive_timed.reduceFnAliases false
+
+/-- The option `derive_timed.storeData` (rule (p)), read by its name. -/
+def storeData : CoreM Bool :=
+  return (← getOptions).get `derive_timed.storeData false
 
 /-- Constants that cost nothing beyond their arguments. -/
 def freeConstants : Array Name :=
@@ -1484,6 +1528,44 @@ option `derive_timed.reduceFnAliases`, `whnfR t` without it. -/
 def whnfFnR (t : Expr) : MetaM Expr := do
   if ← reduceFnAliases then whnfFnRAll t else whnfR t
 
+/-- The finite domains of a closure of type `ft` (rule (m)): the binders of the telescope of
+`ft` at reducible transparency, when each is data of a type with a `Fintype` instance (`Fin n`,
+`Bool`, a finite enumeration); `none` when a binder is a proposition, a type or an instance, or
+its type has no such instance. -/
+def finiteDomains? (ft : Expr) : MetaM (Option Nat) := do
+  forallTelescope (← whnfFnR ft) fun ys _ => do
+    if ys.isEmpty then return none
+    for y in ys do
+      let yt ← inferType y
+      if ← isProp yt then return none
+      if ← isTypeFormerType yt then return none
+      if (← isClass? yt).isSome then return none
+      let some fin ← observing? (mkAppM ``Fintype #[yt]) | return none
+      if (← synthInstance? fin).isNone then return none
+    return some ys.size
+
+/-- The arity `n` of a store type (rule (p)), with `hat` the costed type of the codomain: under
+the option `derive_timed.storeData`, a function type `(y₁ : X₁) → … → (yₙ : Xₙ) → Y` whose domains
+are finite (`finiteDomains?`) and whose codomain `Y` does not depend on them and is first-order
+data: not a proposition, a type, an instance or a tree, not a function after unfolding (`SPComp β`
+is a function of the heap), and without a costed form (`hat Y = none`). `none` for any other type
+and without the option. This is the class of `reflect_d`'s stores (`Ty.store`) and tables, read
+over all their binders. -/
+def storeTyWith? (hat : Expr → MetaM (Option Expr)) (t : Expr) : MetaM (Option Nat) := do
+  unless ← storeData do return none
+  let tw ← whnfFnR t
+  unless tw.isForall do return none
+  let some n ← finiteDomains? tw | return none
+  forallBoundedTelescope tw n fun ys body => do
+    if body.hasAnyFVar fun f => ys.any (·.fvarId! == f) then return none
+    if ← isProp body then return none
+    if ← isTypeFormerType body then return none
+    if (← isClass? body).isSome then return none
+    if (← treeTy? body).isSome then return none
+    if (← whnf body).isForall then return none
+    if (← hat body).isSome then return none
+    return some n
+
 /-- The costed type of a type `t` of data holding functions: a function `X → Y` with a
 first-order domain becomes the costed closure `(X → Ŷ) × (X → ℕ)`, a pair the pair of the
 costed types of its components, an inductive type of `sumInduct?` with a function field the
@@ -1493,6 +1575,10 @@ mirrored: the result is `none` for a type whose functions are all in fields of s
 partial def hatTy? (t : Expr) (seen : List Name := []) (mirror : Bool := true) :
     MetaM (Option Expr) := do
   let t ← instantiateMVars t
+  -- Rule (p): a component of data that is a store has no costed form; its function is a table.
+  let comp (a : Expr) (seen : List Name) : MetaM (Option Expr) := do
+    if (← storeTyWith? (hatTy? · seen mirror) a).isSome then return none
+    hatTy? a seen mirror
   if ← isProp t then return none
   if ← isTypeFormerType t then return none
   if (← isClass? t).isSome then return none
@@ -1501,26 +1587,26 @@ partial def hatTy? (t : Expr) (seen : List Name := []) (mirror : Bool := true) :
   if tw.isAppOfArity ``Prod 2 then
     let a := tw.getArg! 0
     let b := tw.getArg! 1
-    let ha ← hatTy? a seen mirror
-    let hb ← hatTy? b seen mirror
+    let ha ← comp a seen
+    let hb ← comp b seen
     if ha.isNone && hb.isNone then return none
     return some (← mkAppM ``Prod #[ha.getD a, hb.getD b])
   if tw.isAppOfArity ``Sum 2 then
     let a := tw.getArg! 0
     let b := tw.getArg! 1
-    let ha ← hatTy? a seen mirror
-    let hb ← hatTy? b seen mirror
+    let ha ← comp a seen
+    let hb ← comp b seen
     if ha.isNone && hb.isNone then return none
     return some (← mkAppM ``Sum #[ha.getD a, hb.getD b])
   if tw.isAppOfArity ``Option 1 then
     -- Only an optional function is costed; an option of a structure, a pair or a sum holding
     -- functions keeps its functions as tables.
     unless (← whnfR (tw.getArg! 0)).isForall do return none
-    let some ha ← hatTy? (tw.getArg! 0) seen mirror | return none
+    let some ha ← comp (tw.getArg! 0) seen | return none
     return some (← mkAppM ``Option #[ha])
   if let some m ← mirrorStruct? tw then
     if seen.contains m.struct || !mirror then return none
-    let hs ← m.fieldTypes.mapM (hatTy? · (m.struct :: seen))
+    let hs ← m.fieldTypes.mapM (comp · (m.struct :: seen))
     if hs.all (·.isNone) then return none
     return some (← mirrorType ((m.fieldTypes.zip hs).map fun (f, h) => h.getD f))
   if let some si ← sumInduct? tw then
@@ -1531,7 +1617,7 @@ partial def hatTy? (t : Expr) (seen : List Name := []) (mirror : Bool := true) :
     for fts in si.fieldTypes do
       let mut hs := #[]
       for ft in fts do
-        let h ← hatTy? ft seen' mirror
+        let h ← comp ft seen'
         if h.isSome && (← whnfR ft).isForall then fnField := true
         hs := hs.push (h.getD ft)
       comps := comps.push (← fieldsType hs)
@@ -1556,10 +1642,19 @@ partial def hatTy? (t : Expr) (seen : List Name := []) (mirror : Bool := true) :
     let cT ← mkForallFVars ys (mkConst ``Nat)
     return some (← mkAppM ``Prod #[fnT, cT])
 
+/-- The arity of the store type `t` (rule (p), `storeTyWith?` at `hatTy?`). -/
+def storeTy? (t : Expr) : MetaM (Option Nat) := storeTyWith? (hatTy? ·) t
+
+/-- The costed type of `t` at a component of data: `none` for a store (rule (p)), `hatTy? t`
+otherwise. -/
+def hatComp? (t : Expr) : MetaM (Option Expr) := do
+  if (← storeTy? t).isSome then return none
+  hatTy? t
+
 /-- The components of the costed value of the inductive type `si` (`hatTy?`): for each
 constructor, the tuple of the costed types of its fields (`fieldsType`). -/
 def sumComps (si : SumInduct) : MetaM (Array Expr) :=
-  si.fieldTypes.mapM fun fts => do fieldsType (← fts.mapM fun ft => return (← hatTy? ft).getD ft)
+  si.fieldTypes.mapM fun fts => do fieldsType (← fts.mapM fun ft => return (← hatComp? ft).getD ft)
 
 /-- `Sum.map` of `f` at the components of the sum `a ⊕ b` applied to `v`: with `f = epsE` from
 the costed sum to `a ⊕ b`, with `f = iotaE` from `a ⊕ b` to the costed sum. -/
@@ -1578,22 +1673,25 @@ def optionMapE (a v : Expr) (f : Expr → Expr → MetaM Expr) : MetaM Expr := d
 
 /-- The erasure `ε v : t` of the costed value `v` of type `hatTy? t`: the function of each
 costed closure. -/
-partial def epsE (t v : Expr) : MetaM Expr := do
+partial def epsE (t v : Expr) (comp : Bool := false) : MetaM Expr := do
+  -- At a component of data, a store has no costed form (rule (p)): its erasure is itself.
+  if comp then
+    if (← storeTy? t).isSome then return v
   let some _ ← hatTy? t | return v
   let tw ← whnfR t
   if tw.isAppOfArity ``Prod 2 then
-    let a ← epsE (tw.getArg! 0) (← mkAppM ``Prod.fst #[v])
-    let b ← epsE (tw.getArg! 1) (← mkAppM ``Prod.snd #[v])
+    let a ← epsE (tw.getArg! 0) (← mkAppM ``Prod.fst #[v]) true
+    let b ← epsE (tw.getArg! 1) (← mkAppM ``Prod.snd #[v]) true
     return ← mkAppM ``Prod.mk #[a, b]
   if tw.isAppOfArity ``Sum 2 then
-    return ← sumMapE (tw.getArg! 0) (tw.getArg! 1) v epsE
+    return ← sumMapE (tw.getArg! 0) (tw.getArg! 1) v (epsE · · true)
   if tw.isAppOfArity ``Option 1 then
-    return ← optionMapE (tw.getArg! 0) v epsE
+    return ← optionMapE (tw.getArg! 0) v (epsE · · true)
   if let some m ← mirrorStruct? tw then
     let n := m.fieldTypes.size
     let mut fs := #[]
     for i in [0:n] do
-      fs := fs.push (← epsE m.fieldTypes[i]! (← mirrorProj n i v))
+      fs := fs.push (← epsE m.fieldTypes[i]! (← mirrorProj n i v) true)
     return mkAppN (mkConst m.ctor m.levels) (m.params ++ fs)
   if let some si ← sumInduct? tw then
     -- An inductive type whose costed value is a sum: the constructor of the component, applied
@@ -1602,7 +1700,7 @@ partial def epsE (t v : Expr) : MetaM Expr := do
       let fts := si.fieldTypes[k]!
       let mut fs := #[]
       for i in [0:fts.size] do
-        fs := fs.push (← epsE fts[i]! (← mirrorProj fts.size i z))
+        fs := fs.push (← epsE fts[i]! (← mirrorProj fts.size i z) true)
       return mkAppN (mkConst si.ctors[k]! si.levels) (si.params ++ fs)
   let f ← mkAppM ``Prod.fst #[v]
   forallTelescope (← whnfFnR tw) fun ys body => do
@@ -1611,22 +1709,25 @@ partial def epsE (t v : Expr) : MetaM Expr := do
 
 /-- The lift `ι v : hatTy? t` of the value `v : t`: each function with the cost companion
 zero. -/
-partial def iotaE (t v : Expr) : MetaM Expr := do
+partial def iotaE (t v : Expr) (comp : Bool := false) : MetaM Expr := do
+  -- At a component of data, a store has no costed form (rule (p)): its lift is itself.
+  if comp then
+    if (← storeTy? t).isSome then return v
   let some _ ← hatTy? t | return v
   let tw ← whnfR t
   if tw.isAppOfArity ``Prod 2 then
-    let a ← iotaE (tw.getArg! 0) (← mkAppM ``Prod.fst #[v])
-    let b ← iotaE (tw.getArg! 1) (← mkAppM ``Prod.snd #[v])
+    let a ← iotaE (tw.getArg! 0) (← mkAppM ``Prod.fst #[v]) true
+    let b ← iotaE (tw.getArg! 1) (← mkAppM ``Prod.snd #[v]) true
     return ← mkAppM ``Prod.mk #[a, b]
   if tw.isAppOfArity ``Sum 2 then
-    return ← sumMapE (tw.getArg! 0) (tw.getArg! 1) v iotaE
+    return ← sumMapE (tw.getArg! 0) (tw.getArg! 1) v (iotaE · · true)
   if tw.isAppOfArity ``Option 1 then
-    return ← optionMapE (tw.getArg! 0) v iotaE
+    return ← optionMapE (tw.getArg! 0) v (iotaE · · true)
   if let some m ← mirrorStruct? tw then
     let mut fs := #[]
     for i in [0:m.fieldTypes.size] do
       let pf := mkAppN (mkConst m.projs[i]! m.levels) (m.params.push v)
-      fs := fs.push (← iotaE m.fieldTypes[i]! pf)
+      fs := fs.push (← iotaE m.fieldTypes[i]! pf true)
     return ← mirrorMk fs
   if let some si ← sumInduct? tw then
     -- An inductive type whose costed value is a sum: by cases on `v`, the injection of the
@@ -1639,7 +1740,7 @@ partial def iotaE (t v : Expr) : MetaM Expr := do
       let fts := si.fieldTypes[k]!
       let decls := fts.map fun ft => (`a, fun (_ : Array Expr) => pure ft)
       minors := minors.push (← withLocalDeclsD decls fun fs => do
-        let vs ← (fts.zip fs).mapM fun (ft, f) => iotaE ft f
+        let vs ← (fts.zip fs).mapM fun (ft, f) => iotaE ft f true
         mkLambdaFVars fs (← sumInj comps k (← fieldsMk vs)))
     return mkAppN (mkConst (si.induct ++ `casesOn) ((← getLevel ht) :: si.levels))
       (si.params ++ #[motive, v] ++ minors)
@@ -2543,7 +2644,7 @@ unfolding it by `whnf`. A position of a proposition, a type former or an instanc
 function position; a structure other than a pair is not entered (its function fields are field
 paths or are priced through the value, rule (g)). -/
 partial def unmirroredClosures (t v : Expr) (path : Array String := #[])
-    (unfolded : Array Name := #[]) (fuel : Nat := 32) :
+    (unfolded : Array Name := #[]) (fuel : Nat := 32) (storesOnly : Bool := false) :
     MetaM (Array (Expr × Expr × Array String × Array Name)) := do
   if fuel == 0 then return #[]
   let v := v.consumeMData.headBeta
@@ -2552,9 +2653,14 @@ partial def unmirroredClosures (t v : Expr) (path : Array String := #[])
   if (← isClass? t).isSome then return #[]
   let tw ← whnfR t
   if tw.isForall then
+    -- Under a type with a costed form only the stores of rule (p) are collected.
+    if storesOnly && (← storeTy? t).isNone then return #[]
+    -- A local placed at a store is collected as well: a local with a costed closure (a kept
+    -- `let` of a closure, a function parameter) is tabulated by its companion (rule (p)).
+    if v.isFVar && (← storeTy? t).isSome then return #[(v, t, path, unfolded)]
     return if ← isClosureValue v then #[(v, t, path, unfolded)] else #[]
   let go (t' v' : Expr) (step : String) :=
-    unmirroredClosures t' v' (path.push step) unfolded (fuel - 1)
+    unmirroredClosures t' v' (path.push step) unfolded (fuel - 1) storesOnly
   if tw.isAppOfArity ``Prod 2 && v.isAppOfArity ``Prod.mk 4 then
     return (← go (tw.getArg! 0) (v.getArg! 2) "Prod.fst") ++
       (← go (tw.getArg! 1) (v.getArg! 3) "Prod.snd")
@@ -2564,6 +2670,17 @@ partial def unmirroredClosures (t v : Expr) (path : Array String := #[])
     return ← go (tw.getArg! 1) (v.getArg! 2) "Sum.inr"
   if tw.isAppOfArity ``Option 1 && v.isAppOfArity ``Option.some 2 then
     return ← go (tw.getArg! 0) (v.getArg! 1) "Option.some"
+  -- Rule (p): under the option every constructor is entered (a structure, `List.cons`), so that
+  -- a closure placed at a store is tabulated wherever it is built.
+  if ← storeData then
+    if let .const n _ := v.getAppFn.consumeMData then
+      if let some (.ctorInfo ci) := (← getEnv).find? n then
+        if v.getAppNumArgs == ci.numParams + ci.numFields then
+          let mut out := #[]
+          for i in [ci.numParams:v.getAppNumArgs] do
+            let a := v.getArg! i
+            out := out ++ (← go (← inferType a) a s!"{n}.{i - ci.numParams}")
+          return out
   -- A type-valued definition, unfolded where the value is a constructor application or a
   -- closure.
   let .const c _ := tw.getAppFn | return #[]
@@ -2578,7 +2695,7 @@ partial def unmirroredClosures (t v : Expr) (path : Array String := #[])
     unless ← isClosureValue v do return #[]
   let tw' ← whnf tw
   if tw' == tw then return #[]
-  unmirroredClosures tw' v path (unfolded.push c) (fuel - 1)
+  unmirroredClosures tw' v path (unfolded.push c) (fuel - 1) storesOnly
 
 /-- Whether the value `s` has a type that is a type-valued definition which `whnfR` does not
 unfold and `whnf` does (rule (l)): a type computed by recursion at a constructor, such as
@@ -2589,22 +2706,6 @@ def underTypeDef (s : Expr) : MetaM Bool := do
   let .const c _ := tw.getAppFn | return false
   let some (.defnInfo _) := (← getEnv).find? c | return false
   return (← whnf tw) != tw
-
-/-- The finite domains of a closure of type `ft` (rule (m)): the binders of the telescope of
-`ft` at reducible transparency, when each is data of a type with a `Fintype` instance (`Fin n`,
-`Bool`, a finite enumeration); `none` when a binder is a proposition, a type or an instance, or
-its type has no such instance. -/
-def finiteDomains? (ft : Expr) : MetaM (Option Nat) := do
-  forallTelescope (← whnfFnR ft) fun ys _ => do
-    if ys.isEmpty then return none
-    for y in ys do
-      let yt ← inferType y
-      if ← isProp yt then return none
-      if ← isTypeFormerType yt then return none
-      if (← isClass? yt).isSome then return none
-      let some fin ← observing? (mkAppM ``Fintype #[yt]) | return none
-      if (← synthInstance? fin).isNone then return none
-    return some ys.size
 
 /-- The refusal of rule (j): the closure `v` of type `ft`, at the position `path` of the value `e`
 of type `t`, reached by unfolding the definitions `unfolded`, has a domain that is not finite, so
@@ -2631,6 +2732,17 @@ partial def hasClosureComponent (v : Expr) : MetaM Bool := do
   if v.isAppOfArity ``Sum.inl 3 || v.isAppOfArity ``Sum.inr 3 then
     return ← hasClosureComponent (v.getArg! 2)
   if v.isAppOfArity ``Option.some 2 then return ← hasClosureComponent (v.getArg! 1)
+  -- Rule (p): under the option every constructor is entered, as `unmirroredClosures` enters it.
+  if ← storeData then
+    if let .const n _ := v.getAppFn.consumeMData then
+      if let some (.ctorInfo ci) := (← getEnv).find? n then
+        if v.getAppNumArgs == ci.numParams + ci.numFields then
+          for i in [ci.numParams:v.getAppNumArgs] do
+            if ← hasClosureComponent (v.getArg! i) then return true
+          return false
+    -- A local of function type may carry a costed closure, tabulated at a store.
+    if v.isFVar then
+      if (← whnfR (← inferType v)).isForall then return true
   isClosureValue v
 
 /-- Whether the value `v`, read through the constructors that `unmirroredClosures` follows, has a
@@ -3558,6 +3670,46 @@ def dataCases? (c : Name) : MetaM (Option (InductiveVal × Bool)) := do
   if c == iv.name ++ `rec && !iv.isRec then return some (iv, true)
   return none
 
+/-- Whether `e` is a projection of a value of a structure (`s.i`, or a projection function of a
+structure that is not a class applied to its parameters and `s`): a component of data. -/
+def isProjOfData (e : Expr) : MetaM Bool := do
+  let e := e.consumeMData
+  if e.isProj then return true
+  let .const c _ := e.getAppFn | return false
+  let some info ← getProjectionFnInfo? c | return false
+  return !info.fromClass && e.getAppNumArgs == info.numParams + 1
+
+/-- The reason, appended to a refusal of a function bound in data of type `ft`, that rule (p) does
+not read it as a store: a domain that is not finite, named with its type; a codomain that is not
+first-order data; without the option `derive_timed.storeData`, the option; with it, a local that
+is not a component of data (`atData` false). -/
+def storeRefusal (ft : Expr) (atData : Bool) : MetaM MessageData := do
+  let tw ← whnfFnR ft
+  unless tw.isForall do return m!""
+  forallTelescope tw fun ys body => do
+    for y in ys do
+      let yt ← inferType y
+      let fin ← do
+        if ← isProp yt then pure false
+        else if ← isTypeFormerType yt then pure false
+        else if (← isClass? yt).isSome then pure false
+        else match ← observing? (mkAppM ``Fintype #[yt]) with
+          | some c => pure (← synthInstance? c).isSome
+          | none => pure false
+      unless fin do
+        return m!"; its type `{ft}` has the domain `{yt}`, which is not finite, so it is not a \
+          store (rule (p))"
+    if (← storeTy? ft).isNone then
+      unless ← storeData do
+        return m!"; its type `{ft}` has finite domains: with the option `derive_timed.storeData` \
+          a function of this type held in data is a store (rule (p))"
+      return m!"; its type `{ft}` has finite domains, and its codomain `{body}` is not first-order \
+        data, so it is not a store (rule (p))"
+    if atData then return m!""
+    return m!"; its type `{ft}` is a store type, and the local is not a component of data: \
+      rule (p) reads a store at a projection of data, and a function bound by a fold or a \
+      recursion is priced as a costed closure (rules (d) and (e))"
+
 mutual
 
 /-- The cost of evaluating the data term `e`. -/
@@ -3674,6 +3826,11 @@ otherwise the cost of `a` applied. -/
 partial def companionOf (ctx : Ctx) (a : Expr) : TermElabM Expr := do
   if let .fvar id := a.consumeMData then
     if let some { companion? := some c, .. } := ctx.locals.get? id then return c
+  -- Rule (p): a store read from data, passed to a function parameter, is a table with the
+  -- companion zero (`ι`), so that each read the callee charges is one unit.
+  if (← storeTy? (← inferType a)).isSome then
+    if ← isProjOfData a then
+      return ← forallTelescope (← whnfR (← inferType a)) fun ys _ => mkLambdaFVars ys (natE 0)
   if let some v ← hatOf? ctx a then
     if (← whnfR (← inferType v)).isAppOfArity ``Prod 2 then return ← projE false v
   let t ← whnfR (← inferType a)
@@ -3811,6 +3968,24 @@ partial def tvTry? (ctx : Ctx) (v : Expr) : TermElabM (Option (Expr × Expr)) :=
     if let (some r, some a) := (ctx.fnUnfolded?, fnu) then r.set a
     return none
 
+/-- `tv` at a component of data: a store (rule (p)) is plain data, priced by `costOf`, and, when
+it is built here as a closure, by its tabulation (rule (m), `tabulateAt`); any other component by
+`tv`. -/
+partial def tvComp (ctx : Ctx) (a : Expr) : TermElabM (Expr × Expr) := do
+  let t ← inferType a
+  let some n ← storeTy? t | tv ctx a
+  if ← isClosureValue a then return (← tabulateAt ctx a t n, a)
+  -- A local with a costed closure (a kept `let` of a closure, a function parameter) placed at the
+  -- store: tabulated by its companion, its function the table.
+  if let .fvar id := a.consumeMData then
+    if let some h ← hatOf? ctx a then
+      let v ← match ctx.locals.get? id with
+        | some { kind := .hat, value, .. } => epsE t value
+        | _ => pure a
+      return (← tabulateHat h t n, v)
+  -- A write into the store (`Function.update`) is a table write, `Prim.sset` in D.
+  return (← costOf { ctx with inTableData := true } a, a)
+
 /-- The cost and the costed value (`hatTy?`) of the data term `e`; for a term whose type
 holds no function, its cost and `e`. A closure costs nothing to build and its companion is
 the cost of its body; a partial application of a constant evaluates its arguments when it is
@@ -3834,6 +4009,10 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
   -- `(a : α) → (fun _ => β) a`) is recognized as a function holding data (`hatTy?`).
   let t ← Core.betaReduce (← inferType e)
   let some ht ← hatTy? t | return (← costOf ctx e, e)
+  -- Rule (p): a store read from data (a projection, whose component has no costed form) is a
+  -- table: its costed closure is the table with the companion zero (`ι`).
+  if (← storeTy? t).isSome then
+    if ← isProjOfData e then return (← costOf ctx e, ← iotaE t e)
   if let some v ← hatOf? ctx e (record := true) then return (← costOf ctx e, v)
   let tw ← whnfR t
   match e with
@@ -3879,16 +4058,16 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
     let args := e.getAppArgs
     -- A sum holding functions: the costed value of the component.
     if (f.isConstOf ``Sum.inl || f.isConstOf ``Sum.inr) && args.size == 3 then
-      let (ca, va) ← tv ctx args[2]!
-      let ha := (← hatTy? args[0]!).getD args[0]!
-      let hb := (← hatTy? args[1]!).getD args[1]!
+      let (ca, va) ← tvComp ctx args[2]!
+      let ha := (← hatComp? args[0]!).getD args[0]!
+      let hb := (← hatComp? args[1]!).getD args[1]!
       let .const n lvls := f | fail m!"internal: `{e}`"
       let lvls' ← [ha, hb].mapM fun x => (getDecLevel x : MetaM Level)
       unless lvls.length == 2 do fail m!"internal: `{e}`"
       return (ca, mkAppN (mkConst n lvls') #[ha, hb, va])
     -- An optional value holding functions: the costed value of its content.
     if f.isConstOf ``Option.some && args.size == 2 then
-      let (ca, va) ← tv ctx args[1]!
+      let (ca, va) ← tvComp ctx args[1]!
       return (ca, ← mkAppM ``Option.some #[va])
     if f.isConstOf ``Option.none && args.size == 1 then
       let hw ← whnfR ht
@@ -3903,7 +4082,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
             let mut cs := #[]
             let mut vs := #[]
             for a in args.extract si.params.size args.size do
-              let (c, v) ← tv ctx a
+              let (c, v) ← tvComp ctx a
               cs := cs.push c
               vs := vs.push v
             return (sum cs, ← sumInj (← sumComps si) k (← fieldsMk vs))
@@ -3914,7 +4093,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
           let mut cs := #[]
           let mut vs := #[]
           for a in args.extract m.params.size args.size do
-            let (c, v) ← tv ctx a
+            let (c, v) ← tvComp ctx a
             cs := cs.push c
             vs := vs.push v
           return (sum cs, ← mirrorMk vs)
@@ -3932,8 +4111,8 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       if let some { kind := .fn, companion? := some _, .. } := ctx.locals.get? id then
         unless tw.isForall do return (← costOf ctx e, ← iotaE t e)
     if f.isConstOf ``Prod.mk && args.size == 4 then
-      let (ca, va) ← tv ctx args[2]!
-      let (cb, vb) ← tv ctx args[3]!
+      let (ca, va) ← tvComp ctx args[2]!
+      let (cb, vb) ← tvComp ctx args[3]!
       return (add ca cb, ← mkAppM ``Prod.mk #[va, vb])
     if let some e' ← boolRecIte? e then return ← tv ctx e'
     if (f.isConstOf ``ite || f.isConstOf ``dite) && args.size == 5 then
@@ -4285,7 +4464,8 @@ partial def costApp (ctx : Ctx) (e : Expr) : TermElabM Expr := do
         if ← isDecisionBinder ctx f then
           unless (← r.get).contains f do r.modify (·.push f)
           return add (natE 1) (← argsCost ctx args)
-      fail m!"a function bound in data: the local `{f}` in `{e}` has no cost companion"
+      fail m!"a function bound in data: the local `{f}` in `{e}` has no cost companion\
+        {← storeRefusal (← inferType f) false}"
   | .const c _ => costConst ctx e c args
   | .proj S i s =>
     -- A field of a structure applied: priced as its projection function.
@@ -4306,17 +4486,43 @@ partial def tabulateClosures (ctx : Ctx) (e : Expr) : TermElabM Expr := do
   -- The value is read first: the types are inspected only when a closure sits at a component.
   unless ← hasClosureComponent e do return natE 0
   let t ← inferType e
-  if (← hatTy? t).isSome then return natE 0
+  -- A type with a costed form keeps its closures as costed closures, except at the stores of
+  -- rule (p), which are tabulated (`storesOnly`).
+  let storesOnly := (← hatTy? t).isSome
+  if storesOnly && !(← storeData) then return natE 0
   let mut cs := #[]
-  for (v, ft, path, unfolded) in ← unmirroredClosures t e do
+  for (v, ft, path, unfolded) in ← unmirroredClosures t e (storesOnly := storesOnly) do
+    if v.isFVar then
+      -- A local at a store (rule (p)): with a costed closure it is tabulated by its companion;
+      -- any other local is a table, charged where it was built.
+      if let (some n, some h) := (← storeTy? ft, ← hatOf? ctx v) then
+        cs := cs.push (← tabulateHat h ft n)
+      continue
     let some n ← finiteDomains? ft | failUnmirroredClosure e t v ft path unfolded
-    cs := cs.push (← forallBoundedTelescope (← whnfFnR ft) n fun ys _ => do
-      let mut acc ← costOf ctx (mkAppN v ys).headBeta
-      for y in ys.reverse do
-        let univ ← mkAppOptM ``Finset.univ #[← inferType y, none]
-        acc ← mkAppM ``Finset.sum #[univ, ← mkLambdaFVars #[y] acc]
-      return acc)
+    cs := cs.push (← tabulateAt ctx v ft n)
   return sum cs
+
+/-- The tabulation of the closure `v` of type `ft` over its `n` finite domains (rule (m)):
+`∑ y₁, … ∑ yₙ, cost (v y₁ … yₙ)`, the cost of its body at every point. -/
+partial def tabulateAt (ctx : Ctx) (v ft : Expr) (n : Nat) : TermElabM Expr := do
+  forallBoundedTelescope (← whnfFnR ft) n fun ys _ => do
+    let mut acc ← costOf ctx (mkAppN v ys).headBeta
+    for y in ys.reverse do
+      let univ ← mkAppOptM ``Finset.univ #[← inferType y, none]
+      acc ← mkAppM ``Finset.sum #[univ, ← mkLambdaFVars #[y] acc]
+    return acc
+
+/-- The tabulation of the costed closure `h` of a function of the store type `ft` with `n`
+finite domains (rule (p)): `∑ y₁, … ∑ yₙ, (1 + ĉ y₁ … yₙ)`, one application at every point,
+with `ĉ` the companion of `h`. -/
+partial def tabulateHat (h ft : Expr) (n : Nat) : TermElabM Expr := do
+  let cp ← projE false h
+  forallBoundedTelescope (← whnfFnR ft) n fun ys _ => do
+    let mut acc := add (natE 1) (mkAppN cp ys).headBeta
+    for y in ys.reverse do
+      let univ ← mkAppOptM ``Finset.univ #[← inferType y, none]
+      acc ← mkAppM ``Finset.sum #[univ, ← mkLambdaFVars #[y] acc]
+    return acc
 
 /-- The cost of an application of the constant `c`. -/
 partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
@@ -4338,7 +4544,10 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     let mut ctx' := ctx
     unless ctx.inTableData do
       if ← hasRegisteredComponent e then
-        if (← hatTy? (← inferType e)).isNone then
+        -- Under rule (p) a write into a store (`Function.update`) is a table write wherever the
+        -- store sits; a registered call at another component is then priced as complete, an
+        -- upper bound of its price as a closure.
+        if (← hatTy? (← inferType e)).isNone || (← storeData) then
           ctx' := { ctx with inTableData := true }
     -- The parameters of the inductive type are not arguments of the call.
     return add tab (← argsCost ctx' (args.extract ci.numParams args.size))
@@ -4470,6 +4679,15 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     if args.size > info.numParams + 1 then
       let p := mkAppN f (args.extract 0 (info.numParams + 1))
       let rest := args.extract (info.numParams + 1) args.size
+      -- Rule (p): a store held in data, applied: a table read, one unit for each argument
+      -- applied (a read of each level of a curried store, `Prim.sget` or `Prim.tget` in D), plus
+      -- the costs of the data and of the arguments. The store was charged where it was built
+      -- (rule (m), a table write, or an input).
+      if !info.fromClass && !p.hasLooseBVars then
+        if let some n ← storeTy? (← inferType p) then
+          if rest.size ≤ n then
+            return add (← costOf ctx args[info.numParams]!)
+              (add (natE rest.size) (← argsCost ctx rest))
       -- A field below a projection of a constructor application (`{ cfg := s.cfg, … }.cfg.env`):
       -- the structure is priced, and the field is priced at the reduced path (`s.cfg.env`).
       if !info.fromClass then
@@ -4506,7 +4724,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
         if let some sv ← pathHat? ctx s false then
           if let some m ← mirrorStruct? (← whnfR (← inferType s)) then
             if let some i := m.projs.idxOf? c then
-              if (← hatTy? m.fieldTypes[i]!).isSome then
+              if (← hatComp? m.fieldTypes[i]!).isSome then
                 let comp ← mirrorProj m.fieldTypes.size i sv
                 return add (← costOf ctx s) (← closureApp ctx comp rest).1
       if let some (_, cc) := ctx.fields.find? (·.1 == p) then
@@ -4576,7 +4794,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
       -- in the costed value of the structure, applied.
       if let some m ← mirrorStruct? (← whnfR (← inferType s)) then
         if let some i := m.projs.idxOf? c then
-          if (← hatTy? m.fieldTypes[i]!).isSome then
+          if (← hatComp? m.fieldTypes[i]!).isSome then
             let (cs, vs) ← tv ctx s
             let comp ← mirrorProj m.fieldTypes.size i vs
             return add cs (← closureApp ctx comp rest).1
@@ -4584,7 +4802,8 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
       -- unfold at reducible transparency (rule (l), `underTypeDef`), applied: a table read.
       if ← underTypeDef s then
         return add (← costOf ctx s) (add (natE 1) (← argsCost ctx rest))
-      fail m!"a function bound in data: the field `{c}` is applied in `{e}`"
+      fail m!"a function bound in data: the field `{c}` is applied in `{e}`\
+        {← storeRefusal (← inferType (mkAppN f (args.extract 0 (info.numParams + 1)))) true}"
     return ← argsCost ctx args
   -- An operation on finite sets or multisets is defined through a quotient, whose internals
   -- have no cost: it is priced by its registered cost (`CatCryptCore.Tactics.StdCosts`).
@@ -4778,7 +4997,7 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
           for (fv, c) in ← patternHats p v do
             unless fs.contains fv && (ctx'.locals.get? fv.fvarId!).isNone do continue
             let ft ← inferType fv
-            if (← hatTy? ft).isNone then continue
+            if (← hatComp? ft).isNone then continue
             ctx' := { ctx' with
               locals := ctx'.locals.insert fv.fvarId! ⟨.hat, ← refillE ft fv c, none⟩ }
       -- A function field of a pattern of a recursive inductive value, or of a value read from a

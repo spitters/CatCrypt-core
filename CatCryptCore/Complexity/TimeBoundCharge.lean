@@ -8,8 +8,10 @@ module
 public import CatCryptCore.Core.SPTreeTimedFree
 public import CatCryptCore.Crypto.OracleAdversaryFree
 public import CatCryptCore.Crypto.Signatures.OracleProgTimedFree
+public import CatCryptCore.Crypto.Signatures.OracleProgUseBound
 public import CatCryptCore.Quantum.QTreeKindFree
 public import CatCryptCore.Quantum.QROM.QAdvTreeKindFree
+public import CatCryptCore.Tactics.TimeFoldRegistry
 
 /-!
 # Time bounds of the tree kinds as charge bounds
@@ -21,6 +23,13 @@ image under the kind's charge `tickCost`. For `SPTree` the charge bound is taken
 that `spAllows` admits (`FreeM.IsChargeBoundUnder`), since its sampling nodes over a distribution
 quantify over the support only. The laws of `IsChargeBound` (`bind`, `mono`, `liftM`, `mapLens`,
 `isChargeBound_prod_iff`) apply to every time bound through these equivalences.
+
+The fold rule of `derive_time_bound` and `time_fold` reads the charge bounds through refined
+records of the kinds (`register_time_fold`): for each kind, the charge bound of an image is
+equivalent to the bound on its charge fold (a hypothesis or the time theorem of a callee read as
+a fold fact, `FoldKind.hypIffs`), and the bound on the charge fold implies the charge bound (a
+goal, `FoldKind.concls`). The record of costed oracle programs refines the record of the vector
+charge `useCharge` (`OracleProgUseBound`).
 
 ## Main results
 
@@ -38,6 +47,11 @@ quantify over the support only. The laws of `IsChargeBound` (`bind`, `mono`, `li
   `CatCrypt.Quantum.QROM.QAdvT.stepTimeBound_iff_isChargeBound`,
   `CatCrypt.Quantum.QROM.QAdvMRT.timeBound_iff_isChargeBound`,
   `CatCrypt.Quantum.QROM.QAdvMRT.stepTimeBound_iff_isChargeBound` — costed circuits
+* `isChargeBound_toFreeMT_iff_wpFold_le`, `isChargeBound_stepToFreeMT_iff_wpFold_le`,
+  `isChargeBound_toFreeMT_of_wpFold_le`, `isChargeBound_stepToFreeMT_of_wpFold_le` (and the
+  `IsChargeBoundUnder` forms for `SPTree`) — the charge bounds as charge-fold bounds, per kind
+* `oracleChargeFold`, `oracleProgChargeFold`, `spTreeChargeFold`, `qInstrChargeFold`,
+  `qAdvChargeFold`, `qAdvMRChargeFold` — the refined records of the fold rule
 -/
 
 @[expose] public section
@@ -72,6 +86,38 @@ theorem stepTimeBound_iff_isChargeBound (x : ℕ × Timed D R α) (n : ℕ) :
   rw [stepTimeBound_iff_wpFold_chargeUnder, OpSpec.chargeUnder_true,
     ← FreeM.isRollBound_iff_wpFold_charge, FreeM.isChargeBound_iff_isRollBound_nat]
 
+/-- The charge bound `n` of the tick tree of a costed adversary is the bound `n` on its charge
+fold. -/
+theorem isChargeBound_toFreeMT_iff_wpFold_le (A : Timed D R α) (n : ℕ) :
+    (toFreeMT A).IsChargeBound tickCost n ↔
+      FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+        (toFreeMT A) (fun _ => 0) ≤ n :=
+  (timeBound_iff_isChargeBound A n).symm.trans (timeBound_iff_wpFold_chargeUnder A n)
+
+/-- The bound `n` on the charge fold of the tick tree of a costed adversary gives its charge
+bound `n`. -/
+theorem isChargeBound_toFreeMT_of_wpFold_le (A : Timed D R α) (n : ℕ)
+    (h : FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+      (toFreeMT A) (fun _ => 0) ≤ n) :
+    (toFreeMT A).IsChargeBound tickCost n :=
+  (isChargeBound_toFreeMT_iff_wpFold_le A n).2 h
+
+/-- The charge bound `n` of the step-prefixed tick tree of a costed adversary is the bound `n` on
+its charge fold. -/
+theorem isChargeBound_stepToFreeMT_iff_wpFold_le (x : ℕ × Timed D R α) (n : ℕ) :
+    (stepToFreeMT x).IsChargeBound tickCost n ↔
+      FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+        (stepToFreeMT x) (fun _ => 0) ≤ n :=
+  (stepTimeBound_iff_isChargeBound x n).symm.trans (stepTimeBound_iff_wpFold_chargeUnder x n)
+
+/-- The bound `n` on the charge fold of the step-prefixed tick tree of a costed adversary gives
+its charge bound `n`. -/
+theorem isChargeBound_stepToFreeMT_of_wpFold_le (x : ℕ × Timed D R α) (n : ℕ)
+    (h : FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+      (stepToFreeMT x) (fun _ => 0) ≤ n) :
+    (stepToFreeMT x).IsChargeBound tickCost n :=
+  (isChargeBound_stepToFreeMT_iff_wpFold_le x n).2 h
+
 end CatCrypt.Crypto.OracleAdv.Timed
 
 namespace CatCrypt.Crypto.OracleProg.Timed
@@ -88,6 +134,38 @@ tick tree. -/
 theorem stepTimeBound_iff_isChargeBound (x : ℕ × Timed I O α) (n : ℕ) :
     StepTimeBound x n ↔ (stepToFreeMT x).IsChargeBound tickCost n :=
   (stepTimeBound_iff_isRollBound x n).trans (FreeM.isChargeBound_iff_isRollBound_nat _ _ _).symm
+
+/-- The charge bound `n` of the tick tree of a costed oracle program is the bound `n` on its
+charge fold. -/
+theorem isChargeBound_toFreeMT_iff_wpFold_le (p : Timed I O α) (n : ℕ) :
+    (toFreeMT p).IsChargeBound tickCost n ↔
+      FreeM.wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞)) (toFreeMT p)
+        (fun _ => 0) ≤ n :=
+  (timeBound_iff_isChargeBound p n).symm.trans (timeBound_iff_wpFold_charge p n)
+
+/-- The bound `n` on the charge fold of the tick tree of a costed oracle program gives its charge
+bound `n`. -/
+theorem isChargeBound_toFreeMT_of_wpFold_le (p : Timed I O α) (n : ℕ)
+    (h : FreeM.wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞)) (toFreeMT p)
+      (fun _ => 0) ≤ n) :
+    (toFreeMT p).IsChargeBound tickCost n :=
+  (isChargeBound_toFreeMT_iff_wpFold_le p n).2 h
+
+/-- The charge bound `n` of the step-prefixed tick tree of a costed oracle program is the bound
+`n` on its charge fold. -/
+theorem isChargeBound_stepToFreeMT_iff_wpFold_le (x : ℕ × Timed I O α) (n : ℕ) :
+    (stepToFreeMT x).IsChargeBound tickCost n ↔
+      FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+        (stepToFreeMT x) (fun _ => 0) ≤ n :=
+  (stepTimeBound_iff_isChargeBound x n).symm.trans (stepTimeBound_iff_wpFold_chargeUnder x n)
+
+/-- The bound `n` on the charge fold of the step-prefixed tick tree of a costed oracle program
+gives its charge bound `n`. -/
+theorem isChargeBound_stepToFreeMT_of_wpFold_le (x : ℕ × Timed I O α) (n : ℕ)
+    (h : FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+      (stepToFreeMT x) (fun _ => 0) ≤ n) :
+    (stepToFreeMT x).IsChargeBound tickCost n :=
+  (isChargeBound_stepToFreeMT_iff_wpFold_le x n).2 h
 
 end CatCrypt.Crypto.OracleProg.Timed
 
@@ -112,6 +190,39 @@ theorem le_and_timeBound_iff_isChargeBoundUnder (x : ℕ × SPTree.Timed α) (n 
   exact ((FreeM.isChargeBound_iff_isRollBound_nat _ _ _).trans
     (FreeM.isRollBound_iff_wpFold_charge _ _ _)).symm
 
+/-- The charge bound `t` of the tick tree of a costed `SPTree` along the answers that `spAllows`
+admits is the bound `t` on its charge fold. -/
+theorem isChargeBoundUnder_toFreeMT_iff_wpFold_le (s : SPTree.Timed α) (t : ℕ) :
+    (toFreeMT s).IsChargeBoundUnder tickCost spAllows t ↔
+      FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) spAllows)
+        (toFreeMT s) (fun _ => 0) ≤ t :=
+  (timeBound_iff_isChargeBoundUnder s t).symm.trans (timeBound_iff_wpFold_chargeUnder s t)
+
+/-- The bound `t` on the charge fold of the tick tree of a costed `SPTree` gives its charge bound
+`t` along the answers that `spAllows` admits. -/
+theorem isChargeBoundUnder_toFreeMT_of_wpFold_le (s : SPTree.Timed α) (t : ℕ)
+    (h : FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) spAllows)
+      (toFreeMT s) (fun _ => 0) ≤ t) :
+    (toFreeMT s).IsChargeBoundUnder tickCost spAllows t :=
+  (isChargeBoundUnder_toFreeMT_iff_wpFold_le s t).2 h
+
+/-- The charge bound `n` of the step-prefixed tick tree of a costed `SPTree` along the answers
+that `spAllows` admits is the bound `n` on its charge fold. -/
+theorem isChargeBoundUnder_stepToFreeMT_iff_wpFold_le (x : ℕ × SPTree.Timed α) (n : ℕ) :
+    (stepToFreeMT x).IsChargeBoundUnder tickCost spAllows n ↔
+      FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) spAllows)
+        (stepToFreeMT x) (fun _ => 0) ≤ n :=
+  (le_and_timeBound_iff_isChargeBoundUnder x n).symm.trans
+    (le_and_timeBound_iff_wpFold_chargeUnder x n)
+
+/-- The bound `n` on the charge fold of the step-prefixed tick tree of a costed `SPTree` gives its
+charge bound `n` along the answers that `spAllows` admits. -/
+theorem isChargeBoundUnder_stepToFreeMT_of_wpFold_le (x : ℕ × SPTree.Timed α) (n : ℕ)
+    (h : FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) spAllows)
+      (stepToFreeMT x) (fun _ => 0) ≤ n) :
+    (stepToFreeMT x).IsChargeBoundUnder tickCost spAllows n :=
+  (isChargeBoundUnder_stepToFreeMT_iff_wpFold_le x n).2 h
+
 end CatCrypt.Core.SPTree.Timed
 
 namespace CatCrypt.Quantum.ReactiveUC.QInstrT
@@ -132,6 +243,38 @@ theorem stepTimeBound_iff_isChargeBound (x : ℕ × QInstrT A α B) (n : ℕ) :
     StepTimeBound x n ↔ (stepToFreeMT x).IsChargeBound tickCost n :=
   (stepTimeBound_iff_isRollBound x n).trans (FreeM.isChargeBound_iff_isRollBound_nat _ _ _).symm
 
+/-- The charge bound `n` of the tick tree of a costed instrument is the bound `n` on its charge
+fold. -/
+theorem isChargeBound_toFreeMT_iff_wpFold_le (x : QInstrT A α B) (n : ℕ) :
+    (toFreeMT x).IsChargeBound tickCost n ↔
+      FreeM.wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞)) (toFreeMT x)
+        (fun _ => 0) ≤ n :=
+  (timeBound_iff_isChargeBound x n).symm.trans (timeBound_iff_wpFold_charge x n)
+
+/-- The bound `n` on the charge fold of the tick tree of a costed instrument gives its charge
+bound `n`. -/
+theorem isChargeBound_toFreeMT_of_wpFold_le (x : QInstrT A α B) (n : ℕ)
+    (h : FreeM.wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞)) (toFreeMT x)
+      (fun _ => 0) ≤ n) :
+    (toFreeMT x).IsChargeBound tickCost n :=
+  (isChargeBound_toFreeMT_iff_wpFold_le x n).2 h
+
+/-- The charge bound `n` of the step-prefixed tick tree of a costed instrument is the bound `n`
+on its charge fold. -/
+theorem isChargeBound_stepToFreeMT_iff_wpFold_le (x : ℕ × QInstrT A α B) (n : ℕ) :
+    (stepToFreeMT x).IsChargeBound tickCost n ↔
+      FreeM.wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞)) (stepToFreeMT x)
+        (fun _ => 0) ≤ n :=
+  (stepTimeBound_iff_isChargeBound x n).symm.trans (stepTimeBound_iff_wpFold_charge x n)
+
+/-- The bound `n` on the charge fold of the step-prefixed tick tree of a costed instrument gives
+its charge bound `n`. -/
+theorem isChargeBound_stepToFreeMT_of_wpFold_le (x : ℕ × QInstrT A α B) (n : ℕ)
+    (h : FreeM.wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞)) (stepToFreeMT x)
+      (fun _ => 0) ≤ n) :
+    (stepToFreeMT x).IsChargeBound tickCost n :=
+  (isChargeBound_stepToFreeMT_iff_wpFold_le x n).2 h
+
 end CatCrypt.Quantum.ReactiveUC.QInstrT
 
 namespace CatCrypt.Quantum.QROM.QAdvT
@@ -149,6 +292,38 @@ tree under the weight of its gate set. -/
 theorem stepTimeBound_iff_isChargeBound (x : ℕ × QAdvT m n w q) (T : ℕ) :
     StepTimeBound x T ↔ (stepToFreeMT x).IsChargeBound (CircOp.tickCost x.2.S.weight) T :=
   (stepTimeBound_iff_isRollBound x T).trans (FreeM.isChargeBound_iff_isRollBound_nat _ _ _).symm
+
+/-- The charge bound `T` of the tick tree of a costed circuit is the bound `T` on its charge
+fold. -/
+theorem isChargeBound_toFreeMT_iff_wpFold_le (A : QAdvT m n w q) (T : ℕ) :
+    (toFreeMT A).IsChargeBound (CircOp.tickCost A.S.weight) T ↔
+      FreeM.wpFold (OpSpec.charge fun a => ((CircOp.tickCost A.S.weight a : ℕ) : ℕ∞))
+        (toFreeMT A) (fun _ => 0) ≤ T :=
+  (timeBound_iff_isChargeBound A T).symm.trans (timeBound_iff_wpFold_charge A T)
+
+/-- The bound `T` on the charge fold of the tick tree of a costed circuit gives its charge bound
+`T`. -/
+theorem isChargeBound_toFreeMT_of_wpFold_le (A : QAdvT m n w q) (T : ℕ)
+    (h : FreeM.wpFold (OpSpec.charge fun a => ((CircOp.tickCost A.S.weight a : ℕ) : ℕ∞))
+      (toFreeMT A) (fun _ => 0) ≤ T) :
+    (toFreeMT A).IsChargeBound (CircOp.tickCost A.S.weight) T :=
+  (isChargeBound_toFreeMT_iff_wpFold_le A T).2 h
+
+/-- The charge bound `T` of the step-prefixed tick tree of a costed circuit is the bound `T` on
+its charge fold. -/
+theorem isChargeBound_stepToFreeMT_iff_wpFold_le (x : ℕ × QAdvT m n w q) (T : ℕ) :
+    (stepToFreeMT x).IsChargeBound (CircOp.tickCost x.2.S.weight) T ↔
+      FreeM.wpFold (OpSpec.charge fun a => ((CircOp.tickCost x.2.S.weight a : ℕ) : ℕ∞))
+        (stepToFreeMT x) (fun _ => 0) ≤ T :=
+  (stepTimeBound_iff_isChargeBound x T).symm.trans (stepTimeBound_iff_wpFold_charge x T)
+
+/-- The bound `T` on the charge fold of the step-prefixed tick tree of a costed circuit gives its
+charge bound `T`. -/
+theorem isChargeBound_stepToFreeMT_of_wpFold_le (x : ℕ × QAdvT m n w q) (T : ℕ)
+    (h : FreeM.wpFold (OpSpec.charge fun a => ((CircOp.tickCost x.2.S.weight a : ℕ) : ℕ∞))
+      (stepToFreeMT x) (fun _ => 0) ≤ T) :
+    (stepToFreeMT x).IsChargeBound (CircOp.tickCost x.2.S.weight) T :=
+  (isChargeBound_stepToFreeMT_iff_wpFold_le x T).2 h
 
 end CatCrypt.Quantum.QROM.QAdvT
 
@@ -168,4 +343,124 @@ theorem stepTimeBound_iff_isChargeBound (x : ℕ × QAdvMRT m n w q k c a) (T : 
     StepTimeBound x T ↔ (stepToFreeMT x).IsChargeBound (CircOp.tickCost x.2.S.weight) T :=
   (stepTimeBound_iff_isRollBound x T).trans (FreeM.isChargeBound_iff_isRollBound_nat _ _ _).symm
 
+/-- The charge bound `T` of the tick tree of a costed multi-round circuit is the bound `T` on its
+charge fold. -/
+theorem isChargeBound_toFreeMT_iff_wpFold_le (A : QAdvMRT m n w q k c a) (T : ℕ) :
+    (toFreeMT A).IsChargeBound (CircOp.tickCost A.S.weight) T ↔
+      FreeM.wpFold (OpSpec.charge fun a => ((CircOp.tickCost A.S.weight a : ℕ) : ℕ∞))
+        (toFreeMT A) (fun _ => 0) ≤ T :=
+  (timeBound_iff_isChargeBound A T).symm.trans (timeBound_iff_wpFold_charge A T)
+
+/-- The bound `T` on the charge fold of the tick tree of a costed multi-round circuit gives its
+charge bound `T`. -/
+theorem isChargeBound_toFreeMT_of_wpFold_le (A : QAdvMRT m n w q k c a) (T : ℕ)
+    (h : FreeM.wpFold (OpSpec.charge fun a => ((CircOp.tickCost A.S.weight a : ℕ) : ℕ∞))
+      (toFreeMT A) (fun _ => 0) ≤ T) :
+    (toFreeMT A).IsChargeBound (CircOp.tickCost A.S.weight) T :=
+  (isChargeBound_toFreeMT_iff_wpFold_le A T).2 h
+
+/-- The charge bound `T` of the step-prefixed tick tree of a costed multi-round circuit is the
+bound `T` on its charge fold. -/
+theorem isChargeBound_stepToFreeMT_iff_wpFold_le (x : ℕ × QAdvMRT m n w q k c a) (T : ℕ) :
+    (stepToFreeMT x).IsChargeBound (CircOp.tickCost x.2.S.weight) T ↔
+      FreeM.wpFold (OpSpec.charge fun a => ((CircOp.tickCost x.2.S.weight a : ℕ) : ℕ∞))
+        (stepToFreeMT x) (fun _ => 0) ≤ T :=
+  (stepTimeBound_iff_isChargeBound x T).symm.trans (stepTimeBound_iff_wpFold_charge x T)
+
+/-- The bound `T` on the charge fold of the step-prefixed tick tree of a costed multi-round
+circuit gives its charge bound `T`. -/
+theorem isChargeBound_stepToFreeMT_of_wpFold_le (x : ℕ × QAdvMRT m n w q k c a) (T : ℕ)
+    (h : FreeM.wpFold (OpSpec.charge fun a => ((CircOp.tickCost x.2.S.weight a : ℕ) : ℕ∞))
+      (stepToFreeMT x) (fun _ => 0) ≤ T) :
+    (stepToFreeMT x).IsChargeBound (CircOp.tickCost x.2.S.weight) T :=
+  (isChargeBound_stepToFreeMT_iff_wpFold_le x T).2 h
+
 end CatCrypt.Quantum.QROM.QAdvMRT
+
+/-! ## The records of the fold rule refined by the charge bounds -/
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed oracle adversaries refined by the charge bounds of their images: a
+charge bound read as a fold bound at hypotheses, and proved from a fold bound at goals. -/
+meta def CatCrypt.Crypto.OracleAdv.Timed.oracleChargeFold : FoldKind :=
+  { CatCrypt.Crypto.OracleAdv.Timed.oracleFold with
+    hypIffs := CatCrypt.Crypto.OracleAdv.Timed.oracleFold.hypIffs ++
+      #[``CatCrypt.Crypto.OracleAdv.Timed.isChargeBound_toFreeMT_iff_wpFold_le,
+        ``CatCrypt.Crypto.OracleAdv.Timed.isChargeBound_stepToFreeMT_iff_wpFold_le]
+    concls := CatCrypt.Crypto.OracleAdv.Timed.oracleFold.concls ++
+      #[``CatCrypt.Crypto.OracleAdv.Timed.isChargeBound_toFreeMT_of_wpFold_le,
+        ``CatCrypt.Crypto.OracleAdv.Timed.isChargeBound_stepToFreeMT_of_wpFold_le] }
+
+register_time_fold CatCrypt.Crypto.OracleAdv.Timed.oracleChargeFold
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed oracle programs with the vector charge `useCharge` (`oracleProgUseFold`)
+refined by the charge bounds of their images: a charge bound read as a fold bound at hypotheses,
+and proved from a fold bound at goals. -/
+meta def CatCrypt.Crypto.OracleProg.Timed.oracleProgChargeFold : FoldKind :=
+  { CatCrypt.Crypto.OracleProg.Timed.oracleProgUseFold with
+    hypIffs := CatCrypt.Crypto.OracleProg.Timed.oracleProgUseFold.hypIffs ++
+      #[``CatCrypt.Crypto.OracleProg.Timed.isChargeBound_toFreeMT_iff_wpFold_le,
+        ``CatCrypt.Crypto.OracleProg.Timed.isChargeBound_stepToFreeMT_iff_wpFold_le]
+    concls := CatCrypt.Crypto.OracleProg.Timed.oracleProgUseFold.concls ++
+      #[``CatCrypt.Crypto.OracleProg.Timed.isChargeBound_toFreeMT_of_wpFold_le,
+        ``CatCrypt.Crypto.OracleProg.Timed.isChargeBound_stepToFreeMT_of_wpFold_le] }
+
+register_time_fold CatCrypt.Crypto.OracleProg.Timed.oracleProgChargeFold
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed `SPTree`s refined by the charge bounds of their images along the answers
+that `spAllows` admits: a charge bound read as a fold bound at hypotheses, and proved from a fold
+bound at goals. -/
+meta def CatCrypt.Core.SPTree.Timed.spTreeChargeFold : FoldKind :=
+  { CatCrypt.Core.SPTree.Timed.spTreeFold with
+    hypIffs := CatCrypt.Core.SPTree.Timed.spTreeFold.hypIffs ++
+      #[``CatCrypt.Core.SPTree.Timed.isChargeBoundUnder_toFreeMT_iff_wpFold_le,
+        ``CatCrypt.Core.SPTree.Timed.isChargeBoundUnder_stepToFreeMT_iff_wpFold_le]
+    concls := CatCrypt.Core.SPTree.Timed.spTreeFold.concls ++
+      #[``CatCrypt.Core.SPTree.Timed.isChargeBoundUnder_toFreeMT_of_wpFold_le,
+        ``CatCrypt.Core.SPTree.Timed.isChargeBoundUnder_stepToFreeMT_of_wpFold_le] }
+
+register_time_fold CatCrypt.Core.SPTree.Timed.spTreeChargeFold
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed instruments refined by the charge bounds of their images: a charge bound
+read as a fold bound at hypotheses, and proved from a fold bound at goals. -/
+meta def CatCrypt.Quantum.ReactiveUC.QInstrT.qInstrChargeFold : FoldKind :=
+  { CatCrypt.Quantum.ReactiveUC.QInstrT.qInstrFold with
+    hypIffs := CatCrypt.Quantum.ReactiveUC.QInstrT.qInstrFold.hypIffs ++
+      #[``CatCrypt.Quantum.ReactiveUC.QInstrT.isChargeBound_toFreeMT_iff_wpFold_le,
+        ``CatCrypt.Quantum.ReactiveUC.QInstrT.isChargeBound_stepToFreeMT_iff_wpFold_le]
+    concls := CatCrypt.Quantum.ReactiveUC.QInstrT.qInstrFold.concls ++
+      #[``CatCrypt.Quantum.ReactiveUC.QInstrT.isChargeBound_toFreeMT_of_wpFold_le,
+        ``CatCrypt.Quantum.ReactiveUC.QInstrT.isChargeBound_stepToFreeMT_of_wpFold_le] }
+
+register_time_fold CatCrypt.Quantum.ReactiveUC.QInstrT.qInstrChargeFold
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed circuits refined by the charge bounds of their images: a charge bound
+read as a fold bound at hypotheses, and proved from a fold bound at goals. -/
+meta def CatCrypt.Quantum.QROM.QAdvT.qAdvChargeFold : FoldKind :=
+  { CatCrypt.Quantum.QROM.QAdvT.qAdvFold with
+    hypIffs := CatCrypt.Quantum.QROM.QAdvT.qAdvFold.hypIffs ++
+      #[``CatCrypt.Quantum.QROM.QAdvT.isChargeBound_toFreeMT_iff_wpFold_le,
+        ``CatCrypt.Quantum.QROM.QAdvT.isChargeBound_stepToFreeMT_iff_wpFold_le]
+    concls := CatCrypt.Quantum.QROM.QAdvT.qAdvFold.concls ++
+      #[``CatCrypt.Quantum.QROM.QAdvT.isChargeBound_toFreeMT_of_wpFold_le,
+        ``CatCrypt.Quantum.QROM.QAdvT.isChargeBound_stepToFreeMT_of_wpFold_le] }
+
+register_time_fold CatCrypt.Quantum.QROM.QAdvT.qAdvChargeFold
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed multi-round circuits refined by the charge bounds of their images: a
+charge bound read as a fold bound at hypotheses, and proved from a fold bound at goals. -/
+meta def CatCrypt.Quantum.QROM.QAdvMRT.qAdvMRChargeFold : FoldKind :=
+  { CatCrypt.Quantum.QROM.QAdvMRT.qAdvMRFold with
+    hypIffs := CatCrypt.Quantum.QROM.QAdvMRT.qAdvMRFold.hypIffs ++
+      #[``CatCrypt.Quantum.QROM.QAdvMRT.isChargeBound_toFreeMT_iff_wpFold_le,
+        ``CatCrypt.Quantum.QROM.QAdvMRT.isChargeBound_stepToFreeMT_iff_wpFold_le]
+    concls := CatCrypt.Quantum.QROM.QAdvMRT.qAdvMRFold.concls ++
+      #[``CatCrypt.Quantum.QROM.QAdvMRT.isChargeBound_toFreeMT_of_wpFold_le,
+        ``CatCrypt.Quantum.QROM.QAdvMRT.isChargeBound_stepToFreeMT_of_wpFold_le] }
+
+register_time_fold CatCrypt.Quantum.QROM.QAdvMRT.qAdvMRChargeFold

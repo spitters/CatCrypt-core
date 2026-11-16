@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QPullbackCascade
-public import CatCryptCore.Quantum.QSysCat
 
 /-!
 # Quantum parallel composition with private registers as a context over environments with memory

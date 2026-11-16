@@ -6,8 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCPullbackSemantics
-public import CatCryptCore.Crypto.UCParallel
-public import CatCryptCore.Crypto.TraceEqLaws
+import CatCryptCore.Crypto.TraceEqLaws
 
 /-!
 # Concurrent UC emulation with the adversary and the simulator as systems

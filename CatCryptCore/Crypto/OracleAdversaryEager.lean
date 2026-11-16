@@ -5,7 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.OracleGameUpToBad
+import CatCryptCore.Crypto.OracleGameUpToBad
+public import CatCryptCore.Crypto.OracleLazyMulti
 
 /-!
 # Eager sampling of a value drawn at its first use

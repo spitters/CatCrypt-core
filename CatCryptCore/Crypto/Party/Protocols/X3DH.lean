@@ -5,9 +5,10 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Party.UnwindingTransfer
+import CatCryptCore.Crypto.Party.UnwindingTransfer
 public import CatCryptCore.Crypto.Party.Timed
 public import CatCryptCore.Crypto.Party.Protocols.FAKE
+public import CatCryptCore.Crypto.Party.Derived
 
 /-!
 # X3DH in the party language

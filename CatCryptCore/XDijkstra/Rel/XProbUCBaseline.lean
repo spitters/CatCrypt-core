@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.XDijkstra.Rel.XRelQ0
 public import CatCryptCore.Crypto.UCMonad.SDistrInstance
-public import CatCryptCore.Relational.Approx
 
 
 @[expose] public section

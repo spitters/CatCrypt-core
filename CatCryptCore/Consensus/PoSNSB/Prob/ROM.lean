@@ -5,11 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.OracleEval
-public import CatCryptCore.Consensus.PoSNSB.Prob.Hash
 public import CatCryptCore.Consensus.PoSNSB.Prob.Erasure
-public import CatCryptCore.Crypto.OracleQueryVec
-public import CatCryptCore.Tactics.QueryBound
+import CatCryptCore.Tactics.QueryFold
+import CatCryptCore.Crypto.OracleProfile
 
 /-!
 # PoS-NSB: oracle adversaries as queriers

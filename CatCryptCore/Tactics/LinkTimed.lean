@@ -138,7 +138,10 @@ those on `ℕ`. Its step equation is the exact cost judgement of its body at a g
 (`ceqOf`, `Reflect.CEq.closure_stepN`), its companion is read off the costed tree of the call,
 and the bound of its D cost by the companion is decided at every argument
 (`closeClosureBound`); a closure with a `let` is refused, since its β-step is not charged by the
-companion of `derive_timed`. The call is charged the unit of a call of `derive_timed` and the
+companion of `derive_timed`. At a tree parameter of the callee (an adversary, on one argument
+or on `unit`) the argument is a tree function value of the caller of the same kind passed
+through, whose simulation hypothesis is the premise of the certificate there (`certArgs`); a
+tree-function parameter on more than one argument is refused. The call is charged the unit of a call of `derive_timed` and the
 step cost of the costed form of the callee; the allowance adds the allowance of the certificate.
 Its costed tree is read in head normal form, and a bind whose first tree is such a call is
 unified with the projections of its split pair reduced (`applyRuleProj`), so that its step cost
@@ -475,14 +478,63 @@ of the caller passed through (a variable of kind `dataFn` or `freeFn`): its D va
 equation and bound, from which the function, the companion and the D cost are read by
 unification; or from a closure of allowance zero bound by `let` in the caller: its step equation
 is `closureStep?`, and its bound by the companion, which the conclusion of the certificate
-determines, is returned. -/
+determines, is returned. A tree-function parameter on one argument, whose binders are the costed
+tree, its companion, its D value and the simulation hypothesis `hA`, and a tree parameter on
+`unit`, whose binders are the costed tree, its D value and the simulation hypothesis `hp`, are
+filled from a tree function value of the caller of the same kind passed through (a variable of
+kind `treeFn` or `tree0`): its D value and its hypothesis, from which the costed tree and the
+companion are read by unification. The binder groups are told apart by the type of the binder
+after the D value: a `TimedSim` statement for a tree parameter, a cost for a data function
+parameter. A tree-function parameter on more than one argument is refused. -/
 def certArgs (c : Name) (vs : Array Expr) : LinkM (Expr × Array MVarId) := do
   let cert := Lean.mkConst (c ++ `d_timedSim)
   let (ms, _, _) ← forallMetaTelescopeReducing (← inferType cert)
+  -- whether the binder `j` is a D value of a function type
+  let valArr (j : Nat) : MetaM Bool := do
+    if j < ms.size then
+      let T ← whnfR (← inferType ms[j]!)
+      pure (T.isAppOfArity ``Val 1 && T.appArg!.isAppOfArity ``Ty.arr 2)
+    else pure false
+  -- the number of arguments of the binder `j` when it is a `TimedSim` hypothesis
+  let simArity (j : Nat) : MetaM (Option Nat) := do
+    if j < ms.size then
+      forallTelescope (← instantiateMVars (← inferType ms[j]!)) fun ys b =>
+        pure (if b.isAppOfArity ``TimedSim 7 then some ys.size else none)
+    else pure none
+  -- the hypothesis of the tree function value `v` of the caller, of kind `treeFn` or `tree0`
+  let treeHyp (v : Expr) (fn : Bool) : LinkM (Option Expr) := do
+    let .fvar fv := v | return none
+    match (← read)[fv]?, fn with
+    | some (.treeFn hA), true => return some hA
+    | some (.tree0 hp), false => return some hp
+    | _, _ => return none
   let mut k := 0
   let mut i := 0
   let mut pend : Array MVarId := #[]
   while k < ms.size && i < vs.size do
+    -- a tree parameter: the costed tree, (its companion,) its D value and its hypothesis
+    let treeGrp ← if ← valArr (k + 2) then simArity (k + 3) else pure none
+    let tree0Grp ← if treeGrp.isNone && (← valArr (k + 1)) then
+        pure ((← simArity (k + 2)) == some 0)
+      else pure false
+    if treeGrp.isSome || tree0Grp then
+      let fn := treeGrp.isSome
+      if let some n := treeGrp then
+        if n > 1 then
+          failL m!"the tree-function parameter of `{c}` at position {i} takes {n} arguments; \
+            only tree-function parameters on one argument are filled at a call"
+      let gi := if fn then k + 2 else k + 1
+      let v ← whnf (← instantiateMVars vs[i]!)
+      let some h ← treeHyp v fn |
+        failL m!"the argument `{vs[i]!}` of the tree parameter of `{c}` is not a tree \
+          function value of the caller of the same kind"
+      unless ← isDefEq ms[gi]! v do failL m!"the D value `{v}` at the call of `{c}`"
+      unless ← isDefEq (← inferType ms[gi + 1]!) (← inferType h) do
+        failL m!"the simulation hypothesis of `{v}` at the call of `{c}`"
+      ms[gi + 1]!.mvarId!.assign h
+      k := gi + 2
+      i := i + 1
+      continue
     let grp ← if k + 5 < ms.size then do
         let T ← whnfR (← inferType ms[k + 2]!)
         pure (T.isAppOfArity ``Val 1 && T.appArg!.isAppOfArity ``Ty.arr 2)

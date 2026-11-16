@@ -1,3 +1,8 @@
 name	removed_in	successor	decision	note
 CatCrypt.Container.DNLogic.natSize	0a4d58f	CatCrypt.Container.DNLogic.allExNat	-	a size on every type is replaced by the size on each quantifier; allExNat states the identity size at the naturals
 CatCrypt.Container.DNLogic.natSize_nat	0a4d58f	CatCrypt.Container.DNLogic.allExNat	-	the equation of natSize at the naturals; allExNat carries the identity size directly
+CatCrypt.Tactics.DeriveTimeBound.companionPaths	LENPOT-L2	CatCrypt.Tactics.DeriveTimeBound.stateAtoms	-	the companion paths of a simulator state are one kind of state atom; stateAtoms also reads list lengths and the lengths of lists inside list elements
+CatCrypt.Crypto.Messaging.all_timedCost_le_mem	LENPOT-L7	List.all.timedCost_le_mem	-	the local copy in SMIDTimed gives way to the shared bound of CatCryptCore.Tactics.StdCostsMem
+CatCrypt.Crypto.OracleAdv.run_map_state_inv	CatCryptCore/Crypto/Messaging/SMCorrupt.lean	CatCrypt.Crypto.OracleAdv.run_map_state_of_inv	-	the same statement, moved to the leaf OracleAdversaryStateMap beside OracleAdversary under the name of the form conclusion_of_hypothesis
+CatCrypt.Examples.PRF.run_map_state_of_inv	CatCryptCore/Examples/PRF.lean	CatCrypt.Crypto.OracleAdv.run_map_state_of_inv	-	the same statement, merged into the leaf OracleAdversaryStateMap
+CatCrypt.Crypto.AEAD.NonceBased.OracleAdv.run_map_state_of_inv	CatCryptCore/Crypto/AEAD/NonceBased.lean	CatCrypt.Crypto.OracleAdv.run_map_state_of_inv	-	merged into the leaf OracleAdversaryStateMap; the preservation hypothesis takes the invariant before the outcome

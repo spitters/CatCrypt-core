@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.XDijkstra.XPredCore
 public import CatCryptCore.XDijkstra.XPostShape
 
 /-!

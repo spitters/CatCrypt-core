@@ -1,0 +1,16 @@
+[package]
+name = "mlkem-fo-hax"
+version = "0.1.0"
+edition = "2021"
+description = "The Fujisaki-Okamoto layer of ML-KEM-768 (FIPS 203, Algorithms 16-18), generic over K-PKE and the hash functions"
+license = "Apache-2.0"
+
+# No [dependencies]: the crate is the orchestration layer only. K-PKE and the
+# hash functions are the operations of the trait `fo::FoOps`.
+
+[dev-dependencies]
+# The test instance of `FoOps` (K-PKE and SHA-3) for the NIST known-answer tests.
+mlkem-hax = { path = "../mlkem-hax" }
+# The production implementation the differential test compares against: the
+# published libcrux-ml-kem release.
+libcrux-ml-kem = { version = "=0.0.10", default-features = false, features = ["mlkem768"] }

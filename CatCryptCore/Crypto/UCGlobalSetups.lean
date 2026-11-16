@@ -5,9 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.UCGlobalSquare
 public import CatCryptCore.Crypto.UCCoupling
 public import CatCryptCore.NonUniform.Sample
+import CatCryptCore.Crypto.UCTransparentMulti
 
 /-!
 # Global setups as global functionalities

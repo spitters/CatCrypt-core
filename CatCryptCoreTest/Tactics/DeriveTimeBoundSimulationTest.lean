@@ -29,9 +29,9 @@ so that their time theorems go through a simulation node of the costed tree:
   Boolean;
 * `countRun`: an oracle that counts its queries, a state without a cost companion, whose step has
   a uniform cost;
-* `twoRun`: two lazily sampled tables, a state with two cost companions, refused;
-* `lenRun`: an oracle whose step reads the length of the state, outside a cost companion,
-  refused.
+* `twoRun`: two lazily sampled tables, a state with two cost companions, both atoms of one
+  potential;
+* `lenRun`: an oracle whose step reads the length of the state, a length atom of the potential.
 -/
 
 public section
@@ -101,15 +101,6 @@ noncomputable def twoRun (A : OracleAdv (ℕ ⊕ ℕ) Bool Bool) : PMF Bool :=
 
 derive_timed twoRun
 
-/--
-error: `CatCrypt.Tactics.DeriveTimeBoundSimulationTest.twoRun.timeBound_timed` is not proved: no bound: the simulation
-  OracleAdv.Timed.simulateHat (fun y ↦ (y.1.1, y.2.1)) (fun y ↦ ((fun a ↦ y.1 a, fun a ↦ 0), fun a ↦ y.2 a, fun a ↦ 0))
-    (fun s d ↦ OracleAdv.Timed.delay 1 (twoRun.pmfStep.timed s d)) A ((emptyTable, fun a ↦ 1), emptyTable, fun a ↦ 1)
-is not bounded by the potential corollary: the values of type
-  ((ℕ → Option Bool) × (ℕ → ℕ)) × (ℕ → Option Bool) × (ℕ → ℕ)
-have several cost companions [v.1.2, v.2.2]
--/
-#guard_msgs in
 derive_time_bound twoRun
 
 /-- An oracle that answers the length of its log, whose step reads the state outside a cost
@@ -122,16 +113,19 @@ noncomputable def lenRun (A : OracleAdv ℕ ℕ Bool) : PMF Bool :=
 
 derive_timed lenRun
 
-/--
-error: `CatCrypt.Tactics.DeriveTimeBoundSimulationTest.lenRun.timeBound_timed` is not proved: no bound: the simulation
-  OracleAdv.Timed.simulate (fun s d ↦ OracleAdv.Timed.delay 1 (lenRun.pmfStep.timed s d)) A []
-is not bounded by the potential corollary: no bound of a step
-  OracleAdv.Timed.delay 1 (lenRun.pmfStep.timed s d)
-no bound of the charge
-  1 + (1 + List.length.timedCost s)
-free of the values bound in the program
--/
-#guard_msgs in
 derive_time_bound lenRun
+
+/-- The derived bound: the length of the log is an atom of the potential, read at `3` units per
+entry and grown by one entry per query. -/
+example (A : OracleAdv.Timed ℕ ℕ Bool) {T q : ℕ} (hA : A.TimeBound T)
+    (hq : A.erase.IsQueryBound q) :
+    OracleAdv.Timed.StepTimeBound (lenRun.timed A) (T + q * (3 * q + 3)) :=
+  lenRun.timeBound_timed A hA hq
+
+/-- The derived bound: the two cost companions are atoms of one potential. -/
+example (A : OracleAdv.Timed (ℕ ⊕ ℕ) Bool Bool) {T q : ℕ} (hA : A.TimeBound T)
+    (hq : A.erase.IsQueryBound q) :
+    OracleAdv.Timed.StepTimeBound (twoRun.timed A) (T + q * (3 * q + 6)) :=
+  twoRun.timeBound_timed A hA hq
 
 end CatCrypt.Tactics.DeriveTimeBoundSimulationTest

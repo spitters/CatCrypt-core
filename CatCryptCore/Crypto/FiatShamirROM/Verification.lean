@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.FiatShamirROM.Game
-public import CatCryptCore.Crypto.PRPPRFPmfGame
 
 /-!
 # Fiat–Shamir in the random-oracle model: the verifier's values and the EUF-CMA game

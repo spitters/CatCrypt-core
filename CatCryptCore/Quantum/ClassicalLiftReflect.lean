@@ -5,7 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Quantum.ClassicalLiftFunctor
+import CatCryptCore.Quantum.ClassicalLiftFunctor
+public import CatCryptCore.Quantum.ClassicalLiftSys
 
 /-!
 # The classical lift reflects realizations

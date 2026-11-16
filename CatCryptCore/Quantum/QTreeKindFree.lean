@@ -7,7 +7,7 @@ module
 
 public import CatCryptCore.Quantum.QTreeKind
 public import CatCryptCore.Crypto.Party.ProgECost
-public import CatCryptCore.ForMathlib.PFunctorChargeUnder
+import CatCryptCore.ForMathlib.PFunctorChargeUnder
 public import CatCryptCore.Tactics.TimeFoldRegistry
 
 /-!

@@ -6,10 +6,9 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Consensus.UC.FTree
-public import CatCryptCore.Consensus.PoSNSB.Prob
 public import CatCryptCore.Consensus.FinalityUpdatedProb
 public import CatCryptCore.Crypto.UCClockNetwork
-public import CatCryptCore.NonUniform.UnaryRules
+import CatCryptCore.NonUniform.UnaryRules
 
 @[expose] public section
 set_option autoImplicit false

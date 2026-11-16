@@ -626,7 +626,7 @@ theorem gateB_acdSM_ratchet_mapCk (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (acdSM C' R F D).gateB.ratchet (gateMapCk f x) r' =
       (gateMapCk f ((acdSM C R F D).gateB.ratchet x r).1,
         ((acdSM C R F D).gateB.ratchet x r).2) := by
-  simp only [SMScheme.gateB, acdSM, gateMapCk, SMPartySt.mapCk, h]
+  simp only [SMScheme.gateB, acdSM, acdSMAD, gateMapCk, SMPartySt.mapCk, h]
 
 theorem gateB_acdSM_recv_mapCk (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (C' : CKADef Sc' Msg Key) [CKACoins C' Rand] (R : PRGDef (RK × Key) (RK × Sa))
@@ -634,7 +634,7 @@ theorem gateB_acdSM_recv_mapCk (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (T : Msg) (h : C'.recv (f x.1.ck) T = (f (C.recv x.1.ck T).1, (C.recv x.1.ck T).2)) :
     (acdSM C' R F D).gateB.recv (gateMapCk f x) T =
       gateMapCk f ((acdSM C R F D).gateB.recv x T) := by
-  simp only [SMScheme.gateB, acdSM, gateMapCk, SMPartySt.mapCk, h]
+  simp only [SMScheme.gateB, acdSM, acdSMAD, gateMapCk, SMPartySt.mapCk, h]
 
 end ACDMap
 
@@ -713,9 +713,9 @@ theorem dhPreInv_step (decE : Sk → CG.Exp) (R : PRGDef (RK × G) (RK × Sa))
       z.1.1.ck = x.1.ck ∧ z.1.2 = x.2 := by
     rintro ⟨⟨ck, rk, snd, rcv⟩, b⟩ m z hz
     cases snd with
-    | none => simp [SMScheme.gateB, acdSM] at hz
+    | none => simp [SMScheme.gateB, acdSM, acdSMAD] at hz
     | some sa =>
-      simp only [SMScheme.gateB, acdSM, Option.map_some, Option.some.injEq] at hz
+      simp only [SMScheme.gateB, acdSM, acdSMAD, Option.map_some, Option.some.injEq] at hz
       subst hz
       exact ⟨rfl, rfl⟩
   have hupd : ∀ p (z : SMPartySt (DHPreSt G Sk) RK Sa × Bool) d,
@@ -914,7 +914,7 @@ theorem dhPre_oracle_map (decE : Sk → CG.Exp) (R : PRGDef (RK × G) (RK × Sa)
           (s.ck.st .A) r =
           (acdSM (dhCKAPre decE (CG.pow (decE x₀))) R F D).gateB.ratchet (s.ck.st .A) x₁ := by
         intro r
-        simp only [SMScheme.gateB, acdSM, hA]
+        simp only [SMScheme.gateB, acdSM, acdSMAD, hA]
         rfl
       simp only [smMultiOracle, smSchemeOracle, h2.1, ite_true, hr, PMF.bind_const,
         PMF.pure_map]
@@ -980,7 +980,7 @@ theorem dhPre_oracle_map (decE : Sk → CG.Exp) (R : PRGDef (RK × G) (RK × Sa)
       cases hb : (s.ck.st p).2
       · rfl
       · simp only [ite_true, Option.map_some]
-        simp only [acdSM, id, SMPartySt.mapCk, hck hb]
+        simp only [acdSM, acdSMAD, id, SMPartySt.mapCk, hck hb]
 
 /-- **The gated session view at the signed-prekey pair is the gated session view of the
 efficient form.** For the signed-prekey pair `dhPairInit decE x₀`, the session view of the gated

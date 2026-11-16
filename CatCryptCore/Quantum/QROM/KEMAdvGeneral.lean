@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Quantum.QROM.KEMAdvNormalForm
 public import CatCryptCore.Quantum.Stinespring
 public import CatCryptCore.Quantum.CPCompMonad
+public import CatCryptCore.Quantum.ChoiKraus
 
 /-!
 # Multi-round adversaries with general local operations

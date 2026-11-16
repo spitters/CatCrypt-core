@@ -15,7 +15,15 @@ import CatCryptCore.Tactics.DeriveTimed
 /-!
 # The triple ratchet: confidentiality if either DDH or the KEM is secure
 
-The triple ratchet of Dodis, Jost, Katsumata, Prest and Schmidt (Signal's SPQR) runs the
+This module proves a root-mixed product ratchet: the double ratchet over the product CKA of the
+Diffie–Hellman CKA and a KEM CKA, whose two epoch keys are combined in one root step through a
+dual PRF. The Triple Ratchet of Dodis, Jost, Katsumata, Prest and Schmidt (ePrint 2025/078) and
+deployed Signal (Double Ratchet plus SPQR) keep two root chains and mix the two message keys per
+message (`mk = KDF_HYBRID(ec_mk, pq_mk)`). The theorems below are about the root-mixed variant
+and not about the deployed protocol. The names `tr*` and "triple ratchet" below refer to the
+root-mixed variant.
+
+The root-mixed ratchet runs the
 Diffie–Hellman CKA and a KEM CKA in parallel: its CKA is `prodCKA (dhCKA G) (kemCKA KEM)`,
 whose epoch key is the pair `(k₁, k₂)` of the Diffie–Hellman key and the KEM key, and the root
 step combines both keys with the root key. The secure-messaging game is the game
@@ -26,8 +34,8 @@ over this CKA.
 
 The root step is modelled by a dual PRF `F : RK × K₁ → K₂ → RK × Sa`: the root KDF is
 `trRoot F`, which maps the root key `rk` and the epoch key `(k₁, k₂)` to
-`F (rk, k₁) k₂`, the next root key and the FS-AEAD state of the epoch. This is the KDF
-`KDF(rk, dh ‖ pq)` of the triple ratchet with the input split between the concatenation
+`F (rk, k₁) k₂`, the next root key and the FS-AEAD state of the epoch. This is a
+root KDF `KDF(rk, dh ‖ pq)` with the input split between the concatenation
 `rk ‖ dh` of the root key and the Diffie–Hellman secret (the left argument) and the KEM secret
 `pq` (the right argument), as in the dual-PRF combiners of hybrid key exchange (Bindel,
 Brendel, Fischlin, Goncalves and Stebila). The two assumptions are
@@ -99,7 +107,7 @@ the distance between two computations.
 ## References
 
 * Y. Dodis, D. Jost, S. Katsumata, T. Prest, R. Schmidt, *Triple Ratchet: A Bandwidth
-  Efficient Hybrid-Secure Signal Protocol*, EUROCRYPT 2025
+  Efficient Hybrid-Secure Signal Protocol*, ePrint 2025/078
 * J. Alwen, S. Coretti, Y. Dodis, *The Double Ratchet: Security Notions, Proofs, and
   Modularization for the Signal Protocol*, EUROCRYPT 2019
 * N. Bindel, J. Brendel, M. Fischlin, B. Goncalves, D. Stebila, *Hybrid Key Encapsulation

@@ -5,9 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.LinearAlgebra.Matrix.Hermitian
-public import Mathlib.LinearAlgebra.Matrix.Trace
-public import Mathlib.Analysis.Complex.Basic
+import Mathlib.LinearAlgebra.Matrix.Hermitian
+import Mathlib.Algebra.Order.BigOperators.Expect
+import Mathlib.Analysis.Complex.Order
 
 /-!
 # Hermitian matrices: the trace is real

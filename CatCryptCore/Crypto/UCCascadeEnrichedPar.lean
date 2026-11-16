@@ -6,8 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCCascadeEnriched
-public import CatCryptCore.Crypto.UCParallel
-public import CatCryptCore.Crypto.UCFeedback
 
 /-!
 # Parallel composition and feedback in the Lawvere metric enrichment

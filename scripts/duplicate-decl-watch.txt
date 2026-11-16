@@ -1,0 +1,10 @@
+# Lemma families already defined in CatCrypt-core. One short-name regex per line;
+# scripts/duplicate-decl-guard.sh refuses a staged file that adds a new definition
+# matching one of them.
+# Run of an oracle adversary mapped through a state map on an invariant:
+# OracleAdv.run_map_state_of_inv (CatCryptCore/Crypto/OracleAdversaryStateMap.lean).
+run_map_(state_)?inv|run_map_state_on
+# Kronecker product with a zero factor and the linearity laws of ⊗ₖ:
+# CatCrypt.Quantum.TensorProduct.kronecker_zero_right and siblings (CatCryptCore/Quantum/KronNf.lean);
+# QROM.kronecker_zero_right (CatCryptCore/Quantum/QROM/CompressedOracle.lean) is an older copy.
+kronecker_(zero|add|sub|neg|smul)_(left|right)

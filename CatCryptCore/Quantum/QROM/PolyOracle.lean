@@ -6,10 +6,9 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QROM.KWiseOracle
-public import CatCryptCore.Quantum.QROM.QMLWEAux
 public import CatCryptCore.Crypto.MLKEM.FIPS203QROMQuantumMLWE
 public import Mathlib.FieldTheory.Finite.GaloisField
-public import Mathlib.LinearAlgebra.Lagrange
+import Mathlib.LinearAlgebra.Lagrange
 
 /-!
 # Polynomial oracles and quantum module-LWE without oracle access

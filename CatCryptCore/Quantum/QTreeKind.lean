@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Quantum.QRealizesMem
 public import CatCryptCore.Quantum.QSimTimed
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveTimedStructure

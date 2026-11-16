@@ -581,7 +581,7 @@ theorem smAuthRoot_ideal_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     rw [smAuthRootRed_run]
     refine congrArg _ (funext fun t => congrArg _ (funext fun i =>
       congrArg _ (funext fun rk => ?_)))
-    have h := OracleAdv.run_map_state_inv _ (smAuthHopOracle C R G D ΔFS ΔPCS t k unifRoot)
+    have h := OracleAdv.run_map_state_of_inv _ (smAuthHopOracle C R G D ΔFS ΔPCS t k unifRoot)
       Prod.fst (fun x => x.2.tR = [] ∨ smOpened k x.1.1.1)
       (fun x d hx => smAuthRoot_inv_ideal C R G D ΔFS ΔPCS t k x.1 x.2 hx d)
       (fun x d hx => smAuthRoot_step_ideal C R G D ΔFS ΔPCS t k x.1 x.2 hx d) (A.play t i.1)

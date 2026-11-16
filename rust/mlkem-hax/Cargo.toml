@@ -1,0 +1,10 @@
+[package]
+name = "mlkem-hax"
+version = "0.1.0"
+edition = "2021"
+description = "ML-KEM-768 (FIPS 203) in pure Rust: the K-PKE and SHA-3 test instance of mlkem-fo-hax"
+license = "Apache-2.0"
+
+[dependencies]
+# No external dependencies. Test KAT vectors are hand-parsed from hex, so the
+# crate builds and tests with zero crates.io dependencies.

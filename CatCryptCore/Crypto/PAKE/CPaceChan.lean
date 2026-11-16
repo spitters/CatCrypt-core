@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Crypto.PAKE.CPaceSquare
 public import CatCryptCore.Crypto.UCWake
-public import CatCryptCore.Crypto.UCChannel
 public import CatCryptCore.Crypto.UCChannelLift
 
 /-!

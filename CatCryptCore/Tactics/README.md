@@ -20,6 +20,7 @@ registry of every game-proof tactic in this directory, with its internal rules, 
 5. [Worked example: the VCVio registrations](#worked-example-the-vcvio-registrations)
 6. [Testing registrations](#testing-registrations)
 7. [Options](#options)
+8. [Time certificates](#time-certificates)
 
 ## What the tactic does
 
@@ -416,3 +417,20 @@ the heartbeat budget of one arm and the time left of the total budget. Before th
 arm of a run whose text contains `+suggestions`, Lean's library-suggestion selector runs
 once on the goal outside the arm budgets, so that its index of the imported theorems is
 built there; the time it takes extends the total budget.
+
+## Time certificates
+
+The commands `derive_timed`, `derive_reduction`, `derive_time_bound`, `derive_hybrid_time`
+and `derive_simulator` certify the running time of a reduction or a simulator: a costed form
+`R.timed`, an erasure theorem `R.erase_timed` stating that the costed form erases to `R`, and
+a time theorem `R.timeBound_timed` bounding its time by the time of the adversary, its queries
+and the costs of the primitives. The tactic `time_bound` proves a time theorem stated by hand,
+and `time_cert_try` turns a failed derivation into a tagged warning
+([`TimeCertTry.lean`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/TimeCertTry.lean)).
+The chapter "Time certificates" of the core manual
+([`docs/CoreManual.lean`](https://github.com/spitters/CatCrypt-core/blob/main/docs/CoreManual.lean),
+built as described in [BUILDING.md](https://github.com/spitters/CatCrypt-core/blob/main/BUILDING.md))
+describes the certificates, the cost model and its theory, the forms of simulator bounds, the
+use of the commands and the composition of certificates. The rule reference is the module
+docstring of
+[`DeriveTimed.lean`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/DeriveTimed.lean).

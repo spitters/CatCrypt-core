@@ -5,13 +5,11 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.FiatShamirROM.StraightLineCls
 public import CatCryptCore.Crypto.FiatShamirROM.Timed
 public import CatCryptCore.Core.SPTreeTimedOps
 public import CatCryptCore.Crypto.FiatShamirROM.Verification
 public import CatCryptCore.Crypto.UCConcrete
-public import CatCryptCore.Crypto.NomPkgBridge
-public import CatCryptCore.ForMathlib.PMFUniform
+import CatCryptCore.ForMathlib.PMFUniform
 
 /-!
 # MPC-in-the-head signatures in the random-oracle model

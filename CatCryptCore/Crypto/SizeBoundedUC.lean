@@ -5,8 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.MonadCostModel
 public import CatCryptCore.Crypto.CompUCEquivalence
+public import CatCryptCore.Core.SPTree
+import CatCryptCore.Crypto.ForkingLemma
 
 /-!
 # Size-bounded computational UC for `SPComp`

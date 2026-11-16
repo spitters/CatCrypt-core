@@ -5,8 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Prob.SchwartzZippel
-public import Mathlib.RingTheory.Nilpotent.Basic
+import CatCryptCore.Crypto.ForkingLemma
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # Schwartz-Zippel over finite local rings with a principal nilpotent maximal ideal

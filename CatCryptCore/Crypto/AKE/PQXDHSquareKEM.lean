@@ -6,10 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.AKE.PQXDHSquareGDH
-public import CatCryptCore.Crypto.OracleSimulation
 public import CatCryptCore.Crypto.OracleAdversaryEager
-public import CatCryptCore.ForMathlib.PMFSupport
-public import CatCryptCore.Tactics.AutoDispatchExt
+import CatCryptCore.ForMathlib.PMFSupport
 
 /-!
 # The KEM route of the PQXDH square

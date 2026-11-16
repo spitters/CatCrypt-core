@@ -5,9 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Deep.Reflect
-public import CatCryptCore.Deep.Package
-public import CatCryptCore.Deep.Bridge
+import CatCryptCore.Deep.Reflect
+import CatCryptCore.Deep.Bridge
 public import CatCryptCore.Crypto.NomAdvantage
 
 

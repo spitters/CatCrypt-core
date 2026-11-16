@@ -505,7 +505,7 @@ adversary port. -/
 theorem F_AKEK_adv_outcome {K' : Type} (fresh : K' → SPComp K') (t : St K') (a : AEv K')
     (q : St K' × (HOut K' ⊕ AOut)) (hq : IsOutcome ((F_AKEK fresh true).step t (.inr a)) q) :
     sessOf q.1 = sessOf t ∧ ∃ r, q.2 = .inr r := by
-  simp only [F_AKEK, Sys.ofPorts_step_inr, advSysK] at hq
+  simp only [F_AKEK, F_AKEImpK, Sys.ofPorts_step_inr, advSysImp] at hq
   obtain ⟨p, hp, rfl⟩ := isOutcome_map_iff.mp hq
   cases a with
   | idle => obtain rfl := isOutcome_pure hp; exact ⟨rfl, _, rfl⟩
@@ -514,7 +514,8 @@ theorem F_AKEK_adv_outcome {K' : Type} (fresh : K' → SPComp K') (t : St K') (a
     refine ⟨?_, _, rfl⟩
     unfold pollStep; split <;> rfl
   | corrupt pid => obtain rfl := isOutcome_pure hp; exact ⟨rfl, _, rfl⟩
-  | impersonate sid pid => obtain rfl := isOutcome_pure hp; exact ⟨rfl, _, rfl⟩
+  | impersonate sid pid =>
+    obtain rfl := isOutcome_pure hp; exact ⟨by rw [impStepOf_false], _, rfl⟩
   | newKey sid pid k =>
     obtain ⟨kf, -, rfl⟩ := isOutcome_map_iff.mp hp
     exact ⟨sessOf_newKeyStep _ _ _ _, _, rfl⟩
@@ -545,9 +546,9 @@ noncomputable abbrev simWorld :=
 /-- The invariant holds at the start. -/
 theorem pairInv_init : PairInv (pairWorld (K := K) G).init := by
   refine ⟨fun x => ?_, fun x r k d h _ => ?_⟩
-  · simp [sessOf, pairWorld, MultiHybrid.withSub, simProtPair, F_AKEK, Sys.ofPorts, honSys,
-      rInit, initSt]
-  · simp [pairWorld, MultiHybrid.withSub, F_AKEK, Sys.ofPorts, honSys, initSt] at h
+  · simp [sessOf, pairWorld, MultiHybrid.withSub, simProtPair, F_AKEK, F_AKEImpK, Sys.ofPorts,
+      honSys, rInit, initSt]
+  · simp [pairWorld, MultiHybrid.withSub, F_AKEK, F_AKEImpK, Sys.ofPorts, honSys, initSt] at h
 
 /-- The start state is mapped to the start state of `withPub` over the simulated game. -/
 theorem pairMap_init :
@@ -873,8 +874,8 @@ theorem pairInv_pres (t : SimSt S W K × St (K × S)) (e : OEv W) (ht : PairInv 
       ∀ ph, PairInv ((s''.1, s''.2.1, ph), F') by
     have hD' : DatOk s''.1.lt F := hD.mono hok.lt_mono
     rcases d with (h | a) | o
-    · simp only [pairDec, Sum.elim_inl, F_AKEK, Sys.ofPorts_step_inl, honSys, SPComp.map,
-        SPComp.pure_bind, simProtPair] at h2
+    · simp only [pairDec, Sum.elim_inl, F_AKEK, F_AKEImpK, Sys.ofPorts_step_inl, honSys,
+        SPComp.map, SPComp.pure_bind, simProtPair] at h2
       obtain rfl := isOutcome_pure h2
       cases h with
       | newSession sid pid peer role =>
@@ -897,7 +898,7 @@ theorem pairInv_pres (t : SimSt S W K × St (K × S)) (e : OEv W) (ht : PairInv 
         simp only [sessOf, hrc, hr, Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs2
         exact ⟨ik, by rw [← hs2.1, ← hs2.2]; exact hl⟩
       refine hfin _ hsF ?_ _
-      simp only [F_AKEK, Sys.ofPorts_step_inr, advSysK] at hq'
+      simp only [F_AKEK, F_AKEImpK, Sys.ofPorts_step_inr, advSysImp] at hq'
       obtain ⟨p, hp, rfl⟩ := isOutcome_map_iff.mp hq'
       cases a with
       | idle => obtain rfl := isOutcome_pure hp; exact hD'
@@ -905,7 +906,8 @@ theorem pairInv_pres (t : SimSt S W K × St (K × S)) (e : OEv W) (ht : PairInv 
         obtain rfl := isOutcome_pure hp
         exact hD'.of_recs (by unfold pollStep; split <;> rfl)
       | corrupt pid => obtain rfl := isOutcome_pure hp; exact hD'.of_recs rfl
-      | impersonate sid pid => obtain rfl := isOutcome_pure hp; exact hD'
+      | impersonate sid pid =>
+        obtain rfl := isOutcome_pure hp; rw [impStepOf_false]; exact hD'
       | newKey sid pid k =>
         obtain ⟨kf, hkf, rfl⟩ := isOutcome_map_iff.mp hp
         obtain ⟨k₀, -, rfl⟩ := isOutcome_map_iff.mp hkf
@@ -948,7 +950,7 @@ theorem simWorld_getKey (u : SimSt S W K × St K) (sid : SessionId) (pid : Party
     (simWorld (K := K) G).step u (.inl (.getKey sid pid)) =
       SPComp.pure (((u.1.1, u.1.2.1, .fwd), u.2), .inl (.key (keyOf u.2 (sid, pid)))) := by
   rw [simWorld, MultiHybrid.withSub_step_of_fuel_eq_zero _ _ rfl]
-  simp only [simProt, simStart, SPComp.pure_bind, Sum.elim_inl, F_AKE, F_AKEK,
+  simp only [simProt, simStart, SPComp.pure_bind, Sum.elim_inl, F_AKE, F_AKEImp, F_AKEImpK,
     Sys.ofPorts_step_inl, honSys, honStep, SPComp.map, simOut]
 
 /-- The simulated world on `pub p` when the long-term secrets of `p` are drawn: their public
@@ -966,7 +968,7 @@ theorem pairWorld_getKey (t : SimSt S W K × St (K × S)) (sid : SessionId) (pid
       SPComp.pure (((t.1.1, t.1.2.1, .fwd), t.2), .inl (.key (keyOf t.2 (sid, pid)))) := by
   rw [pairWorld, MultiHybrid.withSub_step_of_fuel_eq_zero _ _ rfl]
   simp only [simProtPair, simStart, SPComp.pure_bind, SPComp.map, pairDec, Sum.elim_inl,
-    F_AKEK, Sys.ofPorts_step_inl, honSys, honStep, x3dhFwd, fwdOut, phaseOut]
+    F_AKEK, F_AKEImpK, Sys.ofPorts_step_inl, honSys, honStep, x3dhFwd, fwdOut, phaseOut]
 
 /-- The X3DH simulator passes no honest event to the functionality on an adversary event. -/
 theorem simStart_inr_noHonEv (s : SimSt S W K) (a : RAEv W) {q : SimSt S W K × Dec S W K}
@@ -1017,7 +1019,8 @@ theorem simPair_step (t : SimSt S W K × St (K × S)) (e : OEv W) (ht : PairInv 
       · rw [← isOutcome_pure hq]
     rcases q with ⟨s', d⟩
     subst hd
-    simp [pairDec, F_AKEK, F_AKE, Sys.ofPorts_step_inl, honSys, honStep, SPComp.map,
+    simp [pairDec, F_AKEK, F_AKE, F_AKEImp, F_AKEImpK, Sys.ofPorts_step_inl, honSys, honStep,
+      SPComp.map,
       SPComp.pure_bind, (simProt_isFwd G).finish_eq, x3dhFwd, fwdOut, sessOf_addSession,
       addSession_mapKey, phaseOut]
     rcases s'.2.2 <;> rfl

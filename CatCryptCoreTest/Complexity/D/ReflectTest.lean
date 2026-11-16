@@ -25,6 +25,10 @@ Lean definitions reflected into D by `reflect_d`, each with its denotation theor
 * the distinguisher `exD` of `CatCryptCore.Crypto.QueryBoundedUC`;
 * arithmetic, comparisons and casts on `ZMod 7` and `Fin 5`, the cost of a product of
   residues, and a sampled residue with a failure branch;
+* residues modulo `qB`, an abbreviation of an abbreviation of `3329`, and the distance
+  `min z.val (qB - z.val)` from zero on the circle (`Compress.centeredAbs`), whose D-term
+  computes the minimum;
+* a definition over a type `α : Type u`, reflected at `u = 0`, and its call at `ℕ`;
 * the refusals of a recursive definition, of a type without representation and of a constant
   outside the fragment.
 -/
@@ -365,5 +369,59 @@ def rotL (x : BitVec 8) : BitVec 8 := x.rotateLeft 3
 /-- error: reflect_d: the constant `BitVec.rotateLeft` in `x.rotateLeft 3` -/
 #guard_msgs in
 reflect_d rotL
+
+/-! ## A modulus behind reducible constants -/
+
+/-- The modulus of ML-KEM. -/
+abbrev qA : ℕ := 3329
+
+/-- The modulus of ML-KEM, two abbreviations deep. -/
+abbrev qB : ℕ := qA
+
+/-- Twice a residue modulo `qB`. -/
+def zDouble (x : ZMod qB) : ZMod qB := x + x
+
+reflect_d zDouble
+
+example (x : ZMod qB) :
+    zDouble.d.den (Env.nil.cons (τ := .fin 3328) x) = .ret (zDouble x) :=
+  zDouble.d_den x
+
+/-- The D-term of `zDouble` is the addition of `fin 3328` on the parameter twice. -/
+example : zDouble.d = .prim (.finAdd 3328) (.pair (.var .here) (.var .here)) := rfl
+
+/-- The distance of `z : ZMod qB` from `0` modulo `qB` (`Compress.centeredAbs`). -/
+def centeredAbsC (z : ZMod qB) : ℕ := min z.val (qB - z.val)
+
+reflect_d centeredAbsC
+
+/-- The context of the D-term is the residue, of the finite ground type `fin 3328`. -/
+noncomputable example : Tm [.fin 3328] .nat := centeredAbsC.d
+
+example (z : ZMod qB) :
+    centeredAbsC.d.den (Env.nil.cons (τ := .fin 3328) z) = .ret (centeredAbsC z) :=
+  centeredAbsC.d_den z
+
+/-! ## Universe parameters -/
+
+/-- The pair `p` swapped when `b` holds, over a type in any universe. -/
+def swapIf {α : Type*} (b : Bool) (p : α × α) : α × α := bif b then (p.2, p.1) else p
+
+reflect_d swapIf
+
+example (F : FTy) (b : Bool) (p : F.den × F.den) :
+    (swapIf.d F).den ((Env.nil.cons (τ := .bool) b).cons (τ := .prod (.base F) (.base F)) p) =
+      .ret (swapIf b p) :=
+  swapIf.d_den F b p
+
+/-- `swapIf` at `ℕ`. -/
+def swapNat (b : Bool) (p : ℕ × ℕ) : ℕ × ℕ := swapIf b p
+
+reflect_d swapNat
+
+example (b : Bool) (p : ℕ × ℕ) :
+    swapNat.d.den ((Env.nil.cons (τ := .bool) b).cons (τ := .prod .nat .nat) p) =
+      .ret (swapNat b p) :=
+  swapNat.d_den b p
 
 end CatCrypt.Complexity.D.ReflectTest

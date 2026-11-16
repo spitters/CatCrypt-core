@@ -6,7 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Assumptions.CR
-public import CatCryptCore.NonUniform.UnaryRules
+import CatCryptCore.NonUniform.UnaryRules
+public import CatCryptCore.NonUniform.Sample
 
 /-!
 # Collision-search adversaries given by coins

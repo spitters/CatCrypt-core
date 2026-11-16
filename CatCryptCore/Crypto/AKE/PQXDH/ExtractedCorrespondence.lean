@@ -7,7 +7,9 @@ module
 
 public import CatCryptCore.Crypto.AKE.PQXDH.Extraction.Pqxdh_haxpipe
 public import CatCryptCore.Crypto.AKE.PQXDHPassiveHops
-public import CatCryptCore.Crypto.AdvantageMap
+import CatCryptCore.Crypto.AdvantageMap
+import CatCryptCore.Tactics.Basic
+import Mathlib.CategoryTheory.Category.Init
 
 /-!
 # The extracted PQXDH handshake and the passive model

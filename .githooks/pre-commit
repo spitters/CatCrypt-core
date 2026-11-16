@@ -11,4 +11,9 @@ cd "$(git rev-parse --show-toplevel)" || exit 0
 # scripts/deletion-ledger.tsv naming a successor declaration or a decision file.
 bash scripts/deletion-gate.sh staged || exit 1
 
+# A new definition of a lemma family listed in scripts/duplicate-decl-watch.txt is
+# refused; import the existing one.
+staged=$(git diff --cached --name-only --diff-filter=AM -- '*.lean')
+bash scripts/duplicate-decl-guard.sh $staged || exit 1
+
 exit 0

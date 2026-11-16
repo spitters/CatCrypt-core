@@ -9,6 +9,7 @@ public import CatCryptCore.Crypto.Messaging.SMAuthFSInt
 public import CatCryptCore.Crypto.Messaging.SMAuthRootTimed
 public import CatCryptCore.Crypto.OracleAdversaryRelabelTimed
 import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.StdCostsMem
 
 /-!
 # Running time of the FS-AEAD integrity reduction of the forgery event
@@ -230,19 +231,6 @@ theorem smAuthFSImplAt.timed_bound (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 omit [SampleableType W] [DecidableEq W] [DecidableEq Ct] [Fintype RK]
   [Nonempty RK] in
-/-- `List.all` with a test of cost at most `k` costs at most `k + 5` per element and one
-more. -/
-private theorem all_timedCost_le'' {α : Type} (l : List α) (p : α → Bool) (pCost : α → ℕ)
-    {k : ℕ} (hp : ∀ a, pCost a ≤ k) : List.all.timedCost l p pCost ≤ (k + 5) * l.length + 1 := by
-  induction l with
-  | nil => simp [List.all.timedCost.eq_1]
-  | cons a l ih =>
-    rw [List.all.timedCost.eq_2, List.length_cons, Nat.mul_succ]
-    have := hp a
-    omega
-
-omit [SampleableType W] [DecidableEq W] [DecidableEq Ct] [Fintype RK]
-  [Nonempty RK] in
 /-- `j` iterations of a function of cost at most `c` cost at most `(c + 3) j + 1`. -/
 private theorem iterate_timedCost_le'' {α : Type} (f : α → α) (fCost : α → ℕ) {c : ℕ}
     (hf : ∀ a, fCost a ≤ c) (j : ℕ) :
@@ -291,10 +279,10 @@ theorem smAuthFSStep.timed_bound_deliver (C : CKADef Sc Msg Key) [CKACoins C Ran
           sndXCost rcvXCost vCost eCost gCost dCost
           ((sh, (sX, sndXCost), (rX, rcvXCost), oX), x)).2 := by
   obtain ⟨⟨h1, h2, h3, h4, h5⟩, h6, h7⟩ := hinv
-  have hall := all_timedCost_le'' σ.1.2.corrs (fun c => ckaAllowCorr ΔFS ΔPCS k c.2 c.1)
+  have hall := List.all.timedCost_le σ.1.2.corrs (fun c => ckaAllowCorr ΔFS ΔPCS k c.2 c.1)
     (fun _ => 11) (k := 11) (fun _ => le_rfl)
   simp only [smAuthFSStep.timed]
-  have hall' := all_timedCost_le'' σ.1.2.corrs
+  have hall' := List.all.timedCost_le σ.1.2.corrs
     (fun c => ckaAllowCorr ΔFS ΔPCS ((ckaShadow σ.1.1.s.ck).t p) c.2 c.1) (fun _ => 11)
     (k := 11) (fun _ => le_rfl)
   have hfind := List.find?.timedCost_le
@@ -360,7 +348,7 @@ theorem smAuthFSImpl.timed_bound (C : CKADef Sc Msg Key) [CKACoins C Rand]
       OracleAdv.Timed.AllRet (fun y => smAuthFSCostInv (i + 1) y.2)
         (smAuthFSImpl.timed C R G D ΔFS ΔPCS t k rkS σ d sCost rCost sh sndXCost rcvXCost vCost
           eCost gCost dCost ((sh, (sX, sndXCost), (rX, rcvXCost), oX), x)).2 := by
-  have hall := all_timedCost_le'' σ.1.2.corrs (fun c => ckaAllowCorr ΔFS ΔPCS k c.2 c.1)
+  have hall := List.all.timedCost_le σ.1.2.corrs (fun c => ckaAllowCorr ΔFS ΔPCS k c.2 c.1)
     (fun _ => 11) (k := 11) (fun _ => le_rfl)
   have hin := fun q => smAuthFSImplAt.timed_bound C R G D ΔFS ΔPCS t k rkS σ.1.1 q sCost rCost
     vCost eCost gCost hs hv hr he hg i sh sndXCost rcvXCost hinv
@@ -375,7 +363,7 @@ theorem smAuthFSImpl.timed_bound (C : CKADef Sc Msg Key) [CKACoins C Rand]
       have hu := fun a => SMAuthAux.upd_length (Pub := Msg) (Leak := SMPartySt Sc RK Sa) σ.1.2
         (ckaShadow σ.1.1.s.ck) q a
       have hallu := fun a : SMSchemeAns Msg Ct (SMPartySt Sc RK Sa) =>
-        all_timedCost_le'' (σ.1.2.upd (ckaShadow σ.1.1.s.ck) q a).corrs
+        List.all.timedCost_le (σ.1.2.upd (ckaShadow σ.1.1.s.ck) q a).corrs
         (fun c => ckaAllowCorr ΔFS ΔPCS k c.2 c.1) (fun _ => 11) (k := 11) (fun _ => le_rfl)
       refine ⟨(OracleAdv.Timed.stepTimeBound_delay (OracleAdv.Timed.stepTimeBound_delay
         (OracleAdv.Timed.stepTimeBound_delay (OracleAdv.Timed.stepTimeBound_delay

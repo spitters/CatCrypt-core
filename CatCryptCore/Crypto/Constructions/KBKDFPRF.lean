@@ -299,9 +299,9 @@ theorem rfGame_expandVarAdv_eq {msg : Option K → I → ℕ → D} (hinj : MsgI
     rfGame (expandVarAdv msg len A) = rfVarGame len A := by
   unfold rfGame rfVarGame expandVarAdv
   rw [OracleAdv.run_subst]
-  have h := CatCrypt.Crypto.AEAD.NonceBased.OracleAdv.run_map_state_of_inv (rfVarOracle len)
+  have h := CatCrypt.Crypto.OracleAdv.run_map_state_of_inv (rfVarOracle len)
     (fun T x => OracleAdv.run rfOracle (chainQ msg (len x) x) T) (tabL msg) (LenInv len)
-    (fun s d x hs hx => lenInv_rfVarOracle len s d x hs hx)
+    (fun s d hs x hx => lenInv_rfVarOracle len s d x hs hx)
     (fun s d hs => rfVarOracle_map_tabL hinj len s hs d) A [] (fun _ h => by simp at h)
   change _ = OracleAdv.run _ A [] at h
   rw [← h, PMF.map_comp]

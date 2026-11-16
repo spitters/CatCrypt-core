@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QPullbackCascade
-public import CatCryptCore.Quantum.QSimTimed
 public import CatCryptCore.Quantum.QTreeKind
 
 /-!

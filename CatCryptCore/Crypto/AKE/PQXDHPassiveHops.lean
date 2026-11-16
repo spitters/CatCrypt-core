@@ -6,9 +6,9 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.AKE.PQXDHPassive
-public import CatCryptCore.Crypto.AKE.X3DHPassiveHops
-public import CatCryptCore.Tactics.BindSwap
-public import CatCryptCore.Tactics.AutoArms
+import CatCryptCore.Crypto.AKE.X3DHPassiveHops
+import CatCryptCore.Tactics.BindSwap
+import CatCryptCore.Tactics.AutoArms
 
 /-!
 # PQXDH key indistinguishability from a KEM, DDH and a KDF assumption

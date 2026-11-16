@@ -5,9 +5,7 @@
 module
 
 public import HaxLean.Runtime
-public import HaxLean.AST
 public import HaxLean.TExpr
-public import HaxLean.Semantics
 public import HaxLean.Secrecy
 
 /-!

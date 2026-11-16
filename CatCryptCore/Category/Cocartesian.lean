@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Category.KlSPComp
-public import Mathlib.CategoryTheory.Limits.Shapes.BinaryProducts
+public import Mathlib.CategoryTheory.Limits.Shapes.BinaryProducts.BinaryFan
 
 /-!
 # Cocartesian Monoidal Categories

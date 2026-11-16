@@ -5,10 +5,11 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.FiatShamirROM.LinearRelation
 public import CatCryptCore.Crypto.FiatShamirROM.DuplexSpongeNIZK
 public import CatCryptCore.Crypto.Ristretto255.Param
-public import CatCryptCore.Crypto.ZK.LinearSigmaUC
+import CatCryptCore.Crypto.ZK.LinearSigmaUC
+public import CatCryptCore.Crypto.ZK.SigmaUCZK
+public import CatCryptCore.Crypto.FiatShamirROM.Bridge
 
 /-!
 # The poksho statements of Signal's zkgroup as linear relations

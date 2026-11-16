@@ -5,12 +5,12 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Algebra.Order.Chebyshev
-public import Mathlib.Algebra.Star.StarProjection
-public import Mathlib.Analysis.InnerProductSpace.PiL2
-public import Mathlib.Analysis.InnerProductSpace.Positive
-public import Mathlib.Analysis.Matrix.PosDef
-public import Mathlib.Analysis.MeanInequalitiesPow
+import Mathlib.Algebra.Order.Chebyshev
+import Mathlib.Analysis.InnerProductSpace.Positive
+import Mathlib.Analysis.Matrix.PosDef
+import Mathlib.Analysis.MeanInequalitiesPow
+public import Mathlib.LinearAlgebra.Matrix.PosDef
+public import Mathlib.Analysis.Normed.Lp.PiLp
 
 /-!
 # The rewinding inequality for a family of orthogonal projectors

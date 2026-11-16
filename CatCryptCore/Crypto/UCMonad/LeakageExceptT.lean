@@ -5,9 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Std.Do.Triple
-public import Std.Tactic.Do
 public import Mathlib.Control.EquivFunctor
+import Std.Tactic.Do.Syntax
+public import Std.Do.Triple.Basic
 
 
 @[expose] public section

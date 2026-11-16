@@ -8,7 +8,7 @@ module
 public import CatCryptCore.Crypto.MLKEM.CompressedPKE
 public import CatCryptCore.Crypto.MLKEM.SamplerCbd
 public import CatCryptCore.Crypto.MLKEM.Spec.Ntt
-public import Mathlib.LinearAlgebra.Vandermonde
+import Mathlib.LinearAlgebra.Vandermonde
 
 /-!
 # Lemmas for the coin-collision bound of ML-KEM-512

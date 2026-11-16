@@ -5,7 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Assumptions.CoCDH
+public import CatCryptCore.Crypto.PairingGroup
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # BLS EUF-CMA Security via the co-CDH Reduction (ROM)

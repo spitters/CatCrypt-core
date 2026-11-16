@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Crypto.Messaging.SignalStackUC
 public import CatCryptCore.Crypto.AKE.PQXDHSquareGDH
-import CatCryptCore.Tactics.AutoDispatchExt
 
 /-!
 # The PQXDH Signal stack realizes the ideal secure channel

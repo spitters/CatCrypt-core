@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UC
-public import CatCryptCore.Crypto.ForkingLemma
+import CatCryptCore.Crypto.ForkingLemma
 
 /-!
 # Dummy-adversary completeness and simulator uniformity

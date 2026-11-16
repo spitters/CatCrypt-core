@@ -5,17 +5,20 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Messaging.SMScheme
 public import CatCryptCore.Crypto.Messaging.KEMCKA
 public import CatCryptCore.Crypto.Messaging.SignalStackSM
-import CatCryptCore.Tactics.AutoDispatchExt
 
 /-!
 # The triple ratchet with state corruption
 
-The triple ratchet of Dodis, Jost, Katsumata, Prest and Schmidt (EUROCRYPT 2025) is the double
-ratchet of Alwen, Coretti and Dodis over the product `prodCKA C₁ C₂` of two CKA schemes: the
-Diffie–Hellman CKA `dhCKA G` and the KEM CKA `kemCKA KEM`. This file states its confidentiality
+The root-mixed product ratchet is the double ratchet of Alwen, Coretti and Dodis over the
+product `prodCKA C₁ C₂` of two CKA schemes, the Diffie–Hellman CKA `dhCKA G` and the KEM CKA
+`kemCKA KEM`, whose epoch keys are combined in one root step through a dual PRF. The Triple
+Ratchet of Dodis, Jost, Katsumata, Prest and Schmidt (ePrint 2025/078) and deployed Signal
+(Double Ratchet plus SPQR) keep two root chains and mix the two message keys per message
+(`mk = KDF_HYBRID(ec_mk, pq_mk)`); the theorems of this file are about the root-mixed variant
+and not about the deployed protocol, and "triple ratchet" below names the root-mixed variant.
+This file states its confidentiality
 with state corruption and randomness leakage as an instance of the corruption game over the ACD
 construction `acdSM` (`CatCryptCore.Crypto.Messaging.SMScheme`).
 
@@ -70,7 +73,7 @@ a uniform challenge key. The real game of the product is the real game of `C₁`
 ## References
 
 * Y. Dodis, D. Jost, S. Katsumata, T. Prest, R. Schmidt, *Triple Ratchet: A Bandwidth
-  Efficient Hybrid-Secure Signal Protocol*, EUROCRYPT 2025
+  Efficient Hybrid-Secure Signal Protocol*, ePrint 2025/078
 * J. Alwen, S. Coretti, Y. Dodis, *The Double Ratchet: Security Notions, Proofs, and
   Modularization for the Signal Protocol*, EUROCRYPT 2019
 -/

@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Consensus.PoSNSB.Prob.Collision
-public import CatCryptCore.Crypto.OracleAdversaryTimed
 import CatCryptCore.Tactics.DeriveTimed
 public import CatCryptCore.Tactics.DeriveTimed.Basic
 public import CatCryptCore.Tactics.StdCosts

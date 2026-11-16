@@ -15,7 +15,8 @@ import CatCryptCore.Tactics.DeriveTimed
 
 The Signal stack runs X3DH and keys a secure-messaging scheme with the session key of X3DH. This
 module proves that the stack realizes a secure-messaging functionality with forward secrecy and
-post-compromise security windows, in the sense of Canetti, Jain, Swanberg and Varia (TCC 2022),
+post-compromise security windows, in the sense of Canetti, Jain, Swanberg and Varia (CRYPTO 2022,
+DOI 10.1007/978-3-031-15979-4_1),
 behind a simulator. The statement is over the record `SMScheme` of
 `CatCryptCore.Crypto.Messaging.SMScheme`, so that a scheme that simulates another one
 (`SMScheme.Sim`) has the bound with the advantages of the simulated scheme
@@ -409,7 +410,7 @@ theorem acdSM_init_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (R : PRGDef (RK × Key) (RK × Sa)) (Gc : PRGDef Sa (Wd × Sa)) (D : AEADDef Wd Ct)
     (hC : SPComp.IsPure C.init) :
     (acdSM C R Gc D).init = SPComp.bind (SPComp.sample RK) (acdIni (Sa := Sa) C) := by
-  simp only [acdSM]
+  simp only [acdSM, acdSMAD]
   exact SPComp.isPure_bind_comm_left _ _ _ hC
 
 variable [Inhabited RK]

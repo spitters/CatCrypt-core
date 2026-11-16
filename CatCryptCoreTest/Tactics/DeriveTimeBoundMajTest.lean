@@ -30,6 +30,14 @@ time bound is a term in `M` at the bounds of those lengths:
 
 A uniform bound is the constant majorant (`costMaj_const_iff`): `scanL_uniform` is the time
 theorem at `M := fun _ => t`.
+
+At the default options (`derive_time_bound.majorantForm`) the command states the majorant form as
+`R.timeBound_timed_maj` and the uniform time theorem `R.timeBound_timed` beside it:
+
+* `scanD`: `scanL` at the default options, both theorems;
+* `decRed`: the companion at a list chosen by a match on an event, both theorems;
+* `padRed`: the companion at `List.replicate n i`, both theorems; the majorant form bounds it by
+  the majorant at `n`, the bound of the length of `List.replicate n i`.
 -/
 
 @[expose] public section
@@ -89,5 +97,80 @@ set_option derive_time_bound.majorants true in
 derive_time_bound +queries logChk
 
 example := @logChk.timeBound_timed
+
+/-- `scanL` at the default options. -/
+noncomputable def scanD (chk : List Bool → Bool) (l : List Bool) : SPTree Bool :=
+  SPTree.sample Bool inferInstance inferInstance fun x => SPTree.ret (chk (x :: l))
+
+derive_timed scanD
+
+derive_time_bound scanD
+
+example (chk : List Bool → Bool) (chkCost : List Bool → ℕ) (l : List Bool) {M : ℕ → ℕ}
+    (hM : Monotone M) (h : ∀ a, chkCost a ≤ M a.length) :
+    SPTree.Timed.stepTime (scanD.timed chk chkCost l) ≤ M (l.length + 1) + 2 :=
+  scanD.timeBound_timed_maj chk chkCost l hM h
+
+example (chk : List Bool → Bool) (chkCost : List Bool → ℕ) (l : List Bool) {t : ℕ}
+    (ht : ∀ a, chkCost a ≤ t) : SPTree.Timed.stepTime (scanD.timed chk chkCost l) ≤ t + 2 :=
+  scanD.timeBound_timed chk chkCost l ht
+
+/-- An event: an input `v` for the queue `h`, or a tick. -/
+inductive Ev where
+  | inp (h : ℕ) (v : ℕ)
+  | tick
+
+/-- The queue `h` of `q` with the input `v` appended, on an input; empty on a tick. -/
+def dec (q : ℕ → List ℕ) : Ev → List ℕ
+  | .inp h v => q h ++ [v]
+  | .tick => []
+
+/-- The adversary called at the decision on `e`. -/
+noncomputable def decRed (q : ℕ → List ℕ) (e : Ev) (A : List ℕ → SPComp Bool) :
+    SPComp Bool :=
+  A (dec q e)
+
+derive_reduction decRed
+
+derive_time_bound decRed.tree
+
+example (q : ℕ → List ℕ) (qCost : ℕ → ℕ) (e : Ev) (A : List ℕ → SPTree.Timed Bool)
+    (ACost : List ℕ → ℕ) {t T : ℕ} {M : ℕ → ℕ} (hq : ∀ a, qCost a ≤ t)
+    (hA : ∀ a, (A a).time ≤ T) (hM : Monotone M) (hAc : ∀ a, ACost a ≤ M a.length) :
+    SPTree.Timed.stepTime (decRed.tree.timed q qCost e A ACost) ≤
+      (M (dec q e).length + match e with
+        | Ev.inp h _ => 1 + (2 * (q h).length + 1 + (1 + t))
+        | Ev.tick => 0) + T + 3 :=
+  decRed.tree.timeBound_timed_maj q qCost e A ACost hq hA hM hAc
+
+example (q : ℕ → List ℕ) (qCost : ℕ → ℕ) (e : Ev) (A : List ℕ → SPTree.Timed Bool)
+    (ACost : List ℕ → ℕ) {t T c : ℕ} (hq : ∀ a, qCost a ≤ t) (hA : ∀ a, (A a).time ≤ T)
+    (hAc : ∀ a, ACost a ≤ c) :
+    SPTree.Timed.stepTime (decRed.tree.timed q qCost e A ACost) ≤
+      (c + match e with
+        | Ev.inp h _ => 1 + (2 * (q h).length + 1 + (1 + t))
+        | Ev.tick => 0) + T + 3 :=
+  decRed.tree.timeBound_timed q qCost e A ACost hq hA hAc
+
+/-- Sample an index and pass `n` copies of it to the adversary. -/
+noncomputable def padRed (n : ℕ) (A : List ℕ → SPComp Bool) : SPComp Bool := do
+  let i ← SPComp.sample (Fin 4)
+  A (List.replicate n i.val)
+
+derive_reduction padRed
+
+derive_time_bound padRed.tree
+
+example (n : ℕ) (A : List ℕ → SPTree.Timed Bool) (ACost : List ℕ → ℕ) {T c : ℕ}
+    (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ c) :
+    SPTree.Timed.stepTime (padRed.tree.timed n A ACost) ≤ 3 * n + c + T + 10 := by
+  have := padRed.tree.timeBound_timed n A ACost hA hAc
+  omega
+
+example (n : ℕ) (A : List ℕ → SPTree.Timed Bool) (ACost : List ℕ → ℕ) {T : ℕ} {M : ℕ → ℕ}
+    (hA : ∀ x, (A x).time ≤ T) (hM : Monotone M) (hAc : ∀ x, ACost x ≤ M x.length) :
+    SPTree.Timed.stepTime (padRed.tree.timed n A ACost) ≤ M n + 3 * n + T + 10 := by
+  have := padRed.tree.timeBound_timed_maj n A ACost hA hM hAc
+  omega
 
 end CatCrypt.Tactics.DeriveTimeBoundMajTest

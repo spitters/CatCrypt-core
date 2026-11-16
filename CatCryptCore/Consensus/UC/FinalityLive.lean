@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Consensus.UC.FinalityGadget
-public import CatCryptCore.Consensus.FinalityUpdated
 
 @[expose] public section
 set_option autoImplicit false

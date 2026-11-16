@@ -5,7 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.TVHops
+import CatCryptCore.Crypto.TVHops
+public import CatCryptCore.Crypto.TV
+public import CatCryptCore.NonUniform.Product
 
 /-!
 # Bounded rejection sampling

@@ -55,7 +55,12 @@ open CatCrypt.Examples
 
 set_option autoImplicit false
 
-/-- Concrete `GroupParam` instance for ristretto255. -/
+/-- The `GroupParam` with group and scalars `ZMod curve25519_l` and generator `1`. Here
+    `exp s = s` and discrete logarithm is the identity map, so a DL or DDH advantage at this
+    parameter is not small. Information-theoretic facts at it (HVZK, special soundness,
+    statistical distance) are sound. A computational statement is made over an abstract
+    `GroupParam` and instantiated at `RistrettoGroup` through the byte API, not at this
+    parameter. -/
 @[implicit_reducible]
 noncomputable def RistrettoParam : GroupParam where
   G := ZMod curve25519_l

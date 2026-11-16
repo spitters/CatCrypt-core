@@ -11,6 +11,7 @@ public import CatCryptCore.Tactics.DeriveReduction.Basic
 import CatCryptCore.Tactics.AutoTime
 public import CatCryptCore.Tactics.AutoTime.Basic
 public import CatCryptCore.Tactics.StdCosts
+public import CatCryptCore.Crypto.Assumptions.CoCDH
 
 /-!
 # Time of the BLS co-CDH reduction

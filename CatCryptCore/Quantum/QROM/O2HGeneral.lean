@@ -6,8 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QROM.KEMAdvDilate
-public import CatCryptCore.Quantum.QROM.MultiRound
-public import CatCryptCore.Quantum.QROM.O2HTheorem
 
 /-!
 # One-way to hiding for adversaries with general local operations

@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QPullback
-public import CatCryptCore.Quantum.QRealizesMemReset
+import CatCryptCore.Quantum.QRealizesMemReset
 public import CatCryptCore.Quantum.QSysCat
 
 /-!

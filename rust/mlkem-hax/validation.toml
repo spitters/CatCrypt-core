@@ -1,0 +1,6 @@
+# Validation manifest
+primitive = "ML-KEM-768 (FIPS 203)"
+reference = "Official ML-KEM-768 NIST known-answer test vectors (libcrux mlkem768_nistkats.json, libcrux-ml-kem/cg/tests): key-generation seed d‖z and encapsulation coin m map to the SHA3-256 hashes of the public key, secret key and ciphertext plus the raw shared secret"
+reference_kind = "nist-cavp"
+test_files = ["tests/nist_kat.rs"]
+notes = "nist_kat_0_byte_identical and nist_kat_1_byte_identical drive the crate's own mlkem_keygen/mlkem_encaps/mlkem_decaps on NIST KAT vectors 0 and 1 and assert SHA3-256(ek), SHA3-256(dk), SHA3-256(ct) and the shared secret byte for byte, hashing with the crate's own FIPS-202 SHA3-256. The FIPS-202 Keccak core is pinned in src/specs/sha3.rs against published SHA3-256(\"\"), SHA3-512(\"\"), SHA3-256(\"abc\"), SHAKE256(\"\") and SHAKE128(\"\") digests. The KEM uses the FIPS 203 NTT domain (src/poly.rs NTT, inverse NTT and base multiplication, checked against schoolbook multiplication), so the stored t̂, ŝ and the compressed (u, v) are byte-identical to FIPS 203. nist_kat_implicit_reject checks the Fujisaki–Okamoto reject path. In this repository the crate serves as the K-PKE and SHA-3 instance of the tests of mlkem-fo-hax; it has no external dependencies."

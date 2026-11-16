@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QSysCat
-public import CatCryptCore.ForMathlib.CategoryTheory.Monoidal.IntConstructionMonoidal
 public import CatCryptCore.Crypto.UCLoopbackObservation
 -- import all: unfolds the boundary equivalences `tensorComm` and `tensorAssoc`
 import all PolyFun.Interaction.Interface

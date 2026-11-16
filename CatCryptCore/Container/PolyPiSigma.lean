@@ -5,7 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import PolyFun.PFunctor.Slice
+import Mathlib.Data.Finset.Attr
+import Mathlib.Tactic.SetLike
+import Mathlib.Tactic.Finiteness.Attr
 
 /-!
 # Dependent sums and products along a map, and polynomial functors

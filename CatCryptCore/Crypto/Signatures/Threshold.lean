@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
 public import CatCryptCore.Crypto.OracleAdversaryTimed
-public import CatCryptCore.Crypto.SDist
 
 /-!
 # Threshold signatures: EUF-CMA from single-signer EUF-CMA

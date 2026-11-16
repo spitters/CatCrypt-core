@@ -1,0 +1,9 @@
+[package]
+name = "schnorr-hax"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dev-dependencies]
+k256 = { version = "0.13", features = ["arithmetic", "schnorr", "ecdsa", "sha256"] }
+sha2 = "0.10"

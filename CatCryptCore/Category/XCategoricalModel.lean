@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.XDijkstra.XPostShape
 public import CatCryptCore.XDijkstra.XQuantaleGradeCore
 public import CatCryptCore.Crypto.UCMonad.UCLeakageDecomp
 public import CatCryptCore.Category.Effectus

@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Quantum.CPCompMonad
 public import CatCryptCore.Quantum.QROM.QOwcpaAuxMeasured
-public import CatCryptCore.Quantum.QROM.KEMQuantumGame
 
 @[expose] public section
 

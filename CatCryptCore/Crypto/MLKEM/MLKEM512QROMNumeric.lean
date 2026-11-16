@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.MLKEM.MLKEM512QROMPrf
-public import CatCryptCore.Crypto.MLKEM.CollisionSpreadBound
+import CatCryptCore.Crypto.MLKEM.CollisionSpreadBound
 
 /-!
 # ML-KEM-512 in the quantum random-oracle model: the collision term as a number

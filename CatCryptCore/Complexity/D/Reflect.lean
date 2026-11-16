@@ -87,7 +87,8 @@ values (`CLe.letESup`).
 ## The fragment
 
 Types: `ℕ`, `Bool`, `Unit`, `BitVec w` for a numeral `w`, `Fin m` and `ZMod m` for a modulus
-`m` that is a positive numeral or of the form `n + 1`, tables `Fin q → R` of a finite ground
+`m` that is a positive numeral or of the form `n + 1`, possibly behind reducible constants
+(`abbrev q : ℕ := 3329`), tables `Fin q → R` of a finite ground
 type `R` (the finite ground type `FTy.tab q f`), products, sums and lists of these; at a
 component of a product, a sum or a list, a store `X → Y` of a finite ground type `X` and
 first-order data `Y` that is not a table (`Ty.store`);
@@ -1123,9 +1124,15 @@ def numKind (T : Expr) : MetaM (Option (Option Expr)) := do
   if T.isAppOfArity ``BitVec 1 then return some (some T.appArg!)
   return none
 
+/-- One unfolding of the application `e` of a reducible constant (an `abbrev`), or `none`. -/
+def unfoldReducible? (e : Expr) : MetaM (Option Expr) := do
+  let .const c _ := e.getAppFn | return none
+  unless (← getReducibilityStatus c) == .reducible do return none
+  withReducible <| unfoldDefinition? e
+
 /-- The predecessor `n` of a modulus `m = n + 1`, given as `n + 1`, `Nat.succ n` or a positive
-numeral. -/
-def modPred (m : Expr) : MetaM Expr := do
+numeral, possibly behind reducible constants (`abbrev q : ℕ := 3329`), which are unfolded. -/
+partial def modPred (m : Expr) : MetaM Expr := do
   let m := m.consumeMData
   if m.isAppOfArity ``HAdd.hAdd 6 then
     if (← evalNat m.appArg!) == some 1 then return m.appFn!.appArg!
@@ -1133,7 +1140,9 @@ def modPred (m : Expr) : MetaM Expr := do
   if m.hasFVar then throwError "reflect_d: the modulus `{m}` depends on a variable"
   match ← evalNat m with
   | some (v + 1) => return mkNatLit v
-  | _ => throwError "reflect_d: the modulus `{m}` is not a positive numeral or `n + 1`"
+  | _ =>
+    if let some m' ← unfoldReducible? m then return ← modPred m'
+    throwError "reflect_d: the modulus `{m}` is not a positive numeral or `n + 1`"
 
 /-- For `Fin m` or `ZMod m` with `m = n + 1`, the predecessor `n`: the type is
 `FTy.den (.fin n)`. -/
@@ -1654,6 +1663,23 @@ def unfoldable (c : Name) : MetaM Bool := do
     let m := env.header.moduleNames[idx.toNat]!
     let root := m.getRoot
     return !([`Init, `Std, `Lean, `Mathlib, `Batteries, `Qq, `Aesop].contains root)
+
+/-- A class method `C.m … inst a₁ … aₖ` at a closed instance `inst` that reduces to a
+constructor application: the field `m` of that constructor applied to `a₁ … aₖ`, β-reduced at
+the head (`min a b` on `ℕ` is `if a ≤ b then a else b`). `none` for any other term. -/
+def projInst? (ctx : Ctx) (e : Expr) : MetaM (Option Expr) := do
+  let .const c _ := e.getAppFn.consumeMData | return none
+  let some pi ← getProjectionFnInfo? c | return none
+  unless pi.fromClass do return none
+  let args := e.getAppArgs
+  unless args.size > pi.numParams do return none
+  let inst := args[pi.numParams]!
+  if inst.hasAnyFVar (fun fv => ctx.entries.any (·.fvar == fv)) then return none
+  let inst ← whnf inst
+  let some ctor := inst.getAppFn.constName? | return none
+  unless ctor == pi.ctorName do return none
+  let some field := inst.getAppArgs[pi.numParams + pi.i]? | return none
+  return some (mkAppN field (args.extract (pi.numParams + 1) args.size)).headBeta
 
 /-- `e` as a λ-term of at least `n` binders, by η-expansion. -/
 def etaN (ctx : Ctx) (e : Expr) (n : Nat) : MetaM Expr := do
@@ -2282,6 +2308,8 @@ partial def goConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) : M Re
               (fun t _ => mkAppN (mkConst c lvls) (sargs.set! (np + 1) t)) #[]
     -- A structural recursion.
     if (Structural.eqnInfoExt.find? env c).isSome then return ← goStructRec ctx e c args
+    -- A class method at a closed instance: the field of the instance.
+    if let some e' ← projInst? ctx e then return ← goP ctx e'
     if (← isMatcher c) || (← unfoldable c) then goP ctx (← deltaApp c e)
     else if c.isStr && (c.getString! == "brecOn" || c.getString! == "rec") then
       fail m!"the recursion `{c}` (use List.foldl or Nat.iterate)"
@@ -3497,10 +3525,13 @@ partial def addMethods (O : Expr) (ms eqTys : List Expr) (ps : Params)
   | [], [] => k ps methods eqs
 
 /-- The constructor of the record type `T`, applied to the parameters of `T`, when `T` is a
-structure in `Type` (a class or not) that has no representation in D. -/
+structure in `Type` (a class or not) that has no representation in D. `Fin m` and `ZMod m` are
+finite ground types, never records: their translation reports a modulus it does not accept. -/
 def recordCtor? (T : Expr) : MetaM (Option Expr) := do
   if ← isProp T then return none
+  if T.consumeMData.isAppOfArity `ZMod 1 then return none
   let T' ← whnf T
+  if T'.isAppOfArity ``Fin 1 then return none
   let .const sn lvls := T'.getAppFn | return none
   let env ← getEnv
   unless isStructure env sn do return none
@@ -3536,11 +3567,15 @@ partial def unbundle (n : Name) (e : Expr) (ps : Params) (k : Params → Expr �
   | _ => k ps e
 
 /-- Reflect the definition `c`: define `c.d`, prove `c.d_den` and, when every construct is in
-the costed fragment, `c.d_cost`. -/
+the costed fragment, `c.d_cost`. A definition with universe parameters is reflected at the
+level `0` of each, so that a type parameter `α : Type u` is a type in `Type`. -/
 def reflect (c : Name) : Term.TermElabM Unit := do
   let info ← getConstInfoDefn c
-  unless info.levelParams.isEmpty do
-    throwError "reflect_d: `{c}` has universe parameters"
+  let lvls := info.levelParams.map fun _ => Level.zero
+  let info := { info with
+    type := info.type.instantiateLevelParams info.levelParams lvls
+    value := info.value.instantiateLevelParams info.levelParams lvls
+    levelParams := [] }
   withLocalDeclD `O (mkConst ``CTree.Oracle) fun O => do
     let rec params : Nat → Expr → Params → (Params → Expr → MetaM Unit) → MetaM Unit
       | 0, _, _, _ => throwError "reflect_d: `{c}` has too many parameters"
@@ -3631,7 +3666,7 @@ def reflect (c : Name) : Term.TermElabM Unit := do
       return us
     params 1024 info.type { rho := mkConst ``Env.nil, used, inType } fun ps bodyT => do
       let body := if (Structural.eqnInfoExt.find? (← getEnv) c).isSome then
-          mkAppN (mkConst c) ps.args
+          mkAppN (mkConst c lvls) ps.args
         else info.value.beta ps.args
       let (ms, eqTys) ← if ps.insts.isEmpty then pure (#[], #[])
         else scanMethods ps.statics ps.insts ps.recs body 8 (#[], #[])
@@ -3659,7 +3694,7 @@ def reflect (c : Name) : Term.TermElabM Unit := do
       withExporting (isExporting := (← getEnv).header.isModule) <| addDecl (.defnDecl dv)
       addDocStringCore dName s!"The D-term of `{c}`, reflected by `reflect_d`."
       let dC := mkAppN (mkConst dName) ps.statics
-      let fx := mkAppN (mkConst c) ps.args
+      let fx := mkAppN (mkConst c lvls) ps.args
       let (stmt, pre) ← if tree || eff then do
           let lhs := mkAppN (mkConst ``Tm.denote) #[Γ, τ, O, dC, ctx.rho]
           let rhs ← if tree then mkAppM ``SPTree.compile #[fx] else pure fx

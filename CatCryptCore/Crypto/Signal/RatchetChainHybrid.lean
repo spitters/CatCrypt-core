@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Crypto.CryptoWord
 public import CatCryptCore.Crypto.HybridArgument
 

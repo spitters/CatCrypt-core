@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Core.GenHeap
-public import CatCryptCore.Relational.Rules
+import CatCryptCore.Relational.Rules
 
 /-!
 # Lazily-Sampled Random Oracle with a Heap-Resident Query Log

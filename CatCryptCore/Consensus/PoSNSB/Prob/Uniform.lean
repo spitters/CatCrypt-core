@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Consensus.PoSNSB.Prob
 public import CatCryptCore.Consensus.PoSNSB.Prob.Time
-public import CatCryptCore.Crypto.OracleEval
 
 /-!
 # PoS-NSB: tree types and adversaries uniform in the hash function

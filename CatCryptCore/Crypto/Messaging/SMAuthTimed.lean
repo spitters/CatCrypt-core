@@ -10,6 +10,7 @@ public import CatCryptCore.Crypto.Messaging.SMCorruptTimed
 public import CatCryptCore.Crypto.FiatShamirROM.Timed
 public import CatCryptCore.Crypto.OracleAdversaryPotential
 import CatCryptCore.Tactics.DeriveTimed
+import CatCryptCore.Tactics.StdCostsMem
 
 /-!
 # Running time of the reduction of authenticity to the corruption game
@@ -94,17 +95,6 @@ theorem smAuthRed.compile_tree (ΔFS ΔPCS : ℕ) (A : SMAuthAdv Pub W Ct Leak)
   rw [h]
   rfl
 
-/-- `List.all` with a test of cost at most `k` costs at most `k + 5` per element and one
-more. -/
-private theorem all_timedCost_le {α : Type} (l : List α) (p : α → Bool) (pCost : α → ℕ)
-    {k : ℕ} (hp : ∀ a, pCost a ≤ k) : List.all.timedCost l p pCost ≤ (k + 5) * l.length + 1 := by
-  induction l with
-  | nil => simp [List.all.timedCost.eq_1]
-  | cons a l ih =>
-    rw [List.all.timedCost.eq_2, List.length_cons, Nat.mul_succ]
-    have := hp a
-    omega
-
 omit [DecidableEq W] [DecidableEq Ct] in
 /-- A query of the corruption game adds at most one entry to the log and at most one
 corruption to the bookkeeping. -/
@@ -157,7 +147,7 @@ theorem smAuthImpl.timed_bound (ΔFS ΔPCS i : ℕ)
   | deliver p j ad c =>
     have hf := fun pr : SMLogEntry W Ct → Bool => List.find?.timedCost_le pr (fun _ => 1)
       (k := 1) (fun _ => le_rfl) ŝ.2.log
-    have ha := all_timedCost_le ŝ.2.corrs
+    have ha := List.all.timedCost_le ŝ.2.corrs
       (fun c => ckaAllowCorr ΔFS ΔPCS (ŝ.1.2.1.1 p) c.2 c.1) (fun _ => 11) (k := 11)
       (fun _ => le_rfl)
     simp only [smAuthImpl.timed, OracleAdv.Timed.delay, OracleAdv.Timed.StepTimeBound,
@@ -353,7 +343,7 @@ theorem smAuthCKAImpl.timed_bound (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDe
       OracleAdv.Timed.AllRet (fun y => smAuthCKACostInv (i + 1) y.2)
         (smAuthCKAImpl.timed (Sc := Sc) (Msg := Msg) (Rand := Rand) R G D ΔFS ΔPCS t k σ d rCost
           fh sh eCost gCost sh.2.1.2 ((fh, sh), x) dCost).2 := by
-  have hall := all_timedCost_le σ.1.2.corrs (fun c => ckaAllowCorr ΔFS ΔPCS k c.2 c.1)
+  have hall := List.all.timedCost_le σ.1.2.corrs (fun c => ckaAllowCorr ΔFS ΔPCS k c.2 c.1)
     (fun _ => 11) (k := 11) (fun _ => le_rfl)
   have hfw := fun q => smAuthCKAFwd.timed_bound (Sc := Sc) (Msg := Msg) (Rand := Rand) R G D
     ΔFS ΔPCS t k σ q rCost eCost gCost hr he hg i fh sh sh.2.1.2 hinv hinv.2.2.2.2 hl hc
@@ -387,7 +377,7 @@ theorem smAuthCKAImpl.timed_bound (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDe
               simp only [smAuthDeliverIdx, smAuthCKAQueryTime, smAuthCKAFwdTime]; omega),
           (hfw _).2⟩
     | deliver p j ad c =>
-      have hall' := all_timedCost_le σ.1.2.corrs
+      have hall' := List.all.timedCost_le σ.1.2.corrs
         (fun c => ckaAllowCorr ΔFS ΔPCS (σ.1.1.2.t p) c.2 c.1) (fun _ => 11) (k := 11)
         (fun _ => le_rfl)
       have hfind := List.find?.timedCost_le

@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Crypto.Party.QProg
 public import CatCryptCore.Tactics.ScottInduction
-public import CatCryptCore.Quantum.SubInstrumentOrder
 
 /-!
 # Weakest preconditions of quantum party programs

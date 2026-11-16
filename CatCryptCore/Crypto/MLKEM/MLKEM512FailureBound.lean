@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.MLKEM.MLKEM512Hypotheses
-public import CatCryptCore.Crypto.MLKEM.CorrectnessBounds
 
 /-!
 # The failure-bound hypothesis of the quantum ML-KEM-512 theorem

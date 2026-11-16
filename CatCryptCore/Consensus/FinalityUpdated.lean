@@ -6,7 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Consensus.FinalityExamples
-public import Mathlib.Tactic.Ring
+import Mathlib.Tactic.Ring.RingNF
+import Mathlib.Algebra.Order.Ring.Nat
 
 /-!
 # Casper FFG over a chain: the finalized checkpoint stays close to the tip

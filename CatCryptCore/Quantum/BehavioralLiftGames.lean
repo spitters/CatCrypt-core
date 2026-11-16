@@ -6,8 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.BehavioralLift
-public import CatCryptCore.Crypto.Assumptions.AEAD
-public import CatCryptCore.Crypto.ForkingLemma
+import CatCryptCore.Crypto.ForkingLemma
 
 /-!
 # One-shot games and prefix reductions as oracle trees

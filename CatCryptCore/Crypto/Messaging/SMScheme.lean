@@ -48,14 +48,19 @@ epoch of `sm_adaptive_game` over `M`.
 sending and a receiving chain. Opening an epoch runs the CKA sending algorithm and the root step
 on its key; receiving runs the CKA receiving algorithm and the root step on the key the
 receiver derives itself; sending runs the chain generator and the AEAD; a corruption reveals
-the state. The game `sm_corrupt_game` holds the root output of the epoch in transit and gives it
-to the receiver. When the CKA is correct along a relation `J` of the states of the next sender
-and the next receiver (`CKACorrect`), the receiver derives the same output, and
-`smCorruptGame_acd` proves that `smCorruptGame (acdSM C R G D)` is `sm_corrupt_game` with the
-answers relabelled; `smAdaptiveGame_acd` proves the same for the adaptive game. The CKA
-`dhCKAOf decE` of `CatCryptCore.Crypto.Messaging.CKACorrupt` is the Diffie–Hellman CKA whose
-secret keys are drawn uniformly from a key space `Sk` and act through the exponent map `decE`;
-it is correct (`dhCKAOf_correct`).
+the state. `acdSM C R G D` is `acdSMAD C R G D (fun _ ad => ad)`: the construction
+`acdSMAD C R G D adOf` takes an AEAD `D : AEADDef W Ct AD` with its own type of associated
+data, and encrypts a message from the state `x` with associated data `adOf x ad`, which names
+the associated data of the message and a header of the sender, as the Double Ratchet
+specification's `ENCRYPT(mk, plaintext, CONCAT(ad, header))`. The game `sm_corrupt_game`
+holds the root output of the epoch in transit and gives it to the receiver. When the CKA is
+correct along a relation `J` of the states of the next sender and the next receiver
+(`CKACorrect`), the receiver derives the same output, and `smCorruptGame_acd` proves that
+`smCorruptGame (acdSM C R G D)` is `sm_corrupt_game` with the answers relabelled;
+`smAdaptiveGame_acd` proves the same for the adaptive game. The CKA `dhCKAOf decE` of
+`CatCryptCore.Crypto.Messaging.CKACorrupt` is the Diffie–Hellman CKA whose secret keys are
+drawn uniformly from a key space `Sk` and act through the exponent map `decE`; it is correct
+(`dhCKAOf_correct`).
 
 ## Transfer
 
@@ -75,8 +80,11 @@ mention no particular scheme: a scheme that simulates `acdSM` inherits every bou
   `smCorruptGame`, `SMScheme.corruptAdvantage` — schemes and the corruption game over them
 * `smSchemeAdOracle`, `smAdaptiveGame`, `SMScheme.adaptiveAdvantage` — the game with an
   adaptive challenge epoch
-* `acdSM`, `CKACorrect`, `dhKeyRel` — the ACD construction, CKA correctness, the correctness
-  relation of the Diffie–Hellman CKA over a key space
+* `acdSMAD`, `acdSM`, `CKACorrect`, `dhKeyRel` — the ACD construction with associated data of
+  the AEAD in its own type and at the associated data of the message, CKA correctness, the
+  correctness relation of the Diffie–Hellman CKA over a key space
+* `SMQuery.mapAD`, `SMSchemeAdv.toSMAD` — the queries and the adversaries of the game over a
+  scheme as those of `sm_corrupt_game` with associated data in `AD`, mapped by `f : W → AD`
 * `SMScheme.Sim`, `SMSchemeAdv.comap` — simulations of schemes and the relabelled adversary
 
 ## Main results
@@ -86,6 +94,9 @@ mention no particular scheme: a scheme that simulates `acdSM` inherits every bou
   relabelled
 * `smCorruptGame_acd`, `smAdaptiveGame_acd`, `acdSM_corruptAdvantage_eq`,
   `acdSM_adaptiveAdvantage_eq` — the games of `acdSM` are those of `SMCorrupt`
+* `smCorruptGame_acdAD`, `acdSMAD_corruptAdvantage_eq`, `acdSMAD_corruptAdvantage_le` — the
+  corruption game of `acdSMAD C R G D (fun _ => f)` for an AEAD with associated data in `AD` is
+  `sm_corrupt_game` at `A.toSMAD f`, and its bound
 * `acdSM_corruptAdvantage_le`, `acdSM_adaptiveAdvantage_le` — the bounds of
   `sm_corrupt_advantage_le` and `sm_adaptive_corrupt_advantage_le` for `acdSM`
 * `acdSM_adaptiveAdvantage_le_of_isQueryBound` — for an adversary asking at most `q` queries,
@@ -154,6 +165,19 @@ theorem run_map_fst_mapQueryAnswer_of_map_state_inv (O : S → D → PMF (R × S
     rw [PMF.support_map] at hz
     obtain ⟨x, hx, rfl⟩ := hz
     exact ⟨rfl, hInv s d h.2 x hx⟩
+
+/-- **Runs related by a state map under an invariant, with relabelled queries and answers.**
+As `run_map_fst_mapQueryAnswer_of_map_state_inv`, with each query `d` of `A` asked of `O` as
+`g d`. -/
+theorem run_map_fst_mapQueryAnswer_of_map_state_inv_query {D' : Type}
+    (O : S → D' → PMF (R × S)) (O' : S' → D → PMF (R' × S')) (g : D → D') (e : R → R')
+    (f : S → S') (Inv : S → Prop) (hInv : ∀ s d, Inv s → ∀ x ∈ (O s d).support, Inv x.2)
+    (hO : ∀ s d, Inv s → (O s (g d)).map (fun x => (e x.1, f x.2)) = O' (f s) d)
+    (A : OracleAdv D R' α) (s : S) (hs : Inv s) :
+    (run O' A (f s)).map Prod.fst = (run O (A.mapQueryAnswer g e) s).map Prod.fst := by
+  rw [run_map_fst_mapQueryAnswer_of_map_state_inv (fun s d => O s (g d)) O' e f Inv
+    (fun s d hs => hInv s (g d) hs) hO A s hs, run_mapQueryAnswer, run_mapQueryAnswer]
+  rfl
 
 end CatCrypt.Crypto.OracleAdv
 
@@ -341,18 +365,21 @@ structure SMPartySt (Sc RK Sa : Type) where
 
 section ACD
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [Fintype RK] [Nonempty RK]
+variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand]
+  [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
 
-/-- **The ACD construction** of a secure-messaging scheme from the CKA `C`, the root KDF `R`,
-the chain generator `G` and the AEAD `D`. Both parties start with the initial CKA states and a
-uniform root key. Opening an epoch runs the CKA sending algorithm on the randomness and the
-root step on its key, which gives the next root key and the sending chain; receiving runs the
-CKA receiving algorithm and the root step on the key the receiver derives, which gives the next
-root key and the receiving chain; sending encrypts under the next key of the sending chain; a
+/-- **The ACD construction with associated data of the AEAD in `AD`**, from the CKA `C`, the
+root KDF `R`, the chain generator `G`, the AEAD `D` and the map `adOf` from the state of the
+sender and the associated data of the message to the associated data of the AEAD. Both parties
+start with the initial CKA states and a uniform root key. Opening an epoch runs the CKA sending
+algorithm on the randomness and the root step on its key, which gives the next root key and the
+sending chain; receiving runs the CKA receiving algorithm and the root step on the key the
+receiver derives, which gives the next root key and the receiving chain; sending from the state
+`x` encrypts under the next key of the sending chain with associated data `adOf x ad`; a
 corruption reveals the state. -/
-noncomputable def acdSM (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) :
+noncomputable def acdSMAD (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (adOf : SMPartySt Sc RK Sa → W → AD) :
     SMScheme (SMPartySt Sc RK Sa) Msg Rand W Ct (SMPartySt Sc RK Sa) where
   init := SPComp.bind C.init fun i => SPComp.bind (SPComp.sample RK) fun rk =>
     SPComp.pure (i.1, ⟨i.2.1, rk, none, none⟩, ⟨i.2.2, rk, none, none⟩)
@@ -365,9 +392,17 @@ noncomputable def acdSM (C : CKADef Sc Msg Key) [CKACoins C Rand]
     ⟨(C.recv x.ck T).1, (R.stretch (x.rk, (C.recv x.ck T).2)).1, x.snd,
       some (R.stretch (x.rk, (C.recv x.ck T).2)).2⟩
   send x m := x.snd.map fun sa =>
-    (⟨x.ck, x.rk, some (G.stretch sa).2, x.rcv⟩, D.encrypt (G.stretch sa).1 m.1 m.2)
+    (⟨x.ck, x.rk, some (G.stretch sa).2, x.rcv⟩, D.encrypt (G.stretch sa).1 m.1 (adOf x m.2))
   expose := id
   idealCt := PMF.uniformFintype Ct
+
+/-- **The ACD construction** of a secure-messaging scheme from the CKA `C`, the root KDF `R`,
+the chain generator `G` and the AEAD `D`: `acdSMAD` with the associated data of the message as
+the associated data of the AEAD. -/
+noncomputable def acdSM (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) :
+    SMScheme (SMPartySt Sc RK Sa) Msg Rand W Ct (SMPartySt Sc RK Sa) :=
+  acdSMAD C R G D fun _ ad => ad
 
 /-- **Correctness of a CKA along a relation.** `J s r` relates the state `s` of the next sender
 to the state `r` of the next receiver. After a send from `s` with any randomness, the receiver
@@ -407,6 +442,45 @@ omit [Fintype Rand] [Nonempty Rand] [SampleableType W] [SampleableType Ct] [Fint
 theorem SMSchemeAdv.toSM_play_isQueryBound {A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)}
     {q : ℕ} (hA : ∀ t T, (A.play t T).IsQueryBound q) (t : ℕ) (T : Msg) :
     (A.toSM.play t T).IsQueryBound q :=
+  OracleAdv.isQueryBound_mapQueryAnswer _ _ (hA t T)
+
+/-- A query of the game over a scheme, whose messages have plaintexts and associated data in
+`W`, as a query of `sm_corrupt_game` with associated data in `AD`: the associated data of a
+message is mapped by `f`. -/
+def SMQuery.mapAD (f : W → AD) : SMQuery W → SMQuery W AD
+  | .ratchet p => .ratchet p
+  | .recv p => .recv p
+  | .send p m => .send p (m.1, f m.2)
+  | .chall p m => .chall p (m.1, f m.2)
+  | .corrupt p => .corrupt p
+
+omit [SampleableType W] in
+/-- Mapping the associated data by the identity is the identity on queries. -/
+theorem SMQuery.mapAD_id : SMQuery.mapAD (id : W → W) = id := by
+  funext q
+  cases q <;> rfl
+
+/-- An adversary of the game over `acdSMAD C R G D (fun _ => f)` as an adversary of
+`sm_corrupt_game` with associated data in `AD`: the associated data of its messages are mapped
+by `f`, and its answers are relabelled by `SMAns.toScheme`. -/
+def SMSchemeAdv.toSMAD (f : W → AD) (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    SMCorruptAdv Sc Msg RK Sa W Ct AD where
+  tStar := A.tStar
+  play t T := (A.play t T).mapQueryAnswer (SMQuery.mapAD f) SMAns.toScheme
+
+omit [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK] in
+/-- With the identity on associated data, `toSMAD` is `toSM`. -/
+theorem SMSchemeAdv.toSMAD_id (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    A.toSMAD (Sc := Sc) id = A.toSM := by
+  simp only [SMSchemeAdv.toSMAD, SMSchemeAdv.toSM, SMQuery.mapAD_id]
+
+omit [Fintype Rand] [Nonempty Rand] [SampleableType W] [SampleableType Ct] [Fintype RK]
+  [Nonempty RK] in
+/-- The relabelled adversary `A.toSMAD f` keeps the query bound of `A`. -/
+theorem SMSchemeAdv.toSMAD_play_isQueryBound (f : W → AD)
+    {A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)} {q : ℕ}
+    (hA : ∀ t T, (A.play t T).IsQueryBound q) (t : ℕ) (T : Msg) :
+    ((A.toSMAD (Sc := Sc) f).play t T).IsQueryBound q :=
   OracleAdv.isQueryBound_mapQueryAnswer _ _ (hA t T)
 
 /-- The invariant of `sm_corrupt_game` under which its root output in transit is the one the
@@ -494,36 +568,39 @@ omit [Fintype RK] [Nonempty RK] in
 theorem SMSt.toScheme_allowCorr (s : SMSt Sc Msg RK Sa) (ΔFS ΔPCS t : ℕ) (p : CKAParty) :
     ckaAllowCorr ΔFS ΔPCS t s.toScheme.ck p = ckaAllowCorr ΔFS ΔPCS t s.ck p := rfl
 
-/-- **The oracle of `sm_corrupt_game` is the oracle over `acdSM`.** Under the invariant
-`ACDInv`, each call of `smOracleOf` at the real root step, with its answer and state carried to
-the game over `acdSM`, is the call of `smSchemeOracle (acdSM C R G D)`. -/
-theorem acd_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (J : Sc → Sc → Prop) (ΔFS ΔPCS t : ℕ)
-    (ideal : Bool) (s : SMSt Sc Msg RK Sa) (hs : ACDInv C R J s) (q : SMQuery W) :
-    (smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R) s q).map
+/-- **The oracle of `sm_corrupt_game` is the oracle over `acdSMAD` with associated data
+`f ad`.** Under the invariant `ACDInv`, each call of `smOracleOf` at the real root step on the
+query `q` with the associated data mapped by `f`, with its answer and state carried to the game
+over the scheme, is the call of `smSchemeOracle (acdSMAD C R G D fun _ => f)` on `q`. -/
+theorem acdAD_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (f : W → AD) (J : Sc → Sc → Prop)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (hs : ACDInv C R J s)
+    (q : SMQuery W) :
+    (smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R) s (q.mapAD f)).map
         (fun x => (SMAns.toScheme x.1, x.2.toScheme)) =
-      smSchemeOracle (acdSM C R G D) ΔFS ΔPCS t ideal s.toScheme q := by
+      smSchemeOracle (acdSMAD C R G D fun _ => f) ΔFS ΔPCS t ideal s.toScheme q := by
   cases q with
   | ratchet p =>
-    simp only [smOracleOf, smSchemeOracle, realRoot, ite_self, PMF.pure_bind,
+    simp only [SMQuery.mapAD, smOracleOf, smSchemeOracle, realRoot, ite_self, PMF.pure_bind,
       SMSt.toScheme_ck_canSend]
     by_cases hc : s.ck.canSend p = true
     · simp only [hc, ite_true, PMF.map_bind, PMF.pure_map]
       refine congrArg _ (funext fun r => ?_)
-      simp only [SMAns.toScheme, acdSM, SMSt.toScheme_opened]
+      simp only [SMAns.toScheme, acdSMAD, SMSt.toScheme_opened]
       rfl
     · simp only [hc, Bool.false_eq_true, ite_false, PMF.pure_map]
       rfl
   | recv p =>
-    simp only [smOracleOf, smSchemeOracle, SMSt.toScheme_ck_canRecv]
+    simp only [SMQuery.mapAD, smOracleOf, smSchemeOracle, SMSt.toScheme_ck_canRecv]
     by_cases hc : s.ck.canRecv p = true
     · simp only [hc, ite_true, PMF.pure_map, SMLoc.received, (hs.recv p hc).1]
-      simp only [SMAns.toScheme, acdSM, SMSt.toScheme_recvY]
+      simp only [SMAns.toScheme, acdSMAD, SMSt.toScheme_recvY]
       rfl
     · simp only [hc, Bool.false_eq_true, ite_false, PMF.pure_map]
       rfl
   | send p m =>
-    simp only [smOracleOf, smSchemeOracle, SMSt.toScheme_ck_t, SMSt.toScheme_ck_st, acdSM]
+    simp only [SMQuery.mapAD, smOracleOf, smSchemeOracle, SMSt.toScheme_ck_t,
+      SMSt.toScheme_ck_st, acdSMAD]
     cases hsnd : s.loc.snd p with
     | none =>
       simp only [Option.map_none, PMF.pure_map]
@@ -536,8 +613,8 @@ theorem acd_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Ke
       · simp only [hc, Bool.false_eq_true, ite_false, PMF.pure_map]
         rfl
   | chall p m =>
-    simp only [smOracleOf, smSchemeOracle, SMSt.toScheme_ck_t, SMSt.toScheme_ck_st, acdSM,
-      SMSt.toScheme_done, challOk]
+    simp only [SMQuery.mapAD, smOracleOf, smSchemeOracle, SMSt.toScheme_ck_t,
+      SMSt.toScheme_ck_st, acdSMAD, SMSt.toScheme_done, challOk]
     cases hsnd : s.loc.snd p with
     | none =>
       simp only [Option.map_none, PMF.pure_map]
@@ -551,9 +628,23 @@ theorem acd_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Ke
       · simp only [hc, Bool.false_eq_true, ite_false, PMF.pure_map]
         rfl
   | corrupt p =>
-    simp only [smOracleOf, smSchemeOracle, PMF.pure_map, SMSt.toScheme_allowCorr]
+    simp only [SMQuery.mapAD, smOracleOf, smSchemeOracle, PMF.pure_map,
+      SMSt.toScheme_allowCorr]
     by_cases hc : ckaAllowCorr ΔFS ΔPCS t s.ck p = true <;>
       simp only [hc, ite_true, Bool.false_eq_true, ite_false] <;> rfl
+
+/-- **The oracle of `sm_corrupt_game` is the oracle over `acdSM`.** Under the invariant
+`ACDInv`, each call of `smOracleOf` at the real root step, with its answer and state carried to
+the game over `acdSM`, is the call of `smSchemeOracle (acdSM C R G D)`: `acdAD_step` at the
+identity on associated data. -/
+theorem acd_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (J : Sc → Sc → Prop) (ΔFS ΔPCS t : ℕ)
+    (ideal : Bool) (s : SMSt Sc Msg RK Sa) (hs : ACDInv C R J s) (q : SMQuery W) :
+    (smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R) s q).map
+        (fun x => (SMAns.toScheme x.1, x.2.toScheme)) =
+      smSchemeOracle (acdSM C R G D) ΔFS ΔPCS t ideal s.toScheme q := by
+  have h := acdAD_step C R G D id J ΔFS ΔPCS t ideal s hs q
+  rwa [SMQuery.mapAD_id, id_eq] at h
 
 omit [Fintype Rand] [Nonempty Rand] [SampleableType W] [SampleableType Ct] [Fintype RK]
   [Nonempty RK] in
@@ -568,9 +659,9 @@ omit [Fintype RK] [Nonempty RK] in
 /-- **The invariant `ACDInv` is kept** by every call of `smOracleOf` at the real root step,
 when the CKA is correct along `J`. -/
 theorem acdInv_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (hs : ACDInv C R J s)
-    (q : SMQuery W) :
+    (q : SMQuery W AD) :
     ∀ x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R) s q).support, ACDInv C R J x.2 := by
   intro x hx
   cases q with
@@ -680,6 +771,42 @@ theorem acdInv_smInit (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa)
     rw [CKAGameSt.canRecv_iff] at hq
     simp [smInit, CKAGameSt.init] at hq
 
+/-- **The corruption game over `acdSMAD` is `sm_corrupt_game` with associated data in `AD`.**
+For a CKA `C` correct along `J`, with an initialisation that is the lift of `initP` and initial
+states related by `J`, the corruption game over the ACD construction whose associated data of
+the AEAD is `f ad` for the associated data `ad` of the message, against an adversary `A`, is the
+game `sm_corrupt_game C R G D` against `A.toSMAD f`. -/
+theorem smCorruptGame_acdAD (C : CKADef Sc Msg Key) [CKACoins C Rand] {J : Sc → Sc → Prop}
+    (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (f : W → AD) (ΔFS ΔPCS : ℕ) (ideal : Bool)
+    (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    smCorruptGame (acdSMAD C R G D fun _ => f) ΔFS ΔPCS ideal A =
+      sm_corrupt_game C R G D ΔFS ΔPCS ideal (A.toSMAD f) := by
+  rw [sm_corrupt_game, sm_corrupt_gameOf_eq_liftPMF C initP hinit]
+  simp only [smCorruptGame, acdSMAD, hinit, sample_eq_liftPMF, SPComp.bind_assoc,
+    SPComp.pure_bind, liftPMF_bind_liftPMF]
+  refine congrArg _ (congrArg _ (funext fun t => ?_))
+  refine PMF.bind_congr_support _ _ _ fun i hi => congrArg _ (funext fun rk => ?_)
+  rw [← SMSt.toScheme_smInit]
+  exact OracleAdv.run_map_fst_mapQueryAnswer_of_map_state_inv_query _ _ (SMQuery.mapAD f)
+    SMAns.toScheme SMSt.toScheme (ACDInv C R J)
+    (fun s d hs => acdInv_step C R G D hJ ΔFS ΔPCS t ideal s hs d)
+    (fun s d hs => acdAD_step C R G D f J ΔFS ΔPCS t ideal s hs d) _ _
+    (acdInv_smInit C R i (hJi i hi) rk)
+
+/-- **The advantage of an adversary against `acdSMAD`** with associated data `f ad` is the
+advantage of the adversary `A.toSMAD f` in `sm_corrupt_game` with associated data in `AD`. -/
+theorem acdSMAD_corruptAdvantage_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    {J : Sc → Sc → Prop} (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc))
+    (hinit : C.init = liftPMF initP) (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (f : W → AD) (ΔFS ΔPCS : ℕ) (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    (acdSMAD C R G D fun _ => f).corruptAdvantage ΔFS ΔPCS A =
+      SM_Corrupt_Advantage C R G D ΔFS ΔPCS (A.toSMAD f) := by
+  simp only [SMScheme.corruptAdvantage, SM_Corrupt_Advantage,
+    smCorruptGame_acdAD C hJ initP hinit hJi]
+
 /-- **The corruption game over `acdSM` is `sm_corrupt_game`.** For a CKA `C` correct along `J`,
 with an initialisation that is the lift of `initP` and initial states related by `J`, the
 corruption game over the ACD construction against an adversary `A` is the game
@@ -691,16 +818,8 @@ theorem smCorruptGame_acd (C : CKADef Sc Msg Key) [CKACoins C Rand] {J : Sc → 
     (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     smCorruptGame (acdSM C R G D) ΔFS ΔPCS ideal A =
       sm_corrupt_game C R G D ΔFS ΔPCS ideal A.toSM := by
-  rw [sm_corrupt_game, sm_corrupt_gameOf_eq_liftPMF C initP hinit]
-  simp only [smCorruptGame, acdSM, hinit, sample_eq_liftPMF, SPComp.bind_assoc,
-    SPComp.pure_bind, liftPMF_bind_liftPMF]
-  refine congrArg _ (congrArg _ (funext fun t => ?_))
-  refine PMF.bind_congr_support _ _ _ fun i hi => congrArg _ (funext fun rk => ?_)
-  rw [← SMSt.toScheme_smInit]
-  exact OracleAdv.run_map_fst_mapQueryAnswer_of_map_state_inv _ _ SMAns.toScheme
-    SMSt.toScheme (ACDInv C R J) (fun s d hs => acdInv_step C R G D hJ ΔFS ΔPCS t ideal s hs d)
-    (fun s d hs => acd_step C R G D J ΔFS ΔPCS t ideal s hs d) _ _
-    (acdInv_smInit C R i (hJi i hi) rk)
+  rw [← SMSchemeAdv.toSMAD_id]
+  exact smCorruptGame_acdAD C hJ initP hinit hJi R G D id ΔFS ΔPCS ideal A
 
 /-- **The advantage of an adversary against `acdSM`** is the advantage of the relabelled
 adversary in `sm_corrupt_game`. -/
@@ -735,7 +854,7 @@ theorem acd_ad_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK ×
   | send p m => exact hmap _
   | chall p m =>
     simp only [smAdOracle, smSchemeAdOracle, SMSt.toScheme_ck_t, SMSt.toScheme_ck_st, acdSM,
-      SMSt.toScheme_done]
+      acdSMAD, SMSt.toScheme_done]
     cases hsnd : x.1.loc.snd p with
     | none =>
       simp only [Option.map_none, PMF.pure_map]
@@ -751,7 +870,8 @@ theorem acd_ad_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK ×
       · simp only [hc, ite_false, PMF.pure_map]
         rfl
   | corrupt p =>
-    simp only [smAdOracle, smSchemeAdOracle, SMSt.toScheme_ck_t, SMSt.toScheme_ck_st, acdSM]
+    simp only [smAdOracle, smSchemeAdOracle, SMSt.toScheme_ck_t, SMSt.toScheme_ck_st, acdSM,
+      acdSMAD]
     cases x.2.cE with
     | none => simp only [PMF.pure_map, SMAns.toScheme]; rfl
     | some e =>
@@ -804,7 +924,7 @@ theorem smAdaptiveGame_acd (C : CKADef Sc Msg Key) [CKACoins C Rand] {J : Sc →
     (A : Msg → OracleAdv (SMQuery W) (SMSchemeAns Msg Ct (SMPartySt Sc RK Sa)) Bool) :
     smAdaptiveGame (acdSM C R G D) ΔFS ΔPCS ideal A =
       sm_adaptive_game C R G D ΔFS ΔPCS ideal fun T => (A T).mapQueryAnswer id SMAns.toScheme := by
-  simp only [smAdaptiveGame, sm_adaptive_game, acdSM, hinit, sample_eq_liftPMF,
+  simp only [smAdaptiveGame, sm_adaptive_game, acdSM, acdSMAD, hinit, sample_eq_liftPMF,
     SPComp.bind_assoc, SPComp.pure_bind, liftPMF_bind_liftPMF]
   refine congrArg _ (PMF.bind_congr_support _ _ _ fun i hi => congrArg _ (funext fun rk => ?_))
   have he : (SMSchemeSt.init (i.1, (⟨i.2.1, rk, none, none⟩ : SMPartySt Sc RK Sa),
@@ -851,6 +971,25 @@ theorem acdSM_corruptAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
         ∑ b : Bool, PRFPRNG_Advantage R (smcRootRed C R G D ΔFS ΔPCS b initP A.toSM) +
         FSAEAD_Corrupt_Advantage G D (smcFSRed C R G D ΔFS ΔPCS initP A.toSM) := by
   rw [acdSM_corruptAdvantage_eq C hJ initP hinit hJi]
+  exact sm_corrupt_advantage_le C hS initP hinit R G D hFS hPCS _
+
+/-- **The corruption game over `acdSMAD` from CKA, PRF-PRNG and FS-AEAD security**, for the
+AEAD `D : AEADDef W Ct AD` whose associated data is `f ad` for the associated data `ad` of the
+message. For a CKA correct along `J` with a sound explicit-randomness sending algorithm, and
+`2 ≤ ΔFS`, `1 ≤ ΔPCS`, the advantage of every adversary `A` against the ACD construction is the
+bound of `sm_corrupt_advantage_le` at the relabelled adversary `A.toSMAD f`, whose FS-AEAD term
+is the corruption game of `D` with associated data in `AD`. -/
+theorem acdSMAD_corruptAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (f : W → AD) {ΔFS ΔPCS : ℕ}
+    (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    (acdSMAD C R G D fun _ => f).corruptAdvantage ΔFS ΔPCS A ≤
+      ∑ b : Bool, CKA_Corrupt_Advantage C ΔFS ΔPCS (smcCKARed R G D b (A.toSMAD f)) +
+        ∑ b : Bool, PRFPRNG_Advantage R (smcRootRed C R G D ΔFS ΔPCS b initP (A.toSMAD f)) +
+        FSAEAD_Corrupt_Advantage G D (smcFSRed C R G D ΔFS ΔPCS initP (A.toSMAD f)) := by
+  rw [acdSMAD_corruptAdvantage_eq C hJ initP hinit hJi]
   exact sm_corrupt_advantage_le C hS initP hinit R G D hFS hPCS _
 
 /-- **The game over `acdSM` with an adaptive challenge epoch** from CKA, PRF-PRNG and FS-AEAD

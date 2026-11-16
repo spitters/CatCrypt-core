@@ -8,7 +8,8 @@ module
 public import CatCryptCore.Consensus.UC.Chain
 public import CatCryptCore.Consensus.PoSNSB.Prob.Script
 public import CatCryptCore.Crypto.UCTransparentAdv
-public import CatCryptCore.ForMathlib.PMFUniform
+import CatCryptCore.ForMathlib.PMFUniform
+import CatCryptCore.NonUniform.UnaryRules
 
 @[expose] public section
 set_option autoImplicit false

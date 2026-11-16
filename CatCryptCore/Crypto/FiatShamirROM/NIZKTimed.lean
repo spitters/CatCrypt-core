@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.FiatShamirROM.NIZK
-public import CatCryptCore.Container.DNCert
 
 /-!
 # The forking extractor of the strong Fiat–Shamir transform as a Diller–Nahm composite

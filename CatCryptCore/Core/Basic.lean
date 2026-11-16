@@ -5,7 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Data.Fintype.Basic
+import Mathlib.Data.Finset.Attr
+import Mathlib.Tactic.SetLike
+import Mathlib.Tactic.Finiteness.Attr
 
 /-!
 # Basic definitions for CatCrypt

@@ -48,6 +48,8 @@ of `CatCryptCore.Crypto.UCFeedbackLaws`.
   steps on an invariant, an unused state component, renamed states.
 * `view_eq_of_stepMap_on`: equal views from a step map on an invariant, in the factored form
   of the invariant.
+* `prBad_eq_of_stepMap`, `prBad_eq_of_stepMap_on`: equal probabilities of bad events from a
+  step map, and from a step map on an invariant through the restriction `restrictInv`.
 * `Sys.DelayedDraw.traceEq`: two delayed draws against the same eager systems are trace
   equivalent (delayed draws: `CatCryptCore.Crypto.UCDelayedDraw`).
 * `KeyedSys.traceEq_lazy`: moving the draw of a key to its first use.
@@ -230,6 +232,44 @@ theorem view_eq_of_stepMap_on (R : Sys τ E O) (I : Sys υ E O) (Inv : τ → Pr
     (Z : Strat ζ E O) : view R Z = view I Z :=
   Sys.traceEq_iff_view_eq.mp (Sys.traceEq_iff_realizes_zero.mpr
     (realizes_zero_of_stepMap_on R I Inv f hInv hinit hpres hstep)) _ Z
+
+/-- Two systems related by a state map `f` that sends the initial state to the initial state and
+commutes with single steps have the same probability of bad events `bR` and `bI` when `bR` is
+`bI` after `f`. -/
+theorem prBad_eq_of_stepMap (R : Sys τ E O) (I : Sys υ E O) (f : τ → υ) (bR : τ → Bool)
+    (bI : υ → Bool) (hinit : f R.init = I.init)
+    (hstep : ∀ t e, SPComp.map (fun p => (f p.1, p.2)) (R.step t e) = I.step (f t) e)
+    (hbad : ∀ t, bI (f t) = bR t) (Z : Env (Strat ζ E O) ζ) :
+    prBad R bR Z = prBad I bI Z := by
+  unfold prBad run
+  rw [← hinit, hbad, ← loop_map R I f bR bI Z.input hstep hbad _
+    (Z.input.init, R.init, bR R.init)]
+  simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+
+/-- **Bad events along a state map on an invariant.** If a state map `f` from `R` to `I` sends
+the initial state to the initial state and commutes with single steps from the states of an
+invariant `Inv`, which holds initially and at every state a step from a state satisfying it
+reaches, and the bad event `bR` of `R` is the bad event `bI` of `I` after `f` on the invariant,
+then the two bad events have the same probability. -/
+theorem prBad_eq_of_stepMap_on (R : Sys τ E O) (I : Sys υ E O) (Inv : τ → Prop) (f : τ → υ)
+    (bR : τ → Bool) (bI : υ → Bool) (hInv : Inv R.init) (hinit : f R.init = I.init)
+    (hbad : ∀ t, Inv t → bR t = bI (f t))
+    (hpres : ∀ t e, Inv t → ∃ (α : Type) (c : SPComp α) (g : α → τ × O),
+      R.step t e = SPComp.bind c (fun a => SPComp.pure (g a)) ∧ ∀ a, Inv (g a).1)
+    (hstep : ∀ t e, Inv t → SPComp.map (fun p => (f p.1, p.2)) (R.step t e) = I.step (f t) e)
+    (Z : Env (Strat ζ E O) ζ) : prBad R bR Z = prBad I bI Z := by
+  have hnorm : ∀ (t : {t // Inv t}) e,
+      SPComp.map (fun p => (p.1.1, p.2)) ((restrictInv R Inv hInv).step t e) = R.step t.1 e := by
+    intro t e
+    obtain ⟨α, c, g, hc, hg⟩ := hpres t.1 e t.2
+    simp only [restrictInv, hc, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, liftInv,
+      dite_eq_left (hg _)]
+  rw [← prBad_eq_of_stepMap (restrictInv R Inv hInv) R Subtype.val (fun t => bR t.1) bR rfl
+      hnorm fun _ => rfl,
+    prBad_eq_of_stepMap (restrictInv R Inv hInv) I (fun t => f t.1) (fun t => bR t.1) bI hinit
+      (fun t e => by rw [← hstep t.1 e t.2, ← hnorm t e]; simp only [SPComp.map,
+        SPComp.bind_assoc, SPComp.pure_bind])
+      fun t => (hbad t.1 t.2).symm]
 
 end CatCrypt.Crypto.UCTransparent
 

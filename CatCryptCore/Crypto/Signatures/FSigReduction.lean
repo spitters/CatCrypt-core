@@ -7,7 +7,8 @@ module
 
 public import CatCryptCore.Crypto.Signatures.FSigSys
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
-public import CatCryptCore.Crypto.UCOracleGame
+import CatCryptCore.Crypto.UCOracleGame
+public import CatCryptCore.Crypto.OracleSimulation
 
 /-!
 # The signature functionality up to the EUF-CMA advantage of a forger

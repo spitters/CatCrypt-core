@@ -7,9 +7,8 @@ module
 
 public import CatCryptCore.Crypto.MultiQueryPRF
 public import CatCryptCore.Crypto.SDistrLift
-public import CatCryptCore.XDijkstra.Rel.XRelMvcgen
+import CatCryptCore.XDijkstra.Rel.XRelMvcgen
 public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl
-public import CatCryptCore.XDijkstra.Rel.XRelQ0
 
 
 @[expose] public section
