@@ -1,0 +1,8 @@
+# Generated umbrella and collection modules: a header, import lines and a trailer.
+# `catcrypt-umbrella` names an opt-in local merge driver that merges the import lines three ways
+# as sets and writes them in the form of the umbrella generator. Where the driver is not
+# registered (on GitHub, in another clone) git uses its ordinary text merge.
+/CatCryptCore.lean merge=catcrypt-umbrella
+/CatCryptCore/Examples.lean merge=catcrypt-umbrella
+/CatCryptCore/ForMathlib.lean merge=catcrypt-umbrella
+/CatCryptCore/TimedCompanions.lean merge=catcrypt-umbrella
