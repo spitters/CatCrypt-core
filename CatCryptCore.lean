@@ -749,7 +749,6 @@ public import CatCryptCore.Crypto.KVAC.MacNHelpAGMAssembly
 public import CatCryptCore.Crypto.Messaging.SMIDAuth
 public import CatCryptCore.Crypto.Messaging.SMIDAuthFS
 public import CatCryptCore.Crypto.OracleAdversaryStateMap
-public import CatCryptCore.TimedCompanions
 
 -- Quantum foundations: instruments, channels, trace norm, tensor products
 public import CatCryptCore.Quantum.Instrument
