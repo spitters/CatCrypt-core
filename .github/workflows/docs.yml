@@ -70,6 +70,7 @@ jobs:
   build:
     needs: blueprint
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
@@ -84,6 +85,16 @@ jobs:
             /usr/local/lib/android /usr/local/share/boost /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force || true
           df -h /
+
+      - name: Add swap
+        # Lake runs one doc-gen4 process per core; on the 16 GB runner their peaks
+        # together exceed memory ("resource exhausted ... not enough memory").
+        run: |
+          sudo fallocate -l 8G /swapfile-docs
+          sudo chmod 600 /swapfile-docs
+          sudo mkswap /swapfile-docs
+          sudo swapon /swapfile-docs
+          free -h
 
       - name: Install elan
         run: |
@@ -116,6 +127,16 @@ jobs:
           lake exe cache get || true   # prebuilt Mathlib oleans, so extraction doesn't rebuild it
           lake build CatCryptCore:docs
 
+      - name: Build the manual under /manual/
+        # The verso manual (docs/) depends on verso only, not on the library.
+        run: |
+          cd docs
+          lake update
+          lake build
+          lake exe core-manual --output _out
+          mkdir -p ../docbuild/.lake/build/doc/manual
+          cp -r _out/html-multi/. ../docbuild/.lake/build/doc/manual/
+
       - name: Add the blueprint under /blueprint/
         uses: actions/download-artifact@v4
         with:
@@ -132,7 +153,7 @@ jobs:
 
       - name: Keep the blueprint out of the docbuild cache
         if: always()
-        run: rm -rf docbuild/.lake/build/doc/blueprint
+        run: rm -rf docbuild/.lake/build/doc/blueprint docbuild/.lake/build/doc/manual
 
   deploy:
     needs: build
