@@ -38,6 +38,11 @@ secure-messaging proofs.
 
 set_option autoImplicit false
 
+/- The arms run under heartbeat budgets only, so that the tests do not depend on the speed of
+the machine. -/
+set_option catcrypt_auto.maxMillis 0
+set_option catcrypt_auto.totalMillis 0
+
 section Generic
 
 open CatCrypt.Crypto
