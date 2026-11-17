@@ -6,6 +6,19 @@ distance `ucSdist` takes the supremum over all distinguishers; the computational
 parameter, instantiate it with complexity measures, and prove the UC equivalences at a
 bounded class.
 
+The other documents on cost and complexity:
+
+- [`ConcreteSecurity.md`](ConcreteSecurity.md): concrete reductions, and the time certificate
+  that bounds the time of each reduction and simulator by that of the adversary.
+- [`Tactics/README.md`](../Tactics/README.md#time-certificates): the commands that derive time
+  certificates, and the cost model they use.
+- [`Complexity/D/README.md`](../Complexity/D/README.md): the deep call-by-value language D with
+  intrinsic cost, into which Lean definitions are reflected to price them.
+- [`Container/README.md`](../Container/README.md): costed programs as morphisms of the
+  Diller–Nahm category, extractors as realizers, expected cost of rewinding, and bound
+  extraction from classical proofs.
+- The chapter "Time certificates" of the core manual (`docs/CoreManual.lean`).
+
 ## Contributions
 
 1. **Computational distance as a definition.** `ucCdist` is the supremum of per-distinguisher
@@ -179,12 +192,11 @@ and no theorem of the module turns such a certificate into a `TimeReduction`.
   (ESOP 2020, Def. 1.2), whose setting has no probabilities.
 - The concrete constant-time predicate is the observational constant-time condition of
   Barthe et al. (POPL 2020, Def. 3.1) with every input secret.
-- The ordered monad algebras of Loom (Gladshtein et al., POPL 2026, Def. 3.2) are, by
-  `orderedMonadAlgebra_laws_iff`, the order-congruent Eilenberg–Moore algebras of Hasuo
-  (TCS 2015, Def. 3.3 and Prop. 3.4) and the Pos-relative algebras of Hino, Kobayashi,
-  Hasuo and Jacobs (LICS 2016, Def. 4.2 and Prop. 4.12); Maillard et al. (ICFP 2019, §4.4)
-  relate such algebras to effect observations. Loom cites Maillard et al. but not Hasuo or
-  Hino et al.; the Lean theorem makes the identification explicit. The bind law of item 7
+- The expectation algebra of item 7 is an order-congruent Eilenberg–Moore algebra in the sense
+  of Hasuo (TCS 2015, Def. 3.3 and Prop. 3.4), whose weakest-precondition semantics it
+  instantiates. The interface `OrderedMonadAlgebra` follows the ordered monad algebras of Loom
+  (Gladshtein et al., POPL 2026, Def. 3.2); `orderedMonadAlgebra_laws_iff` proves that their
+  laws characterize Hasuo's algebras. The bind law of item 7
   corresponds to the sequential rule of the ert calculus (Kaminski et al., J. ACM 2018,
   Table 1 and Thm. 8.1), and the retry bound to the extractor construction of Bellare and
   Goldreich (CRYPTO 1992, §6).
@@ -209,10 +221,12 @@ and no theorem of the module turns such a certificate into a `TimeReduction`.
 - Mihir Bellare, Oded Goldreich. On Defining Proofs of Knowledge. CRYPTO 1992.
 - Vladimir Gladshtein, George Pîrlea, Qiyuan Zhao, Vitaly Kurin, Ilya Sergey. Foundational
   Multi-Modal Program Verifiers. POPL 2026.
-- Wataru Hino, Hiroki Kobayashi, Ichiro Hasuo, Bart Jacobs. Healthiness from Duality.
-  LICS 2016.
-- Kenji Maillard, Danel Ahman, Robert Atkey, Guido Martínez, Cătălin Hriţcu, Exequiel Rivas,
-  Éric Tanter. Dijkstra Monads for All. ICFP 2019.
+- Ueli Maurer. Constructive Cryptography – A New Paradigm for Security Definitions and
+  Proofs. TOSCA 2011, LNCS 6993.
+- Yannick Forster, Fabian Kunze. A Certifying Extraction with Time Bounds from Coq to
+  Call-By-Value λ-Calculus. ITP 2019, LIPIcs 141.
+- Yannick Forster, Fabian Kunze, Marc Roth. The Weak Call-by-Value λ-Calculus Is Reasonable
+  for Both Time and Space. POPL 2020, PACMPL 4.
 - Adam Petcher, Greg Morrisett. The Foundational Cryptography Framework. POST 2015.
 - Manuel Barbosa, Gilles Barthe, Benjamin Grégoire, Adrien Koutsos, Pierre-Yves Strub.
   Mechanized Proofs of Adversarial Complexity and Application to Universal Composability.
