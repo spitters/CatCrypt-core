@@ -451,6 +451,14 @@ inductive SMQuery (W : Type) (AD : Type := W) where
   /-- The full state of the party is returned, if the corruption gate allows it. -/
   | corrupt (p : CKAParty)
 
+/-- The party of a query. -/
+def SMQuery.party {W AD : Type} : SMQuery W AD → CKAParty
+  | .ratchet p => p
+  | .recv p => p
+  | .send p _ => p
+  | .chall p _ => p
+  | .corrupt p => p
+
 /-- The answers of the secure-messaging oracles. -/
 inductive SMAns (Sc Msg RK Sa Ct : Type) where
   /-- A refused query, or a receive. -/

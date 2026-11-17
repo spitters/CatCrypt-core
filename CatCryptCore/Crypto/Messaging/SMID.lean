@@ -167,14 +167,6 @@ structure SMIDScheme (St Pub Rand W Ct Leak Hdr K : Type)
   /-- `DECRYPT(mk, c, CONCAT(ad, h))`. -/
   decrypt : K → Hdr → W → Ct → Option W
 
-/-- The party of a query of the corruption game. -/
-def SMQuery.party {W : Type} : SMQuery W → CKAParty
-  | .ratchet p => p
-  | .recv p => p
-  | .send p _ => p
-  | .chall p _ => p
-  | .corrupt p => p
-
 /-- The queries of the game with immediate decryption: a query of the corruption game, or the
 delivery of a header `h`, associated data `ad` and a ciphertext `c` to party `p`. -/
 inductive SMIDQuery (W Hdr Ct : Type) where
