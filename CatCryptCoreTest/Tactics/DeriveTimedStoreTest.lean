@@ -9,6 +9,7 @@ import CatCryptCore.Tactics.DeriveTimed
 import CatCryptCore.Tactics.DeriveCost
 public import CatCryptCore.Tactics.DeriveTimed.Basic
 public import CatCryptCore.Tactics.StdCosts
+public import CatCryptCore.Core.SPTree
 
 /-!
 # Tests for stores in data (rule (p))
@@ -38,7 +39,7 @@ set_option derive_timed.storeData true
 def mkStore (k : ℕ) : SPTree (ℕ × (Fin 4 → ℕ)) :=
   SPTree.ret (k, fun j => j.val + k)
 
-derive_timedmkStore
+derive_timed mkStore
 
 /-- The store is tabulated at its four points, one addition each (`ptab`). -/
 example (k : ℕ) : (mkStore.timed k).1 = ∑ _j : Fin 4, 1 := rfl
@@ -50,7 +51,7 @@ def build : ℕ → ℕ × (Fin 4 → ℕ)
   | 0 => (0, fun _ => 0)
   | n + 1 => (n + 1, Function.update (build n).2 ⟨n % 4, Nat.mod_lt _ (by decide)⟩ n)
 
-derive_costbuild
+derive_cost build
 
 /-- The base case: the match and the constant store tabulated at its four points. -/
 example : build.timedCost 0 = 1 + ∑ _j : Fin 4, 0 := by
@@ -65,7 +66,7 @@ example (n : ℕ) : build.timedCost (n + 1) = build.timedCost n + 5 := by
 point. -/
 def parStore (f : Fin 2 → ℕ) : SPTree (ℕ × (Fin 2 → ℕ)) := SPTree.ret (0, f)
 
-derive_timedparStore
+derive_timed parStore
 
 example (f fCost : Fin 2 → ℕ) : (parStore.timed f fCost).1 = ∑ j : Fin 2, (1 + fCost j) := rfl
 
@@ -74,7 +75,7 @@ def letStore (q : ℕ) : SPTree (ℕ × (Fin 2 → ℕ)) :=
   let g := fun j : Fin 2 => q * j.val
   SPTree.ret (g 1, g)
 
-derive_timedletStore
+derive_timed letStore
 
 /-- The closure is tabulated at the store, one multiplication at each point, and applied once. -/
 example (q : ℕ) : (letStore.timed q).1 = ∑ _j : Fin 2, 1 + 1 := rfl
@@ -84,7 +85,7 @@ example (q : ℕ) : (letStore.timed q).1 = ∑ _j : Fin 2, 1 + 1 := rfl
 /-- The entry `i` of the store of `s`. -/
 def rd (s : ℕ × (Fin 4 → ℕ)) (i : Fin 4) : SPTree ℕ := SPTree.ret (s.2 i)
 
-derive_timedrd
+derive_timed rd
 
 /-- One read (`sget`); the store has no cost companion. -/
 example (s : ℕ × (Fin 4 → ℕ)) (i : Fin 4) : (rd.timed s i).1 = 1 := rfl
@@ -97,12 +98,12 @@ example (s : ℕ × (Fin 4 → ℕ)) (i : Fin 4) : (rd.timed s i).2.erase = rd s
 /-- The sum of the three entries of `v`. -/
 def sum3 (v : Fin 3 → ℕ) : ℕ := v 0 + v 1 + v 2
 
-derive_costsum3
+derive_cost sum3
 
 /-- The store of `s` passed to `sum3`: its companion is zero. -/
 def useStore (s : ℕ × (Fin 3 → ℕ)) : SPTree ℕ := SPTree.ret (sum3 s.2)
 
-derive_timeduseStore
+derive_timed useStore
 
 /-- The call of `sum3` with the companion zero: each of its reads costs one unit. -/
 example (s : ℕ × (Fin 3 → ℕ)) :
@@ -140,6 +141,6 @@ error: derive_timed: a function bound in data: the field
 finite, so it is not a store (rule (p))
 -/
 #guard_msgs (whitespace := lax) in
-derive_timedcellRed
+derive_timed cellRed
 
 end CatCrypt.Tactics.DeriveTimedStoreTest

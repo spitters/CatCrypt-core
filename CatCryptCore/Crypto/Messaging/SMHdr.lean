@@ -91,14 +91,6 @@ structure SMHdrSt (Sc RK Sa Msg : Type) where
   /-- The header data. -/
   hd : SMHdrData Msg
 
-/-- The party of a query. -/
-def SMQuery.party {W AD : Type} : SMQuery W AD → CKAParty
-  | .ratchet p => p
-  | .recv p => p
-  | .send p _ => p
-  | .chall p _ => p
-  | .corrupt p => p
-
 /-- The game state over the construction with headers from a game state over the ACD
 construction and the header data `tr` of the parties. -/
 def SMHdrSt.join {Sc RK Sa Msg : Type} (tr : CKAParty → SMHdrData Msg)
