@@ -86,10 +86,13 @@ jobs:
           sudo docker image prune --all --force || true
           df -h /
 
-      - name: Add swap
-        # Lake runs one doc-gen4 process per core; on the 16 GB runner their peaks
-        # together exceed memory ("resource exhausted ... not enough memory").
+      - name: Add swap and allow overcommit
+        # When doc generation starts, Lake (holding a graph of about 10,000 jobs) forks
+        # processes such as git and lean; under the kernel's heuristic overcommit these
+        # forks fail with ENOMEM ("resource exhausted ... not enough memory") although
+        # memory is free. Mode 1 lets them through; the swap covers the peaks.
         run: |
+          sudo sysctl -w vm.overcommit_memory=1
           sudo fallocate -l 8G /swapfile-docs
           sudo chmod 600 /swapfile-docs
           sudo mkswap /swapfile-docs
