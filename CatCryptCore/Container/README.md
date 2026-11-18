@@ -47,8 +47,8 @@ expected cost of rewinding.
   (`wuseCount_retryCollect`).
 - [`ExpectedDNOp`](ExpectedDNOp.lean), [`DNLogicForking`](DNLogicForking.lean): the operational
   retry loop and threshold extractor; the rewinding Fiat–Shamir extractor, sound, with expected
-  cost at most its certified time per fork divided by the forking bound
-  (`forkExtractor_timed`).
+  cost at most its certified time per fork plus the price of the witness check, divided by the
+  forking bound (`forkExtractor_timed`).
 
 ## Classical logic and proof mining
 
