@@ -172,6 +172,7 @@ public import CatCryptCore.XDijkstra.Rel.XProbUCBaseline
 public import CatCryptCore.Category.XCategoricalModelRel
 public import CatCryptCore.Category.XCategoricalModelExt
 public import CatCryptCore.Relational.Approx
+public import CatCryptCore.Relational.ApproxPointMass
 public import CatCryptCore.Relational.QuantCoupling
 public import CatCryptCore.Relational.RelationalQ0
 public import CatCryptCore.Crypto.UCMonad.SDistrInstance
