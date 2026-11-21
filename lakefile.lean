@@ -54,6 +54,11 @@ require QuantumFoundations from git
 require PolyFun from git
   "https://github.com/Verified-zkEVM/PolyFun" @ "afb9c1e57b4eba18e074eb7002bc512a95308b87"
 
+-- refinement-wp: the refinement weakest precondition `wrp` over `Std.WP`, which
+-- `Refinement/RRelWRP.lean` relates to `RRelPT`.
+require «refinement-wp» from git
+  "https://github.com/spitters/refinement-wp" @ "86bfb5d6d49ee09edf290cd45c98f7be7373bda9"
+
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.
 require mathlib from git

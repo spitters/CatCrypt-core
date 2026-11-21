@@ -28,6 +28,18 @@
       "url": "https://github.com/spitters/hax-lean.git"
     },
     {
+      "configFile": "lakefile.toml",
+      "inherited": false,
+      "inputRev": "86bfb5d6d49ee09edf290cd45c98f7be7373bda9",
+      "manifestFile": "lake-manifest.json",
+      "name": "«refinement-wp»",
+      "rev": "86bfb5d6d49ee09edf290cd45c98f7be7373bda9",
+      "scope": "",
+      "subDir": null,
+      "type": "git",
+      "url": "https://github.com/spitters/refinement-wp"
+    },
+    {
       "configFile": "lakefile.lean",
       "inherited": false,
       "inputRev": "lean-upgrade-4.35",

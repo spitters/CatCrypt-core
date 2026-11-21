@@ -129,6 +129,8 @@ public import CatCryptCore.Category.XCategoricalModel
 public import CatCryptCore.Refinement.RRel
 public import CatCryptCore.Refinement.RRelLoop
 public import CatCryptCore.Refinement.Programs
+public import CatCryptCore.Refinement.RRelWRP
+public import CatCryptCore.Refinement.RRelWRPXDijkstra
 public import CatCryptCore.XDijkstra.XDijkstraAll
 public import CatCryptCore.XDijkstra.XMvcgenControl
 public import CatCryptCore.XDijkstra.XMvcgenReg
