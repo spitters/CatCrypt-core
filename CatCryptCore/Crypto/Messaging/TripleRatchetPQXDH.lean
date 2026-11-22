@@ -30,7 +30,9 @@ behind a forwarding simulator `π` with the bound `ε`, followed by the ratchet 
 `smCorruptLayer M ini Sch t n ΔFS ΔPCS`, realizes `F_SM M ini Sch t n ΔFS ΔPCS` behind
 `chanSim π F` with the bound `fsmBoundOf ε π F`: `ε` at the environment reduced through the
 ratchet layer, and per key of the run the corruption advantages of the reductions `smHopRed` and
-the probability that the key is read twice.
+the probability that the key is read twice. The last term is `1` when both partners of an
+unexposed session always read their key, and the bound is then at least `1`: each `getKey` runs
+a session of its own, and the partners share no channel.
 
 **The PQXDH instance.** `pqxdh_realizes_FSM` is that composition at the PQXDH square
 `pqxdh_realizesSim_gapDH` with the forwarding data `pqFwd` of `SignalStackPQXDH`, and
@@ -108,7 +110,7 @@ noncomputable def fsmBoundOf (ε : (ζ : Type) → Env (Strat ζ (HEv ⊕ AE) (H
 /-- **A key exchange followed by the ratchet layer realizes secure messaging with corruption**
 (genuine UC).
 
-*Ideal functionality.* `F_SM M ini Sch t n ΔFS ΔPCS`: the multi-session secure channel of
+*Ideal functionality.* `F_SM M ini Sch t n ΔFS ΔPCS`: the multi-session functionality over
 `F_AKE` with unlinked delivery whose completed sessions have the ideal view of the schedule
 `Sch` and whose exposed sessions have the real view under the adversary key.
 

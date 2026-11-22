@@ -41,9 +41,10 @@ Hop 5 replaces `KDF(r1, r2, r3, r4, r5)` on uniform inputs by a uniform key; its
 `kdfReduction` draws the key pairs, the KEM seed and message, and runs `A` on the challenge key.
 
 Each hop is an equality of advantages, and the bound is the triangle inequality along the chain.
-The bound is a sum over both the KEM and the Diffie-Hellman hops; the statement in which either
-the KEM or the Diffie-Hellman route alone bounds a session, with the KDF as a random oracle, is
-`CatCryptCore.Crypto.AKE.PQXDHSquareKEM` (`pqxdh_realizesSim_min`).
+The bound is a sum over both the KEM and the Diffie-Hellman hops. With the KDF as a random
+oracle, `CatCryptCore.Crypto.AKE.PQXDHSquareKEM` bounds the bad event at matched sessions by the
+KEM route alone (`partBad_kem_le`); its bound of the square (`pqxdh_realizesSim_min`) is the gap
+Diffie-Hellman sum plus the minimum of that sum and the KEM bound.
 
 ## Main results
 

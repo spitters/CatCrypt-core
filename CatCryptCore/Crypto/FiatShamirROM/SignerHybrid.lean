@@ -2374,8 +2374,9 @@ theorem att_flag_sign_term_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞}
       List.append_nil]
   rw [hT]
   refine (run_att_addRejs_flag_le D xw _ _ T₀ false).trans ?_
-  refine (MeasureTheory.measure_mono (fun y hy => hy)).trans
-    ((MeasureTheory.measure_union_le _ _).trans (add_le_add ?_ ?_))
+  refine (MeasureTheory.measure_mono (fun y hy => hy)).trans ?_
+  rw [Set.ofPred_or]
+  refine le_trans (MeasureTheory.measure_union_le _ _) (add_le_add ?_ ?_)
   · refine (ih _ T₀ (by rw [rej_traceOut, ht])).trans
       (Finset.sum_le_sum fun c _ => mul_le_mul_of_nonneg_right ?_ zero_le)
     have h1 : κ.count T₀.keys c ≤ κ.count t.keys c +

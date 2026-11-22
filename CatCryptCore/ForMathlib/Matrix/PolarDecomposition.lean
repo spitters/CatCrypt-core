@@ -122,16 +122,17 @@ theorem exists_eq_mul_sqrt_conjTranspose_mul_self (C : Matrix m n ℂ) :
   refine ⟨_, polar_of_factor C (Matrix.of fun i k => a k i)
     (Matrix.of fun j k => star (b k j)) s (fun k => (hs k).le) ?_ ?_ ?_⟩
   · ext k l
-    simpa [mul_apply, dotProduct, conjTranspose_apply, one_apply] using ha k l
+    simpa [Matrix.mul_apply, dotProduct, conjTranspose_apply, Matrix.one_apply] using ha k l
   · ext k l
     have := hb l k
     simp only [dotProduct, Pi.star_apply] at this
-    simp only [mul_apply, conjTranspose_apply, one_apply, of_apply, star_star]
+    simp only [Matrix.mul_apply, conjTranspose_apply, Matrix.one_apply, of_apply, star_star]
     simp_rw [mul_comm (b k _)]
     rw [this]
     grind
   · ext i j
-    simp only [mul_apply, diagonal_apply, conjTranspose_apply, hM i j, of_apply, star_star]
+    simp only [Matrix.mul_apply, diagonal_apply, conjTranspose_apply, hM i j, of_apply,
+      star_star]
     simp only [mul_ite, mul_zero, Finset.sum_ite_eq', Finset.mem_univ, ↓reduceIte]
     exact Finset.sum_congr rfl fun k _ => by ring
 

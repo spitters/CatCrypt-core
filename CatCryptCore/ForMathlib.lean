@@ -18,6 +18,7 @@ public import CatCryptCore.ForMathlib.PMFUniformDefs
 public import CatCryptCore.ForMathlib.PMFOption
 public import CatCryptCore.ForMathlib.PMFOuterMeasure
 public import CatCryptCore.ForMathlib.ListLength
+public import CatCryptCore.ForMathlib.TsumExchange
 public import CatCryptCore.ForMathlib.UInt8Bytes
 public import CatCryptCore.ForMathlib.EmbeddingFinSucc
 public import CatCryptCore.ForMathlib.CategoryTheory.GrothendieckCocartesian
@@ -31,7 +32,15 @@ public import CatCryptCore.ForMathlib.ENNRealNatCast
 public import CatCryptCore.ForMathlib.GeometricMean
 public import CatCryptCore.ForMathlib.LagrangeAtZero
 public import CatCryptCore.ForMathlib.LawvereMetric
+public import CatCryptCore.ForMathlib.ExpTaylorTail
 public import CatCryptCore.ForMathlib.LieTrotter
+public import CatCryptCore.ForMathlib.RayleighRitz
+public import CatCryptCore.ForMathlib.TotientBound
+public import CatCryptCore.ForMathlib.SolovayKitaev.GroupCommutator
+public import CatCryptCore.ForMathlib.SolovayKitaev.HTDense
+public import CatCryptCore.ForMathlib.SolovayKitaev.Recursion
+public import CatCryptCore.ForMathlib.SolovayKitaev.SU2
+public import CatCryptCore.ForMathlib.ZModTwoSpan
 public import CatCryptCore.ForMathlib.LinearMapMatrix
 public import CatCryptCore.ForMathlib.Matrix.ConeDuality
 public import CatCryptCore.ForMathlib.Matrix.EffectOverlap
@@ -44,8 +53,11 @@ public import CatCryptCore.ForMathlib.Matrix.TraceNorm
 public import CatCryptCore.ForMathlib.Matrix.KroneckerReindex
 public import CatCryptCore.ForMathlib.Matrix.StarProjectionClosure
 public import CatCryptCore.ForMathlib.Tactic.NoncommRingRel
+public import CatCryptCore.ForMathlib.Tactic.PositivityMatrix
 public import CatCryptCore.ForMathlib.Tactic.PositivityStar
 public import CatCryptCore.ForMathlib.Tactic.Spectral
+public import CatCryptCore.ForMathlib.Tactic.TraceNf
+public import CatCryptCore.ForMathlib.Tactic.TraceNfAttr
 public import CatCryptCore.ForMathlib.FejerKernel
 public import CatCryptCore.ForMathlib.ShorReduction
 public import CatCryptCore.ForMathlib.MatrixPolarization
@@ -65,17 +77,9 @@ public import CatCryptCore.ForMathlib.TrotterBound
 public import CatCryptCore.ForMathlib.ZModPow
 public import CatCryptCore.ForMathlib.ZModValCard
 public import CatCryptCore.ForMathlib.CategoryTheory.KleisliPMFMarkov
-public import CatCryptCore.ForMathlib.Tactic.PositivityMatrix
-public import CatCryptCore.ForMathlib.Tactic.TraceNf
-public import CatCryptCore.ForMathlib.Tactic.TraceNfAttr
-public import CatCryptCore.ForMathlib.ExpTaylorTail
-public import CatCryptCore.ForMathlib.RayleighRitz
-public import CatCryptCore.ForMathlib.TotientBound
-public import CatCryptCore.ForMathlib.SolovayKitaev.GroupCommutator
-public import CatCryptCore.ForMathlib.SolovayKitaev.HTDense
-public import CatCryptCore.ForMathlib.SolovayKitaev.Recursion
-public import CatCryptCore.ForMathlib.SolovayKitaev.SU2
-public import CatCryptCore.ForMathlib.ZModTwoSpan
+public import CatCryptCore.ForMathlib.CommuteIdempotent
+public import CatCryptCore.ForMathlib.Matrix.BlockDiagonalCharpoly
+public import CatCryptCore.ForMathlib.TsumSqrt
 
 /-!
 # Lemmas for Mathlib

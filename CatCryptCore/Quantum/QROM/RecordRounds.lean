@@ -99,14 +99,14 @@ theorem maskR_ite (r : Fin D → α) (p : Prop) [Decidable p] (M : Matrix (Fin D
 theorem BlockDiag.mul_maskR {r : Fin D → α} {U : Matrix (Fin D) (Fin D) ℂ} (hU : BlockDiag r U)
     (M : Matrix (Fin D) (Fin D) ℂ) : U * maskR r M = maskR r (U * M) := by
   ext i j
-  simp only [maskR, mul_apply, of_apply]
+  simp only [maskR, Matrix.mul_apply, of_apply]
   split_ifs with h <;> [refine Finset.sum_congr rfl fun l _ => ?_;
     refine Finset.sum_eq_zero fun l _ => ?_] <;> grind [BlockDiag]
 
 theorem BlockDiag.maskR_mul {r : Fin D → α} {U : Matrix (Fin D) (Fin D) ℂ} (hU : BlockDiag r U)
     (M : Matrix (Fin D) (Fin D) ℂ) : maskR r M * U = maskR r (M * U) := by
   ext i j
-  simp only [maskR, mul_apply, of_apply]
+  simp only [maskR, Matrix.mul_apply, of_apply]
   split_ifs with h <;> [refine Finset.sum_congr rfl fun l _ => ?_;
     refine Finset.sum_eq_zero fun l _ => ?_] <;> grind [BlockDiag]
 
@@ -124,7 +124,7 @@ variable {D : ℕ} {α γ : Type}
 theorem BlockDiag.mul {r : Fin D → α} {U V : Matrix (Fin D) (Fin D) ℂ} (hU : BlockDiag r U)
     (hV : BlockDiag r V) : BlockDiag r (U * V) := by
   intro i j hij
-  rw [mul_apply]
+  rw [Matrix.mul_apply]
   exact Finset.sum_eq_zero fun l _ => by by_cases hl : r i = r l <;> grind [BlockDiag]
 
 theorem BlockDiag.add {r : Fin D → α} {U V : Matrix (Fin D) (Fin D) ℂ} (hU : BlockDiag r U)
@@ -145,7 +145,7 @@ theorem BlockDiag.of_isDiag {r : Fin D → α} {U : Matrix (Fin D) (Fin D) ℂ}
   fun i j hij => hU i j fun h => hij (h ▸ rfl)
 
 theorem BlockDiag.one (r : Fin D → α) : BlockDiag r (1 : Matrix (Fin D) (Fin D) ℂ) :=
-  BlockDiag.of_isDiag fun _ _ h => one_apply_ne h
+  BlockDiag.of_isDiag fun _ _ h => Matrix.one_apply_ne h
 
 theorem BlockDiag.comp {r : Fin D → α} {U : Matrix (Fin D) (Fin D) ℂ} (hU : BlockDiag r U)
     (g : α → γ) : BlockDiag (g ∘ r) U :=
@@ -163,7 +163,7 @@ variable {D : ℕ} {α : Type} [DecidableEq α]
 /-- An observable block diagonal along `r` does not see the pinching along `r`. -/
 theorem trace_mul_maskR {r : Fin D → α} {Y : Matrix (Fin D) (Fin D) ℂ} (hY : BlockDiag r Y)
     (M : Matrix (Fin D) (Fin D) ℂ) : (Y * maskR r M).trace = (Y * M).trace := by
-  simp only [Matrix.trace, diag_apply, mul_apply, maskR, of_apply]
+  simp only [Matrix.trace, diag_apply, Matrix.mul_apply, maskR, of_apply]
   exact Finset.sum_congr rfl fun i _ => Finset.sum_congr rfl fun j _ => by grind [BlockDiag]
 
 end MaskTrace
@@ -274,7 +274,7 @@ theorem kr_one_ancProj_eq (e : Fin (d * c) ≃ Fin D) (y : Fin c) :
   ext i j
   obtain ⟨⟨x, z⟩, rfl⟩ := ((finProdEquiv d c).trans e).surjective i
   obtain ⟨⟨x', z'⟩, rfl⟩ := ((finProdEquiv d c).trans e).surjective j
-  simp only [Equiv.trans_apply, kr_apply_pair, ancProj, diagonal_apply, one_apply,
+  simp only [Equiv.trans_apply, kr_apply_pair, ancProj, diagonal_apply, Matrix.one_apply,
     Pi.single_apply, Equiv.symm_apply_apply, EmbeddingLike.apply_eq_iff_eq, Prod.mk.injEq]
   by_cases hx : x = x' <;> by_cases hz : z = z' <;> by_cases hy : z = y <;> simp_all
 
@@ -672,7 +672,7 @@ theorem restH_recAt_zero_BD [NeZero n] {k w q₀ : ℕ} (A : MRH m n w q q₀ (k
     (restH (recAt 0 A)).BD (fun i => (ancSplit m n w c i).2) ∧
       OracleBD (fun i => (ancSplit m n w c i).2) H S := by
   have h1 : ∀ y y' : Fin c, y ≠ y' → (1 : Matrix (Fin c) (Fin c) ℂ) y y' = 0 :=
-    fun _ _ h => one_apply_ne h
+    fun _ _ h => Matrix.one_apply_ne h
   have hr : ∀ i : Fin k, (restH (recAt 0 A)).rounds i = liftR (ancE m n w c) (A.rounds i.succ) :=
     fun i => by simp [restH, recAt, Fin.tail]
   refine ⟨⟨fun i => blockDiag_kr_anc _ _ h1, fun j i => blockDiag_kr_anc _ _ h1,

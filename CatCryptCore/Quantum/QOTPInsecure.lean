@@ -151,7 +151,8 @@ theorem eprKraus_complete :
     rw [Fintype.sum_prod_type]
     simp [eprAmp_mul_self]
   ext y y'
-  simp only [Matrix.sum_apply, mul_apply, conjTranspose_apply, eprKraus, of_apply, one_apply]
+  simp only [Matrix.sum_apply, Matrix.mul_apply, conjTranspose_apply, eprKraus, of_apply,
+    Matrix.one_apply]
   rw [Finset.sum_comm]
   by_cases h : y = y'
   · subst h
@@ -183,11 +184,11 @@ theorem bellProj_mul_self (j : Key n) : bellProj j * bellProj j = bellProj j := 
     have h1 : ∀ b : Reg n, ∑ a : Reg n, star (pauliFin j a b) * pauliFin j a b = 1 := by
       intro b
       have := congrFun (congrFun (conjTranspose_mul_pauliFin j) b) b
-      simpa [mul_apply, conjTranspose_apply] using this
+      simpa [Matrix.mul_apply, conjTranspose_apply] using this
     rw [Finset.sum_congr rfl fun b _ => h1 b]
     simp
   ext x y
-  simp only [bellProj, mul_apply, of_apply]
+  simp only [bellProj, Matrix.mul_apply, of_apply]
   have : ∀ z : Reg n × Reg n,
       ((2 : ℂ) ^ n)⁻¹ * (pauliFin j x.1 x.2 * star (pauliFin j z.1 z.2)) *
         (((2 : ℂ) ^ n)⁻¹ * (pauliFin j z.1 z.2 * star (pauliFin j y.1 y.2))) =
@@ -200,7 +201,8 @@ theorem bellProj_mul_self (j : Key n) : bellProj j * bellProj j = bellProj j := 
 theorem sum_bellProj : ∑ j : Key n, bellProj j = 1 := by
   ext x y
   have h := isTwirlFamily_pauliFin n x.1 x.2 y.1 y.2
-  simp only [Matrix.sum_apply, bellProj, of_apply, ← Finset.mul_sum, h, one_apply, Prod.ext_iff]
+  simp only [Matrix.sum_apply, bellProj, of_apply, ← Finset.mul_sum, h, Matrix.one_apply,
+    Prod.ext_iff]
   split_ifs <;> simp
 
 /-- The Bell projectors satisfy the completeness relation. -/
@@ -536,7 +538,7 @@ theorem trQB_branch_apply (ρ : Matrix (Joint n K) (Joint n K) ℂ) (x y : Reg n
   simp only [SubInstrument.branch_pure_self, LinearMap.id_comp, LinearMap.sum_apply,
     DSubInstrument.branch_ofKraus_apply, MatrixMap.conj_apply, Matrix.sum_apply]
   refine Finset.sum_congr rfl fun c _ => ?_
-  simp [trKraus, mul_apply, conjTranspose_apply, apply_ite (starRingEnd ℂ)]
+  simp [trKraus, Matrix.mul_apply, conjTranspose_apply, apply_ite (starRingEnd ℂ)]
 
 /-- A continuation after `trQB` acts on the partial trace. -/
 theorem trQB_bind_branch {β C : Type} [Fintype C] (f : Unit → SubInstrument (Reg n × K) C β)
@@ -591,7 +593,7 @@ theorem frame_unitaryOp_apply (U : Matrix (Reg n) (Reg n) ℂ) (hU : Uᴴ * U = 
     ((unitaryOp U hU).frame (Reg n)).branch () X x y =
       ∑ u, ∑ u', U x.1 u * X (u, x.2) (u', y.2) * star (U y.1 u') := by
   simp only [unitaryOp, DSubInstrument.branch_frame_apply, MatrixMap.amplify_apply,
-    DSubInstrument.branch_ofKraus_apply, MatrixMap.conj_apply, mul_apply, Finset.sum_mul,
+    DSubInstrument.branch_ofKraus_apply, MatrixMap.conj_apply, Matrix.mul_apply, Finset.sum_mul,
     conjTranspose_apply, submatrix_apply]
   exact Finset.sum_comm
 
@@ -601,7 +603,7 @@ theorem frameLeft_unitaryOp_apply (U : Matrix (Reg n) (Reg n) ℂ) (hU : Uᴴ * 
     (frameLeft (unitaryOp U hU) (Reg n)).branch () X x y =
       ∑ u, ∑ u', U x.2 u * X (x.1, u) (y.1, u') * star (U y.2 u') := by
   simp only [unitaryOp, frameLeft_branch, MatrixMap.amplifyLeft_apply,
-    DSubInstrument.branch_ofKraus_apply, MatrixMap.conj_apply, mul_apply, Finset.sum_mul,
+    DSubInstrument.branch_ofKraus_apply, MatrixMap.conj_apply, Matrix.mul_apply, Finset.sum_mul,
     conjTranspose_apply, submatrix_apply]
   exact Finset.sum_comm
 
@@ -609,7 +611,7 @@ theorem frameLeft_unitaryOp_apply (U : Matrix (Reg n) (Reg n) ℂ) (hU : Uᴴ * 
 theorem swapOp_apply (X : Matrix (Reg n × Reg n) (Reg n × Reg n) ℂ) (x y : Reg n × Reg n) :
     (swapOp (Reg n)).branch () X x y = X x.swap y.swap := by
   simp [swapOp, unitaryOp, swapMat, DSubInstrument.branch_ofKraus_apply, MatrixMap.conj_apply,
-    mul_apply]
+    Matrix.mul_apply]
 
 /-- Entries of the preparation of the maximally entangled state:
 `X ↦ tr X • |Φ⁺⟩⟨Φ⁺|`. -/
@@ -623,7 +625,7 @@ theorem eprOp_apply (X : Matrix (Reg n × Reg n) (Reg n × Reg n) ℂ) (x y : Re
       if x.1 = x.2 ∧ y.1 = y.2 then ((2 : ℂ) ^ n)⁻¹ * X c c else 0 := by
     intro c
     by_cases hx : x.1 = x.2 <;> by_cases hy : y.1 = y.2 <;>
-      simp [eprKraus, mul_apply, conjTranspose_apply, hx, hy, ← eprAmp_mul_self,
+      simp [eprKraus, Matrix.mul_apply, conjTranspose_apply, hx, hy, ← eprAmp_mul_self,
         apply_ite (starRingEnd ℂ), Complex.conj_ofReal, mul_ite, Finset.sum_ite_eq']
     ring
   rw [Finset.sum_congr rfl fun c _ => h c]
@@ -748,7 +750,7 @@ theorem sum_bellProj_conj (j : Key n) (G : Reg n × Reg n → Reg n × Reg n →
   have hP : ∀ z z' : Reg n × Reg n, ∑ c, bellProj j z' c * bellProj j c z = bellProj j z' z :=
     fun z z' => by
       have := congrFun (congrFun (bellProj_mul_self j) z') z
-      rwa [mul_apply] at this
+      rwa [Matrix.mul_apply] at this
   simp only [Finset.sum_mul]
   rw [Finset.sum_comm]
   conv_lhs => enter [2, z']; rw [Finset.sum_comm]
@@ -839,7 +841,8 @@ theorem deliver_trace {α : Type} (w : SubInstrument (Reg n × K) (Reg n × K) �
       ∑ x : Reg n, ∑ x' : Reg n, w.branch a (R x x') (x, κ) (x', κ') := by
     simp only [hR, map_sum, map_smul, Matrix.sum_apply, Matrix.smul_apply, smul_eq_mul,
       trQB_branch_apply, worldOp_branch_apply, swapOp_apply, worldBlock, of_apply, Prod.swap,
-      frameLeft_unitaryOp_apply, simOp_branch_apply, bellOp_apply, simBlock, mul_apply]
+      frameLeft_unitaryOp_apply, simOp_branch_apply, bellOp_apply, simBlock,
+      Matrix.mul_apply]
     conv_lhs => enter [2, j]; rw [Finset.sum_comm]; enter [2, p]; rw [Finset.sum_comm]
     conv_lhs => enter [2, j, 2, p, 2, p']; rw [← Finset.sum_mul, ← Finset.mul_sum,
       sum_bellProj_conj]

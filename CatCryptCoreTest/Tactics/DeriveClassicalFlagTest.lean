@@ -23,8 +23,9 @@ registered primitive (`Finset.filter`). The same programs with a computable deci
 (an instance binder, or the instance of the concrete type) derive without a message, and the
 decision is priced by the cost of its condition. Decisions of Boolean conditions built with
 `||`, `&&` and `!`, which Lean 4.35 marks `noncomputable` and compiles through `@[csimp]`
-replacements, are computable. A polynomial term, whose Mathlib representation `Finsupp.single`
-decides its support classically, is priced by the registered cost of `Finsupp.single`
+replacements, are computable. A polynomial term and a sum of polynomials, whose Mathlib
+representations `Finsupp.single` and `Finsupp.zipWith` decide their supports classically, are
+priced by the registered costs of these two, and a product by that of `AddMonoidAlgebra.mul'`
 (`CatCryptCore.Tactics.StdCostsPoly`). A data term computed by `Exists.choose` is warned about
 and then refused, since `Classical.choice` has no cost. `#classical_cost_audit` finds no classical
 decision in the derived costed forms.
@@ -205,11 +206,13 @@ def stuckTest (stuck : ℕ → Bool) (inj : ℕ → Option ℕ) (p : ℕ) : SPTr
 #guard_msgs in
 derive_timed stuckTest
 
-/-! ## A library definition that decides classically: polynomial terms
+/-! ## A library definition that decides classically: polynomial terms and sums
 
 `Polynomial.C a` and `Polynomial.X` unfold to `Finsupp.single`, whose support Mathlib computes by
-deciding `a = 0` with `Classical.decEq`; `Finsupp.single` is a registered primitive of
-`StdCostsPoly`, so the derivation does not reach that decision. -/
+deciding `a = 0` with `Classical.decEq`, and a sum of polynomials unfolds to `Finsupp.zipWith`,
+whose support it computes with `Classical.decEq ℕ`; both are registered primitives of
+`StdCostsPoly`, as is the product `AddMonoidAlgebra.mul'`, so the derivation does not reach
+those decisions. -/
 
 /-- The polynomial of the base-`p` digits of `a`, the decoding of a sampled index. -/
 noncomputable def digitsPoly (p : ℕ) [Fact (Nat.Prime p)] : ℕ → ℕ → Polynomial (ZMod p)
@@ -225,13 +228,21 @@ noncomputable def digitsTree (p : ℕ) [Fact (Nat.Prime p)] (t a : ℕ) :
 derive_timed digitsTree
 
 /-- A level of the decoding writes two terms, `C a` and `X`, at the registered cost of
-`Finsupp.single`. -/
+`Finsupp.single`, multiplies at that of `AddMonoidAlgebra.mul'` and adds at that of
+`Finsupp.zipWith`, with the addition of `ZMod p` at one unit. The sum is reached through
+`AddMonoidAlgebra.coeffEquiv`, in six units of calls. -/
 example (p : ℕ) [Fact (Nat.Prime p)] (t a : ℕ) :
     digitsPoly.timedCost p (t + 1) a =
-      1 + (1 + (7 + Finsupp.single.timedCost ℕ (ZMod p) 0 (a : ZMod p) +
-        (1 + (5 + Finsupp.single.timedCost ℕ (ZMod p) 1 1 +
-          (1 + (digitsPoly.timedCost p t (a / p) + 1)))))) :=
-  digitsPoly.timedCost.eq_2 p a t
+      1 + (6 + Finsupp.zipWith.timedCost ℕ (ZMod p) (ZMod p) (ZMod p) (· + ·) (fun _ _ => 1)
+          (add_zero 0) (Polynomial.C (a : ZMod p)).coeff
+          (Polynomial.X * digitsPoly p t (a / p)).coeff +
+        (7 + Finsupp.single.timedCost ℕ (ZMod p) 0 (a : ZMod p) +
+          (1 + AddMonoidAlgebra.mul'.timedCost (ZMod p) ℕ Polynomial.X (digitsPoly p t (a / p)) +
+            (5 + Finsupp.single.timedCost ℕ (ZMod p) 1 1 +
+              (1 + (digitsPoly.timedCost p t (a / p) + 1)))))) := by
+  simp only [digitsPoly.timedCost, AddMonoidAlgebra.coeff.timedCost, Equiv.toFun_as_coe,
+    AddMonoidAlgebra.coeffEquiv_apply]
+  omega
 
 /-! ## Choice in data -/
 

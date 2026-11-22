@@ -1886,7 +1886,7 @@ inductive type admitted: those reached from `t` through the components that hold
 names of the structures passed on the way included. -/
 partial def sumInductsOf (t : Expr) : MetaM (Array Name) :=
   withTheReader Core.Context
-    (fun c => { c with options := c.options.set `derive_timed.sumInducts "*" })
+    (fun c => c.setOptions (c.options.set `derive_timed.sumInducts "*"))
     (go t #[])
 where
   /-- The names reached from `t`, added to `acc`. -/

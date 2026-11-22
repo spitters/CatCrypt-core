@@ -13,6 +13,7 @@ public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
 public import CatCryptCore.Crypto.FiatShamirROM.Timed
 public import CatCryptCore.Crypto.ROProgramming
 public import CatCryptCore.Crypto.TVHops
+public import CatCryptCore.ForMathlib.TsumExchange
 
 /-!
 # Diffie–Hellman PAKE in the random-oracle model: the generic bound
@@ -399,14 +400,6 @@ theorem dhpakeRef_le (νC νS : PMF W) (D : DHPAKEAdversary Pw W K qH qS G) :
   rw [heq]
   exact bind_apply_le_of_le _ _ _ _ success_prob_le
 
-/-- Two sums of weighted sums in the other order. -/
-private theorem tsum_mul_tsum_mul_comm {α β : Type} (p : α → ℝ≥0∞) (q : β → ℝ≥0∞)
-    (F : α → β → ℝ≥0∞) :
-    ∑' x, p x * ∑' y, q y * F x y = ∑' y, q y * ∑' x, p x * F x y := by
-  simp only [← ENNReal.tsum_mul_left]
-  rw [ENNReal.tsum_comm]
-  exact tsum_congr fun y => tsum_congr fun x => mul_left_comm _ _ _
-
 omit [DecidableEq W] in
 /-- An expectation over a key generation is the expectation over the rerandomisation of a
     uniform public value. -/
@@ -425,10 +418,10 @@ theorem dhpakeQueryProb_le (P : SampledDHPAKE S G W Pw) (D : DHPAKEAdversary Pw 
   rw [cdhAdvantage_cdhReduction]
   unfold dhpakeQueryProb
   simp only [tsum_key_mul _ _ _ (P.keyC_eq _), tsum_key_mul _ _ _ (P.keyS_eq _)]
-  refine (tsum_mul_tsum_mul_comm _ _ _).trans_le ?_
+  refine (ENNReal.tsum_mul_tsum_mul_comm _ _ _).trans_le ?_
   refine tsum_le_mul_bind_apply _ _ _ _ _ fun a _ => ?_
-  conv_lhs => enter [1, pw, 2]; rw [tsum_mul_tsum_mul_comm]
-  refine (tsum_mul_tsum_mul_comm _ _ _).trans_le ?_
+  conv_lhs => enter [1, pw, 2]; rw [ENNReal.tsum_mul_tsum_mul_comm]
+  refine (ENNReal.tsum_mul_tsum_mul_comm _ _ _).trans_le ?_
   refine tsum_le_mul_bind_apply _ _ _ _ _ fun b _ => ?_
   simp only [cdhDist, rerDist, PMF.map_bind, PMF.bind_bind, PMF.bind_map, Function.comp_def]
   refine tsum_le_mul_bind_apply _ _ _ _ _ fun pw _ => ?_

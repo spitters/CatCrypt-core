@@ -269,20 +269,6 @@ def ckaAllowLeak {St Msg : Type} (ΔPCS t : ℕ) (s : CKAGameSt St Msg) (p : CKA
 
 /-! ## The game -/
 
-/-- A CKA scheme whose sending algorithm is given with its randomness in `Rand`:
-`sendR s r` is the next state, the message and the key of a send from state `s` with the
-randomness `r`. -/
-class CKACoins {St Msg Key : Type} (C : CKADef St Msg Key) (Rand : outParam Type) where
-  /-- The sending algorithm with explicit randomness. -/
-  sendR : St → Rand → St × Msg × Key
-
-/-- The explicit-randomness sending algorithm is that of the scheme: sending samples a uniform
-randomness and runs `sendR`. -/
-def CKACoins.Sound {St Msg Key Rand : Type} (C : CKADef St Msg Key) [CKACoins C Rand]
-    [Fintype Rand] [Nonempty Rand] : Prop :=
-  ∀ s, C.send s = SPComp.bind (SPComp.sample Rand) fun r =>
-    SPComp.pure (CKACoins.sendR (C := C) s r)
-
 /-- A CKA adversary with output in `α`: a distribution `tStar` of the challenge epoch, and for
 each challenge epoch and public value of the initialisation an oracle tree. -/
 structure CKACorruptAdv (St Msg Key Rand α : Type) : Type 1 where

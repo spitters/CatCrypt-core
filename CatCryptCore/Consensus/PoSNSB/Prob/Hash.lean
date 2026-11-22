@@ -128,7 +128,7 @@ theorem prob_ROCollision_le [Nonempty R] (next : Querier D R) (q : ℕ) :
     simp only [transcript] at h
     simp only [Set.mem_ofPred_eq, h, ROCollision, CatCrypt.Crypto.OracleAdv.QueryCollision,
       List.mem_map, List.mem_range'_1]
-    grind
+    simp_all
   rw [hset, uniformFun]
   exact CatCrypt.Crypto.OracleAdv.prob_evalOn_collision_le _
     (CatCrypt.Crypto.OracleAdv.ofQuerier_noRand _ _ _) q

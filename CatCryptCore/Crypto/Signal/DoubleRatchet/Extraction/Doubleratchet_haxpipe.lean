@@ -13,7 +13,7 @@ public import HaxLean.Secrecy
 /-!
 # `Doubleratchet`: haxpipeT extraction
 
-The haxpipeT extraction of the Rust crate `doubleratchet-hax`,
+The haxpipeT extraction of the Rust crate `s12-hax`,
 taken from its hax frontend export. Each extracted function gives a Lean
 definition, the `ImpExpr` literal of its body and, where the definition's term
 erases to one, the `TExpr` literal carrying its node types; an `example` per
@@ -21,10 +21,10 @@ pair states the erasure identity `f_texpr.erase = f_impExpr`.
 
 ## Main definitions
 
-* `DoubleratchetDeps`: the operations the crate calls and does not define. Every
-  definition below stands under `variable [DoubleratchetDeps]`, so each is
-  parametric in an instance of it, which the consuming side supplies.
-* `f`, `f_impExpr` and `f_texpr` for each of the 25 extracted functions: the
+* `DoubleratchetDeps`: the operations the crate calls and does not define. The
+  extraction found none, so the class has no fields; it is emitted because the
+  consuming side names it.
+* `f`, `f_impExpr` and `f_texpr` for each of the 40 extracted functions: the
   surface definition, the literal of its erased body, and the typed literal.
 
 This file is generated. Extracting the crate again overwrites it, so an edit
@@ -51,404 +51,661 @@ structure Uninitialized_T where
 
 def Uninitialized : Uninitialized_T := {}
 
+/-- The Rust trait `DoubleRatchetGhost` of the crate `doubleratchet_hax`, as a class over its `Self` type. -/
+class DoubleRatchetGhost (Self : Type) where
+  event (self : Self) (tag : Int) (step : Int) : Self
+
+/-- The Rust trait `DoubleRatchetDeps` of the crate `doubleratchet_hax`, as a class over its `Self` type. -/
+class DoubleRatchetDeps (Self : Type) where
+  hmac_sha256 (key : Array (Int)) (msg : Array (Int)) : Array (Int)
+  hkdf_extract (salt : Array (Int)) (ikm : Array (Int)) : Array (Int)
+  hkdf_expand_64 (prk : Array (Int)) (info : Array (Int)) : Array (Int)
+  x25519 (sk : Array (Int)) (pk : Array (Int)) : Array (Int)
+  aead_encrypt (mk : Array (Int)) (pt : Array (Int)) (pt_len : Int) (ad : Array (Int)) : Array (Int)
+  aead_decrypt (mk : Array (Int)) (ct : Array (Int)) (ct_len : Int) (ad : Array (Int)) : Option (Array (Int) × Int)
+
+export DoubleRatchetGhost (event)
+export DoubleRatchetDeps (hmac_sha256 hkdf_extract hkdf_expand_64 x25519 aead_encrypt aead_decrypt)
+
 
 /-- Tuple-encoded type for Rust struct `RatchetState` (auto-generated). -/
-abbrev RatchetState_T := Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int
+abbrev RatchetState_T := Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))
 
 /-- Struct constructor + projections (auto-generated from Rust struct). -/
-def RatchetState (root_key : Array (Int)) (send_ck : Option (Array (Int))) (recv_ck : Option (Array (Int))) (send_n : Int) (recv_n : Int) (my_sk : Array (Int)) (my_pk : Array (Int)) (remote_pk : Array (Int)) (prev_send_n : Int) : RatchetState_T := (root_key, send_ck, recv_ck, send_n, recv_n, my_sk, my_pk, remote_pk, prev_send_n)
+def RatchetState (dhs_sk : Array (Int)) (dhs_pk : Array (Int)) (dhr : Option (Array (Int))) (rk : Array (Int)) (cks : Option (Array (Int))) (ckr : Option (Array (Int))) (ns : Int) (nr : Int) (pn : Int) (sk_used : Array (Bool)) (sk_dh : Array (Array (Int))) (sk_n : Array (Int)) (sk_mk : Array (Array (Int))) : RatchetState_T := (dhs_sk, dhs_pk, dhr, rk, cks, ckr, ns, nr, pn, sk_used, sk_dh, sk_n, sk_mk)
 
-def «RatchetState.root_key» (x : RatchetState_T) := x.1
+def «.dhs_sk» (x : RatchetState_T) := x.1
 
-def «RatchetState.send_ck» (x : RatchetState_T) := x.2.1
+def «.dhs_pk» (x : RatchetState_T) := x.2.1
 
-def «RatchetState.recv_ck» (x : RatchetState_T) := x.2.2.1
+def «.dhr» (x : RatchetState_T) := x.2.2.1
 
-def «RatchetState.send_n» (x : RatchetState_T) := x.2.2.2.1
+def «.rk» (x : RatchetState_T) := x.2.2.2.1
 
-def «RatchetState.recv_n» (x : RatchetState_T) := x.2.2.2.2.1
+def «.cks» (x : RatchetState_T) := x.2.2.2.2.1
 
-def «RatchetState.my_sk» (x : RatchetState_T) := x.2.2.2.2.2.1
+def «.ckr» (x : RatchetState_T) := x.2.2.2.2.2.1
 
-def «RatchetState.my_pk» (x : RatchetState_T) := x.2.2.2.2.2.2.1
+def «.ns» (x : RatchetState_T) := x.2.2.2.2.2.2.1
 
-def «RatchetState.remote_pk» (x : RatchetState_T) := x.2.2.2.2.2.2.2.1
+def «.nr» (x : RatchetState_T) := x.2.2.2.2.2.2.2.1
 
-def «.prev_send_n» (x : RatchetState_T) := x.2.2.2.2.2.2.2.2
+def «RatchetState.pn» (x : RatchetState_T) := x.2.2.2.2.2.2.2.2.1
 
-/-- Tuple-encoded type for Rust struct `Session` (auto-generated). -/
-abbrev Session_T := Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int
+def «.sk_used» (x : RatchetState_T) := x.2.2.2.2.2.2.2.2.2.1
 
-/-- Struct constructor + projections (auto-generated from Rust struct). -/
-def Session (root_key : Array (Int)) (send_ck : Option (Array (Int))) (recv_ck : Option (Array (Int))) (send_n : Int) (recv_n : Int) (my_sk : Array (Int)) (my_pk : Array (Int)) (remote_pk : Array (Int)) (step : Int) : Session_T := (root_key, send_ck, recv_ck, send_n, recv_n, my_sk, my_pk, remote_pk, step)
+def «.sk_dh» (x : RatchetState_T) := x.2.2.2.2.2.2.2.2.2.2.1
 
-def «Session.root_key» (x : Session_T) := x.1
+def «.sk_n» (x : RatchetState_T) := x.2.2.2.2.2.2.2.2.2.2.2.1
 
-def «Session.send_ck» (x : Session_T) := x.2.1
-
-def «Session.recv_ck» (x : Session_T) := x.2.2.1
-
-def «Session.send_n» (x : Session_T) := x.2.2.2.1
-
-def «Session.recv_n» (x : Session_T) := x.2.2.2.2.1
-
-def «Session.my_sk» (x : Session_T) := x.2.2.2.2.2.1
-
-def «Session.my_pk» (x : Session_T) := x.2.2.2.2.2.2.1
-
-def «Session.remote_pk» (x : Session_T) := x.2.2.2.2.2.2.2.1
-
-def «.step» (x : Session_T) := x.2.2.2.2.2.2.2.2
+def «.sk_mk» (x : RatchetState_T) := x.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- Tuple-encoded type for Rust struct `MessageHeader` (auto-generated). -/
 abbrev MessageHeader_T := Array (Int) × Int × Int
 
 /-- Struct constructor + projections (auto-generated from Rust struct). -/
-def MessageHeader (dh_public : Array (Int)) (msg_number : Int) (prev_chain_len : Int) : MessageHeader_T := (dh_public, msg_number, prev_chain_len)
+def MessageHeader (dh : Array (Int)) (pn : Int) (n : Int) : MessageHeader_T := (dh, pn, n)
 
-def «.dh_public» (x : MessageHeader_T) := x.1
+def «.dh» (x : MessageHeader_T) := x.1
 
-/-- External dependencies for Doubleratchet extraction (auto-generated from typed TExpr). -/
+def «MessageHeader.pn» (x : MessageHeader_T) := x.2.1
+
+def «.n» (x : MessageHeader_T) := x.2.2
+
+/-- Tuple-encoded type for Rust struct `Session` (auto-generated). -/
+abbrev Session_T := (Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) × Int
+
+/-- Struct constructor + projections (auto-generated from Rust struct). -/
+def Session (st : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) (step : Int) : Session_T := (st, step)
+
+def «.st» (x : Session_T) := x.1
+
+def «.step» (x : Session_T) := x.2
+
+/-- External dependencies for Doubleratchet extraction (auto-generated). -/
 class DoubleratchetDeps where
-  event (a : Array (Int)) (b : Int) (c : Int) : Array Int
-  send (a : Array (Int)) (b : Int) (c : Array (Int)) : Array Int
-  recv (a : Array (Int)) (b : Int) (c : Array (Int)) : Array Int
-  hmac_sha256 (a : Array (Int)) (b : Array (Int)) : Array (Int)
-  hkdf_extract (a : Array (Int)) (b : Array (Int)) : Array (Int)
-  hkdf_expand (a : Array (Int)) (b : Array (Int)) : Array (Int)
-  x25519 (a : Array (Int)) (b : Array (Int)) : Array (Int)
-  aead_encrypt (a : Array (Int)) (b : Array (Int)) (c : Int) (d : Array (Int)) : Array (Int)
-  aead_decrypt (a : Array (Int)) (b : Array (Int)) (c : Int) (d : Array (Int)) : Array (Int)
-
-export DoubleratchetDeps (event send recv hmac_sha256 hkdf_extract hkdf_expand x25519 aead_encrypt aead_decrypt)
-
-variable [DoubleratchetDeps]
 
 
 /-- Type annotations shared by the `TExpr` literals. -/
 abbrev ty_0 : ImpType := (.adt "MessageHeader" [])
-abbrev ty_1 : ImpType := (.adt "Option" [(.adt "Session" [])])
+abbrev ty_1 : ImpType := (.adt "Option" [(.adt "RatchetState" [])])
 abbrev ty_2 : ImpType := (.adt "Option" [(.array (.uint .w8) 32)])
-abbrev ty_3 : ImpType := (.adt "Option" [(.tuple [(.adt "RatchetState" []), (.adt "MessageHeader" []), (.array (.uint .w8) 256)])])
-abbrev ty_4 : ImpType := (.adt "Option" [(.tuple [(.adt "RatchetState" []), (.array (.uint .w8) 256)])])
-abbrev ty_5 : ImpType := (.adt "RatchetState" [])
-abbrev ty_6 : ImpType := (.adt "Session" [])
-abbrev ty_7 : ImpType := (.array (.uint .w8) 256)
-abbrev ty_8 : ImpType := (.array (.uint .w8) 32)
-abbrev ty_9 : ImpType := (.ref (.adt "MessageHeader" []) false)
-abbrev ty_10 : ImpType := (.ref (.adt "RatchetState" []) false)
-abbrev ty_11 : ImpType := (.ref (.adt "Session" []) false)
-abbrev ty_12 : ImpType := (.ref (.array (.uint .w8) 32) false)
-abbrev ty_13 : ImpType := (.ref (.slice (.uint .w8)) false)
-abbrev ty_14 : ImpType := (.ref (.slice .int) true)
-abbrev ty_15 : ImpType := (.slice .int)
-abbrev ty_16 : ImpType := (.tuple [(.array (.uint .w8) 32), (.array (.uint .w8) 32)])
-abbrev ty_17 : ImpType := (.uint .w32)
-abbrev ty_18 : ImpType := (.uint .w64)
-abbrev ty_19 : ImpType := (.uint .w8)
-abbrev ty_20 : ImpType := (.uint .wsize)
-abbrev ty_21 : ImpType := .unknown
+abbrev ty_3 : ImpType := (.adt "Option" [(.tuple [(.adt "MessageHeader" []), (.array (.uint .w8) 280), (.uint .wsize)])])
+abbrev ty_4 : ImpType := (.adt "Option" [(.tuple [(.adt "RatchetState" []), (.adt "MessageHeader" []), (.array (.uint .w8) 280), (.uint .wsize)])])
+abbrev ty_5 : ImpType := (.adt "Option" [(.tuple [(.adt "RatchetState" []), (.array (.uint .w8) 256), (.uint .wsize)])])
+abbrev ty_6 : ImpType := (.adt "Option" [(.tuple [(.adt "RatchetState" []), (.array (.uint .w8) 32)])])
+abbrev ty_7 : ImpType := (.adt "Option" [(.tuple [(.array (.uint .w8) 256), (.uint .wsize)])])
+abbrev ty_8 : ImpType := (.adt "RatchetState" [])
+abbrev ty_9 : ImpType := (.adt "Session" [])
+abbrev ty_10 : ImpType := (.adt "Uninitialized" [])
+abbrev ty_11 : ImpType := (.array (.array (.uint .w8) 32) 32)
+abbrev ty_12 : ImpType := (.array (.uint .w32) 32)
+abbrev ty_13 : ImpType := (.array (.uint .w8) 1)
+abbrev ty_14 : ImpType := (.array (.uint .w8) 104)
+abbrev ty_15 : ImpType := (.array (.uint .w8) 14)
+abbrev ty_16 : ImpType := (.array (.uint .w8) 256)
+abbrev ty_17 : ImpType := (.array (.uint .w8) 280)
+abbrev ty_18 : ImpType := (.array (.uint .w8) 32)
+abbrev ty_19 : ImpType := (.array (.uint .w8) 40)
+abbrev ty_20 : ImpType := (.array .bool 32)
+abbrev ty_21 : ImpType := (.ref (.adt "MessageHeader" []) false)
+abbrev ty_22 : ImpType := (.ref (.adt "RatchetState" []) false)
+abbrev ty_23 : ImpType := (.ref (.adt "Session" []) false)
+abbrev ty_24 : ImpType := (.ref (.array (.uint .w8) 256) false)
+abbrev ty_25 : ImpType := (.ref (.array (.uint .w8) 280) false)
+abbrev ty_26 : ImpType := (.ref (.array (.uint .w8) 32) false)
+abbrev ty_27 : ImpType := (.ref (.array (.uint .w8) 64) false)
+abbrev ty_28 : ImpType := (.ref (.typeVar "G") true)
+abbrev ty_29 : ImpType := (.sint .w32)
+abbrev ty_30 : ImpType := (.tuple [(.adt "RatchetState" []), (.array (.uint .w8) 32), .bool])
+abbrev ty_31 : ImpType := (.tuple [(.adt "RatchetState" []), (.array (.uint .w8) 32)])
+abbrev ty_32 : ImpType := (.tuple [(.adt "Session" []), (.adt "Option" [(.tuple [(.adt "MessageHeader" []), (.array (.uint .w8) 280), (.uint .wsize)])])])
+abbrev ty_33 : ImpType := (.tuple [(.adt "Session" []), (.adt "Option" [(.tuple [(.array (.uint .w8) 256), (.uint .wsize)])])])
+abbrev ty_34 : ImpType := (.tuple [(.array (.uint .w8) 32), (.array (.uint .w8) 32)])
+abbrev ty_35 : ImpType := (.tuple [.bool, (.uint .wsize)])
+abbrev ty_36 : ImpType := (.typeVar "G")
+abbrev ty_37 : ImpType := (.uint .w32)
+abbrev ty_38 : ImpType := (.uint .w64)
+abbrev ty_39 : ImpType := (.uint .w8)
+abbrev ty_40 : ImpType := (.uint .wsize)
+abbrev ty_41 : ImpType := .unknown
 
-mutual
-
-def Uninitialized_establish (self : Uninitialized_T) (ghost : Array (Int)) (root_key : Array (Int)) (my_sk : Array (Int)) (my_pk : Array (Int)) (remote_pk : Array (Int)) :=
-  let dh_out := (dh my_sk remote_pk : Array (Int))
-  let (new_rk, send_ck) := kdf_rk root_key dh_out
-  let ghost := event ghost (3 : Int) (0 : Int)
-  (Session new_rk (some send_ck) (none) (0 : Int) (0 : Int) my_sk my_pk remote_pk (0 : Int), ghost)
-
-def Session_step (self : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) :=
+def Session_step (self : (Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) × Int) :=
 «.step» self
 
-def Session_root_key (self : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) : Array (Int) :=
-«Session.root_key» self
-
-def Session_send_ck (self : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) : Option (Array (Int)) :=
-«Session.send_ck» self
-
-def Session_recv_ck (self : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) : Option (Array (Int)) :=
-«Session.recv_ck» self
-
-def Session_send_n (self : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) :=
-«Session.send_n» self
-
-def Session_recv_n (self : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) :=
-«Session.recv_n» self
-
-def Session_my_pk (self : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) : Array (Int) :=
-«Session.my_pk» self
-
-def Session_remote_pk (self : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) : Array (Int) :=
-«Session.remote_pk» self
-
-def Session_send (self : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) (ghost : Array (Int)) : (Option (Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int)) × Array (Int) :=
-  match «Session.send_ck» self with
-  | some (send_ck) =>     let new_send_ck := (kdf_ck send_ck (1 : Int) : Array (Int))
-    let mk := (kdf_ck send_ck (2 : Int) : Array (Int))
-    let ghost := send ghost («.step» self) mk
-    let ghost := event ghost (0 : Int) (Hax.add («.step» self) (1 : Int))
-    (some (Session («Session.root_key» self) (some new_send_ck) («Session.recv_ck» self) (Hax.add («Session.send_n» self) (1 : Int)) («Session.recv_n» self) («Session.my_sk» self) («Session.my_pk» self) («Session.remote_pk» self) (Hax.add («.step» self) (1 : Int))), ghost)
-  | none => (none, ghost)
-
-def Session_receive (self : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) (ghost : Array (Int)) : (Option (Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int)) × Array (Int) :=
-  match «Session.recv_ck» self with
-  | some (recv_ck) =>     let new_recv_ck := (kdf_ck recv_ck (1 : Int) : Array (Int))
-    let mk := (kdf_ck recv_ck (2 : Int) : Array (Int))
-    let ghost := recv ghost («.step» self) mk
-    let ghost := event ghost (1 : Int) (Hax.add («.step» self) (1 : Int))
-    (some (Session («Session.root_key» self) («Session.send_ck» self) (some new_recv_ck) («Session.send_n» self) (Hax.add («Session.recv_n» self) (1 : Int)) («Session.my_sk» self) («Session.my_pk» self) («Session.remote_pk» self) (Hax.add («.step» self) (1 : Int))), ghost)
-  | none => (none, ghost)
-
-def Session_dh_ratchet (self : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) (ghost : Array (Int)) (new_remote_pk : Array (Int)) (new_my_sk : Array (Int)) (new_my_pk : Array (Int)) : (Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) × Array (Int) :=
-  let dh1 := (dh («Session.my_sk» self) new_remote_pk : Array (Int))
-  let (rk1, new_recv_ck) := kdf_rk («Session.root_key» self) dh1
-  let dh2 := (dh new_my_sk new_remote_pk : Array (Int))
-  let (rk2, new_send_ck) := kdf_rk rk1 dh2
-  let ghost := event ghost (2 : Int) (Hax.add («.step» self) (1 : Int))
-  (Session rk2 (some new_send_ck) (some new_recv_ck) (0 : Int) (0 : Int) new_my_sk new_my_pk new_remote_pk (Hax.add («.step» self) (1 : Int)), ghost)
-
-def MAX_MSG_LEN :=
-(256 : Int)
+def Session_state (self : (Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) × Int) : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)) :=
+«.st» self
 
 def MAX_PLAINTEXT_LEN :=
 (256 : Int)
 
+def BLOCK_LEN :=
+(16 : Int)
+
+def TAG_LEN :=
+(8 : Int)
+
+def MAX_CT_LEN :=
+(280 : Int)
+
+def AD_LEN :=
+(64 : Int)
+
+def HEADER_LEN :=
+(40 : Int)
+
+def FULL_AD_LEN :=
+(104 : Int)
+
+def MAX_SKIP :=
+(16 : Int)
+
+def MAX_STORED :=
+(32 : Int)
+
+def KDF_RK_INFO : Array (Int) :=
+#[(87 : Int), (104 : Int), (105 : Int), (115 : Int), (112 : Int), (101 : Int), (114 : Int), (82 : Int), (97 : Int), (116 : Int), (99 : Int), (104 : Int), (101 : Int), (116 : Int)]
+
+def MESSAGE_KEY_SEED : Array (Int) :=
+#[(1 : Int)]
+
+def CHAIN_KEY_SEED : Array (Int) :=
+#[(2 : Int)]
+
+def ct_len (pt_len : Int) :=
+Hax.add (Hax.mul (Hax.add (Hax.div pt_len BLOCK_LEN) (1 : Int)) BLOCK_LEN) TAG_LEN
+
 def ck_const (c : Int) : Array (Int) :=
-Hax.repeat_ c (32 : Int)
+Hax.repeat_ c (1 : Int)
 
-def kdf_ck (chain_key : Array (Int)) (constant : Int) : Array (Int) :=
-hmac_sha256 chain_key (ck_const constant)
+def kdf_ck {D : Type} [Inhabited D] [DoubleRatchetDeps D] (ck : Array (Int)) : Array (Int) × Array (Int) :=
+((DoubleRatchetDeps.hmac_sha256 (Self := D)) ck (ck_const (2 : Int)), (DoubleRatchetDeps.hmac_sha256 (Self := D)) ck (ck_const (1 : Int)))
 
-def kdf_rk (root_key : Array (Int)) (dh_output : Array (Int)) : Array (Int) × Array (Int) :=
-  let prk := (hkdf_extract root_key dh_output : Array (Int))
-  let new_rk := (hkdf_expand prk (Hax.repeat_ (1 : Int) (32 : Int)) : Array (Int))
-  let new_ck := (hkdf_expand prk (Hax.repeat_ (2 : Int) (32 : Int)) : Array (Int))
-  (new_rk, new_ck)
+def split64 (x : Array (Int)) : Array (Int) × Array (Int) :=
+  let a := (Hax.repeat_ (0 : Int) (32 : Int) : Array (Int))
+  let b := (Hax.repeat_ (0 : Int) (32 : Int) : Array (Int))
+  let (a, b) := Hax.foldRange (0 : Int) (32 : Int) (a, b) fun i (a, b) =>
+    let a := (Hax.array_update a i (Hax.index x i) : Array (Int))
+    let b := (Hax.array_update b i (Hax.index x (Hax.add (32 : Int) i)) : Array (Int))
+    (a, b)
+  (a, b)
 
-def dh (my_sk : Array (Int)) (their_pk : Array (Int)) : Array (Int) :=
-x25519 my_sk their_pk
+def kdf_rk {D : Type} [Inhabited D] [DoubleRatchetDeps D] (rk : Array (Int)) (dh_out : Array (Int)) : Array (Int) × Array (Int) :=
+split64 ((DoubleRatchetDeps.hkdf_expand_64 (Self := D)) ((DoubleRatchetDeps.hkdf_extract (Self := D)) rk dh_out) KDF_RK_INFO)
 
-def kdf_chain_step (ck : Array (Int)) : Array (Int) × Array (Int) :=
-  let new_ck := (kdf_ck ck (1 : Int) : Array (Int))
-  let mk := (kdf_ck ck (2 : Int) : Array (Int))
-  (new_ck, mk)
+def dh {D : Type} [Inhabited D] [DoubleRatchetDeps D] (sk : Array (Int)) (pk : Array (Int)) : Array (Int) :=
+(DoubleRatchetDeps.x25519 (Self := D)) sk pk
 
-def kdf_chain_advance (ck : Array (Int)) (steps : Int) : Array (Int) :=
-  let current := (ck : Array (Int))
-  Hax.foldRange (0 : Int) steps current fun _i current =>
-    let next_ck := (kdf_chain_step current).1
-    let current := (next_ck : Array (Int))
-    current
+def eq32 (a : Array (Int)) (b : Array (Int)) : Bool :=
+  let acc := (0 : Int)
+  let acc := Hax.foldRange (0 : Int) (32 : Int) acc fun i acc =>
+    Hax.bitor_w 8 acc (Hax.bitxor_w 8 (Hax.index a i) (Hax.index b i))
+  Hax.beq acc (0 : Int)
 
-def ratchet_init_initiator (root_key : Array (Int)) (my_sk : Array (Int)) (my_pk : Array (Int)) (remote_pk : Array (Int)) : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int :=
-  let dh_out := (dh my_sk remote_pk : Array (Int))
-  let (new_rk, send_ck) := kdf_rk root_key dh_out
-  RatchetState new_rk (some send_ck) (none) (0 : Int) (0 : Int) my_sk my_pk remote_pk (0 : Int)
+def encode_header (h : Array (Int) × Int × Int) : Array (Int) :=
+  let out := (Hax.repeat_ (0 : Int) (40 : Int) : Array (Int))
+  let out := Hax.foldRange (0 : Int) (32 : Int) out fun i out =>
+    (Hax.array_update out i (Hax.index («.dh» h) i) : Array (Int))
+  let out := (Hax.array_update out (32 : Int) (Hax.castVal_w 8 (Hax.shr_w 32 («MessageHeader.pn» h) (24 : Int))) : Array (Int))
+  let out := (Hax.array_update out (33 : Int) (Hax.castVal_w 8 (Hax.bitand_w 32 (Hax.shr_w 32 («MessageHeader.pn» h) (16 : Int)) (255 : Int))) : Array (Int))
+  let out := (Hax.array_update out (34 : Int) (Hax.castVal_w 8 (Hax.bitand_w 32 (Hax.shr_w 32 («MessageHeader.pn» h) (8 : Int)) (255 : Int))) : Array (Int))
+  let out := (Hax.array_update out (35 : Int) (Hax.castVal_w 8 (Hax.bitand_w 32 («MessageHeader.pn» h) (255 : Int))) : Array (Int))
+  let out := (Hax.array_update out (36 : Int) (Hax.castVal_w 8 (Hax.shr_w 32 («.n» h) (24 : Int))) : Array (Int))
+  let out := (Hax.array_update out (37 : Int) (Hax.castVal_w 8 (Hax.bitand_w 32 (Hax.shr_w 32 («.n» h) (16 : Int)) (255 : Int))) : Array (Int))
+  let out := (Hax.array_update out (38 : Int) (Hax.castVal_w 8 (Hax.bitand_w 32 (Hax.shr_w 32 («.n» h) (8 : Int)) (255 : Int))) : Array (Int))
+  let out := (Hax.array_update out (39 : Int) (Hax.castVal_w 8 (Hax.bitand_w 32 («.n» h) (255 : Int))) : Array (Int))
+  out
 
-def ratchet_init_responder (root_key : Array (Int)) (my_sk : Array (Int)) (my_pk : Array (Int)) (remote_pk : Array (Int)) : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int :=
-RatchetState root_key (none) (none) (0 : Int) (0 : Int) my_sk my_pk remote_pk (0 : Int)
+def concat_ad (ad : Array (Int)) (h : Array (Int) × Int × Int) : Array (Int) :=
+  let enc := (encode_header h : Array (Int))
+  let out := (Hax.repeat_ (0 : Int) (104 : Int) : Array (Int))
+  let out := Hax.foldRange (0 : Int) AD_LEN out fun i out =>
+    (Hax.array_update out i (Hax.index ad i) : Array (Int))
+  Hax.foldRange (0 : Int) HEADER_LEN out fun i out =>
+    (Hax.array_update out (Hax.add AD_LEN i) (Hax.index enc i) : Array (Int))
 
-def ratchet_encrypt (state : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) (plaintext : Array (Int)) (pt_len : Int) : Option ((Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) × (Array (Int) × Int × Int) × Array (Int)) :=
-  match «RatchetState.send_ck» state with
-  | some (send_ck) =>     let (new_send_ck, mk) := kdf_chain_step send_ck
-    let header := (MessageHeader («RatchetState.my_pk» state) («RatchetState.send_n» state) («.prev_send_n» state) : Array (Int) × Int × Int)
-    let ciphertext := (aead_encrypt mk plaintext pt_len («RatchetState.my_pk» state) : Array (Int))
-    let new_state := (RatchetState («RatchetState.root_key» state) (some new_send_ck) («RatchetState.recv_ck» state) (Hax.add («RatchetState.send_n» state) (1 : Int)) («RatchetState.recv_n» state) («RatchetState.my_sk» state) («RatchetState.my_pk» state) («RatchetState.remote_pk» state) («.prev_send_n» state) : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int)
-    some (new_state, header, ciphertext)
+def ratchet_init_alice {D : Type} [Inhabited D] [DoubleRatchetDeps D] (sk : Array (Int)) (bob_pk : Array (Int)) (my_sk : Array (Int)) (my_pk : Array (Int)) : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)) :=
+  let (rk, cks) := (kdf_rk (D := D)) sk ((dh (D := D)) my_sk bob_pk)
+  RatchetState my_sk my_pk (some bob_pk) rk (some cks) (none) (0 : Int) (0 : Int) (0 : Int) (Hax.repeat_ false (32 : Int)) (Hax.repeat_ (Hax.repeat_ (0 : Int) (32 : Int)) (32 : Int)) (Hax.repeat_ (0 : Int) (32 : Int)) (Hax.repeat_ (Hax.repeat_ (0 : Int) (32 : Int)) (32 : Int))
+
+def Uninitialized_establish_alice {D : Type} [Inhabited D] {G : Type} [Inhabited G] [DoubleRatchetDeps D] [DoubleRatchetGhost G] (self : Uninitialized_T) (ghost : G) (sk : Array (Int)) (bob_pk : Array (Int)) (my_sk : Array (Int)) (my_pk : Array (Int)) :=
+  let ghost := event ghost (3 : Int) (0 : Int)
+  (Session ((ratchet_init_alice (D := D)) sk bob_pk my_sk my_pk) (0 : Int), ghost)
+
+def ratchet_init_bob (sk : Array (Int)) (my_sk : Array (Int)) (my_pk : Array (Int)) : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)) :=
+RatchetState my_sk my_pk (none) sk (none) (none) (0 : Int) (0 : Int) (0 : Int) (Hax.repeat_ false (32 : Int)) (Hax.repeat_ (Hax.repeat_ (0 : Int) (32 : Int)) (32 : Int)) (Hax.repeat_ (0 : Int) (32 : Int)) (Hax.repeat_ (Hax.repeat_ (0 : Int) (32 : Int)) (32 : Int))
+
+def Uninitialized_establish_bob {G : Type} [Inhabited G] [DoubleRatchetGhost G] (self : Uninitialized_T) (ghost : G) (sk : Array (Int)) (my_sk : Array (Int)) (my_pk : Array (Int)) :=
+  let ghost := event ghost (3 : Int) (0 : Int)
+  (Session (ratchet_init_bob sk my_sk my_pk) (0 : Int), ghost)
+
+def ratchet_encrypt {D : Type} [Inhabited D] [DoubleRatchetDeps D] (state : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) (pt : Array (Int)) (pt_len : Int) (ad : Array (Int)) : Option ((Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) × (Array (Int) × Int × Int) × Array (Int) × Int) :=
+  match «.cks» state with
   | none => none
+  | some (ck) =>     let (ck1, mk) := (kdf_ck (D := D)) ck
+    let header := (MessageHeader («.dhs_pk» state) («RatchetState.pn» state) («.ns» state) : Array (Int) × Int × Int)
+    let ct := ((DoubleRatchetDeps.aead_encrypt (Self := D)) mk pt pt_len (concat_ad ad header) : Array (Int))
+    some (let _fru_base := (state : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)))
+RatchetState («.dhs_sk» _fru_base) («.dhs_pk» _fru_base) («.dhr» _fru_base) («.rk» _fru_base) (some ck1) («.ckr» _fru_base) (Hax.add («.ns» state) (1 : Int)) («.nr» _fru_base) («RatchetState.pn» _fru_base) («.sk_used» _fru_base) («.sk_dh» _fru_base) («.sk_n» _fru_base) («.sk_mk» _fru_base), header, ct, ct_len pt_len)
 
-def ratchet_decrypt (state : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) (header : Array (Int) × Int × Int) (ciphertext : Array (Int)) (ct_len : Int) : Option ((Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) × Array (Int)) :=
-  match «RatchetState.recv_ck» state with
-  | some (recv_ck) =>     let (new_recv_ck, mk) := kdf_chain_step recv_ck
-    let plaintext := (aead_decrypt mk ciphertext ct_len («.dh_public» header) : Array (Int))
-    let new_state := (RatchetState («RatchetState.root_key» state) («RatchetState.send_ck» state) (some new_recv_ck) («RatchetState.send_n» state) (Hax.add («RatchetState.recv_n» state) (1 : Int)) («RatchetState.my_sk» state) («RatchetState.my_pk» state) («RatchetState.remote_pk» state) («.prev_send_n» state) : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int)
-    some (new_state, plaintext)
+def Session_send {D : Type} [Inhabited D] {G : Type} [Inhabited G] [DoubleRatchetDeps D] [DoubleRatchetGhost G] (self : (Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) × Int) (ghost : G) (pt : Array (Int)) (pt_len : Int) (ad : Array (Int)) :=
+  match (ratchet_encrypt (D := D)) («.st» self) pt pt_len ad with
+  | some ((st1, h, ct, n)) =>     let ghost := event ghost (0 : Int) (Hax.add («.step» self) (1 : Int))
+    ((Session st1 (Hax.add («.step» self) (1 : Int)), some (h, ct, n)), ghost)
+  | none => ((self, none), ghost)
+
+def store_find (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) (dh_pub : Array (Int)) (n : Int) : Bool × Int :=
+  let acc := (false, (0 : Int))
+  Hax.foldRange (0 : Int) MAX_STORED acc fun i acc =>
+    let hit := Hax.band (Hax.band (Hax.index («.sk_used» s) i) (eq32 (Hax.index («.sk_dh» s) i) dh_pub)) (Hax.beq (Hax.index («.sk_n» s) i) n)
+    if Hax.band ((Hax.Not (acc.1))) (hit : Bool) then
+      let acc := (true, i)
+      acc
+    else
+      acc
+
+def store_take (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) (i : Int) : (Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) × Array (Int) :=
+  let mk := (Hax.index («.sk_mk» s) i : Array (Int))
+  let t := (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)))
+  let t := (Hax.struct_update_snd t (Hax.struct_update_snd t.2 (Hax.struct_update_snd t.2.2 (Hax.struct_update_snd t.2.2.2 (Hax.struct_update_snd t.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2.2 (Hax.struct_update_fst t.2.2.2.2.2.2.2.2.2 (Hax.array_update («.sk_used» t) i false)))))))))) : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)))
+  let t := (Hax.struct_update_snd t (Hax.struct_update_snd t.2 (Hax.struct_update_snd t.2.2 (Hax.struct_update_snd t.2.2.2 (Hax.struct_update_snd t.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2.2.2 (Hax.struct_update_fst t.2.2.2.2.2.2.2.2.2.2 (Hax.array_update («.sk_dh» t) i (Hax.repeat_ (0 : Int) (32 : Int))))))))))))) : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)))
+  let t := (Hax.struct_update_snd t (Hax.struct_update_snd t.2 (Hax.struct_update_snd t.2.2 (Hax.struct_update_snd t.2.2.2 (Hax.struct_update_snd t.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2.2.2.2 (Hax.struct_update_fst t.2.2.2.2.2.2.2.2.2.2.2 (Hax.array_update («.sk_n» t) i (0 : Int))))))))))))) : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)))
+  let t := (Hax.struct_update_snd t (Hax.struct_update_snd t.2 (Hax.struct_update_snd t.2.2 (Hax.struct_update_snd t.2.2.2 (Hax.struct_update_snd t.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2.2.2.2 (Hax.struct_update_snd t.2.2.2.2.2.2.2.2.2.2.2 (Hax.array_update («.sk_mk» t) i (Hax.repeat_ (0 : Int) (32 : Int)))))))))))))) : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)))
+  (t, mk)
+
+def store_insert (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) (dh_pub : Array (Int)) (n : Int) (mk : Array (Int)) : Option (Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) :=
+  let state := (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)))
+  let done := (false : Bool)
+  let used := (0 : Int)
+  let dhs := (0 : Int)
+  let nums := (0 : Int)
+  let mks := (0 : Int)
+  let (state, done) := Hax.foldRange (0 : Int) MAX_STORED (state, done) fun i (state, done) =>
+    if Hax.band ((!(done : Bool))) ((Hax.Not (Hax.index («.sk_used» state) i))) then
+      let used := «.sk_used» state
+      let used := Hax.array_update used i true
+      let dhs := «.sk_dh» state
+      let dhs := Hax.array_update dhs i dh_pub
+      let nums := «.sk_n» state
+      let nums := Hax.array_update nums i n
+      let mks := «.sk_mk» state
+      let mks := Hax.array_update mks i mk
+      let state := (RatchetState («.dhs_sk» state) («.dhs_pk» state) («.dhr» state) («.rk» state) («.cks» state) («.ckr» state) («.ns» state) («.nr» state) («RatchetState.pn» state) used dhs nums mks : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)))
+      let done := (true : Bool)
+      (state, done)
+    else
+      (state, done)
+  if done then
+    some state
+  else
+    none
+
+def try_skipped_message_keys (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) (h : Array (Int) × Int × Int) : Option ((Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) × Array (Int)) :=
+  let (found, i) := store_find s («.dh» h) («.n» h)
+  if found then
+    some (store_take s i)
+  else
+    none
+
+def skip_message_keys {D : Type} [Inhabited D] [DoubleRatchetDeps D] (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) («until» : Int) : Option (Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) :=
+  if Hax.band (Hax.gt «until» («.nr» s)) (Hax.gt (Hax.sub «until» («.nr» s)) MAX_SKIP) then
+    none
+  else
+    match «.ckr» s with
+    | none => some s
+    | some (ck0) =>       let dhr := (match «.dhr» s with
+  | some (r) => r
+  | none => Hax.repeat_ (0 : Int) (32 : Int) : Array (Int))
+      let acc := (s, ck0, true)
+      let acc := Hax.foldRange (0 : Int) MAX_SKIP acc fun _i acc =>
+        let (st, ck, ok) := acc
+        if Hax.band (ok : Bool) (Hax.lt («.nr» st) «until») then
+          let (ck1, mk) := (kdf_ck (D := D)) ck
+          match store_insert st dhr («.nr» st) mk with
+          | some (st1) =>             let acc := (RatchetState («.dhs_sk» st1) («.dhs_pk» st1) («.dhr» st1) («.rk» st1) («.cks» st1) (some ck1) («.ns» st1) (Hax.add («.nr» st1) (1 : Int)) («RatchetState.pn» st1) («.sk_used» st1) («.sk_dh» st1) («.sk_n» st1) («.sk_mk» st1), ck1, true)
+            acc
+          | none =>             let acc := (st, ck, false)
+            acc
+        else
+          acc
+      let (st, _, ok) := acc
+      if ok then
+        some st
+      else
+        none
+
+def dh_ratchet_recv_half {D : Type} [Inhabited D] [DoubleRatchetDeps D] (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) (dh_r : Array (Int)) : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)) :=
+  let (rk1, ckr1) := (kdf_rk (D := D)) («.rk» s) ((dh (D := D)) («.dhs_sk» s) dh_r)
+  let _fru_base := (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)))
+  RatchetState («.dhs_sk» _fru_base) («.dhs_pk» _fru_base) (some dh_r) rk1 («.cks» _fru_base) (some ckr1) (0 : Int) (0 : Int) («.ns» s) («.sk_used» _fru_base) («.sk_dh» _fru_base) («.sk_n» _fru_base) («.sk_mk» _fru_base)
+
+def dh_ratchet_send_half {D : Type} [Inhabited D] [DoubleRatchetDeps D] (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) (new_sk : Array (Int)) (new_pk : Array (Int)) : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)) :=
+  match «.dhr» s with
+  | none => s
+  | some (r) =>     let (rk2, cks2) := (kdf_rk (D := D)) («.rk» s) ((dh (D := D)) new_sk r)
+    let _fru_base := (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)))
+    RatchetState new_sk new_pk («.dhr» _fru_base) rk2 (some cks2) («.ckr» _fru_base) («.ns» _fru_base) («.nr» _fru_base) («RatchetState.pn» _fru_base) («.sk_used» _fru_base) («.sk_dh» _fru_base) («.sk_n» _fru_base) («.sk_mk» _fru_base)
+
+def dh_ratchet {D : Type} [Inhabited D] [DoubleRatchetDeps D] (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) (dh_r : Array (Int)) (new_sk : Array (Int)) (new_pk : Array (Int)) : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int)) :=
+(dh_ratchet_send_half (D := D)) ((dh_ratchet_recv_half (D := D)) s dh_r) new_sk new_pk
+
+def ratchet_receive_key {D : Type} [Inhabited D] [DoubleRatchetDeps D] (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) (h : Array (Int) × Int × Int) (new_sk : Array (Int)) (new_pk : Array (Int)) : Option ((Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) × Array (Int)) :=
+  match try_skipped_message_keys s h with
+  | some (r) => some r
+  | none =>     let is_new := (match «.dhr» s with
+  | some (r) => (Hax.Not (eq32 r («.dh» h)))
+  | none => true : Bool)
+    let s1 := (  if is_new then
+    match (skip_message_keys (D := D)) s («MessageHeader.pn» h) with
+    | some (t) => some ((dh_ratchet (D := D)) t («.dh» h) new_sk new_pk)
+    | none => none
+  else
+    if Hax.lt («.n» h) («.nr» s) then
+      none
+    else
+      some s : Option (Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))))
+    match s1 with
+    | none => none
+    | some (t1) =>       match (skip_message_keys (D := D)) t1 («.n» h) with
+      | none => none
+      | some (t2) =>         match «.ckr» t2 with
+        | none => none
+        | some (ck) =>           let (ck1, mk) := (kdf_ck (D := D)) ck
+          some (RatchetState («.dhs_sk» t2) («.dhs_pk» t2) («.dhr» t2) («.rk» t2) («.cks» t2) (some ck1) («.ns» t2) (Hax.add («.nr» t2) (1 : Int)) («RatchetState.pn» t2) («.sk_used» t2) («.sk_dh» t2) («.sk_n» t2) («.sk_mk» t2), mk)
+
+def ratchet_decrypt {D : Type} [Inhabited D] [DoubleRatchetDeps D] (s : Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) (h : Array (Int) × Int × Int) (ct : Array (Int)) (ct_len : Int) (ad : Array (Int)) (new_sk : Array (Int)) (new_pk : Array (Int)) : Option ((Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) × Array (Int) × Int) :=
+  match (ratchet_receive_key (D := D)) s h new_sk new_pk with
   | none => none
+  | some ((s1, mk)) =>     match (DoubleRatchetDeps.aead_decrypt (Self := D)) mk ct ct_len (concat_ad ad h) with
+    | none => none
+    | some ((pt, n)) => some (s1, pt, n)
 
-def dh_ratchet_step (state : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int) (new_remote_pk : Array (Int)) (new_my_sk : Array (Int)) (new_my_pk : Array (Int)) : Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Array (Int) × Array (Int) × Array (Int) × Int :=
-  let dh_out1 := (dh («RatchetState.my_sk» state) new_remote_pk : Array (Int))
-  let (rk1, new_recv_ck) := kdf_rk («RatchetState.root_key» state) dh_out1
-  let dh_out2 := (dh new_my_sk new_remote_pk : Array (Int))
-  let (rk2, new_send_ck) := kdf_rk rk1 dh_out2
-  RatchetState rk2 (some new_send_ck) (some new_recv_ck) (0 : Int) (0 : Int) new_my_sk new_my_pk new_remote_pk («RatchetState.send_n» state)
+def Session_receive {D : Type} [Inhabited D] {G : Type} [Inhabited G] [DoubleRatchetDeps D] [DoubleRatchetGhost G] (self : (Array (Int) × Array (Int) × Option (Array (Int)) × Array (Int) × Option (Array (Int)) × Option (Array (Int)) × Int × Int × Int × Array (Bool) × Array (Array (Int)) × Array (Int) × Array (Array (Int))) × Int) (ghost : G) (h : Array (Int) × Int × Int) (ct : Array (Int)) (ct_len : Int) (ad : Array (Int)) (new_sk : Array (Int)) (new_pk : Array (Int)) :=
+  match (ratchet_decrypt (D := D)) («.st» self) h ct ct_len ad new_sk new_pk with
+  | some ((st1, pt, n)) =>     let ghost := event ghost (1 : Int) (Hax.add («.step» self) (1 : Int))
+    ((Session st1 (Hax.add («.step» self) (1 : Int)), some (pt, n)), ghost)
+  | none => ((self, none), ghost)
 
-end
+def Uninitialized_establish_alice_impExpr : ImpExpr :=
+  (.letBind "self" (.var "self") (.letBind "ghost" (.var "ghost") (.letBind "sk" (.var "sk") (.letBind "bob_pk" (.var "bob_pk") (.letBind "my_sk" (.var "my_sk") (.letBind "my_pk" (.var "my_pk") (.seq (.seq (.letBind "ghost" (.app "event" [(.var "ghost"), (.lit (ImpLit.int 3)), (.lit (ImpLit.int 0))]) (.var "ghost")) .unitVal) (.tuple [(.app "Session" [(.app "ratchet_init_alice" [(.var "sk"), (.var "bob_pk"), (.var "my_sk"), (.var "my_pk")]), (.lit (ImpLit.int 0))]), (.var "ghost")]))))))))
 
-def Uninitialized_establish_impExpr : ImpExpr :=
-  (.letBind "self" (.var "self") (.letBind "ghost" (.var "ghost") (.letBind "root_key" (.var "root_key") (.letBind "my_sk" (.var "my_sk") (.letBind "my_pk" (.var "my_pk") (.letBind "remote_pk" (.var "remote_pk") (.letBind "dh_out" (.app "dh" [(.var "my_sk"), (.var "remote_pk")]) (.letBind "_tup" (.app "kdf_rk" [(.var "root_key"), (.var "dh_out")]) (.letBind "new_rk" (.proj (.var "_tup") 0) (.letBind "send_ck" (.proj (.var "_tup") 1) (.seq (.seq (.letBind "ghost" (.app "event" [(.var "ghost"), (.lit (ImpLit.int 3)), (.lit (ImpLit.int 0))]) (.var "ghost")) .unitVal) (.tuple [(.app "Session" [(.var "new_rk"), (.app "Some" [(.var "send_ck")]), (.app "None" []), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.var "my_sk"), (.var "my_pk"), (.var "remote_pk"), (.lit (ImpLit.int 0))]), (.var "ghost")]))))))))))))
+def Uninitialized_establish_bob_impExpr : ImpExpr :=
+  (.letBind "self" (.var "self") (.letBind "ghost" (.var "ghost") (.letBind "sk" (.var "sk") (.letBind "my_sk" (.var "my_sk") (.letBind "my_pk" (.var "my_pk") (.seq (.seq (.letBind "ghost" (.app "event" [(.var "ghost"), (.lit (ImpLit.int 3)), (.lit (ImpLit.int 0))]) (.var "ghost")) .unitVal) (.tuple [(.app "Session" [(.app "ratchet_init_bob" [(.var "sk"), (.var "my_sk"), (.var "my_pk")]), (.lit (ImpLit.int 0))]), (.var "ghost")])))))))
 
 def Session_step_impExpr : ImpExpr :=
   (.letBind "self" (.var "self") (.app ".step" [(.var "self")]))
 
-def Session_root_key_impExpr : ImpExpr :=
-  (.letBind "self" (.var "self") (.app "Session.root_key" [(.var "self")]))
-
-def Session_send_ck_impExpr : ImpExpr :=
-  (.letBind "self" (.var "self") (.app "Session.send_ck" [(.var "self")]))
-
-def Session_recv_ck_impExpr : ImpExpr :=
-  (.letBind "self" (.var "self") (.app "Session.recv_ck" [(.var "self")]))
-
-def Session_send_n_impExpr : ImpExpr :=
-  (.letBind "self" (.var "self") (.app "Session.send_n" [(.var "self")]))
-
-def Session_recv_n_impExpr : ImpExpr :=
-  (.letBind "self" (.var "self") (.app "Session.recv_n" [(.var "self")]))
-
-def Session_my_pk_impExpr : ImpExpr :=
-  (.letBind "self" (.var "self") (.app "Session.my_pk" [(.var "self")]))
-
-def Session_remote_pk_impExpr : ImpExpr :=
-  (.letBind "self" (.var "self") (.app "Session.remote_pk" [(.var "self")]))
+def Session_state_impExpr : ImpExpr :=
+  (.letBind "self" (.var "self") (.app ".st" [(.var "self")]))
 
 def Session_send_impExpr : ImpExpr :=
-  (.letBind "self" (.var "self") (.letBind "ghost" (.var "ghost") (.match_ (.app "Session.send_ck" [(.var "self")]) [(.somePat (.varPat "send_ck"), (.letBind "new_send_ck" (.app "kdf_ck" [(.var "send_ck"), (.lit (ImpLit.int 1))]) (.letBind "mk" (.app "kdf_ck" [(.var "send_ck"), (.lit (ImpLit.int 2))]) (.seq (.seq (.letBind "ghost" (.app "send" [(.var "ghost"), (.app ".step" [(.var "self")]), (.var "mk")]) (.var "ghost")) .unitVal) (.seq (.seq (.letBind "ghost" (.app "event" [(.var "ghost"), (.lit (ImpLit.int 0)), (.app "Add#64" [(.app ".step" [(.var "self")]), (.lit (ImpLit.int 1))])]) (.var "ghost")) .unitVal) (.tuple [(.app "Some" [(.app "Session" [(.app "Session.root_key" [(.var "self")]), (.app "Some" [(.var "new_send_ck")]), (.app "Session.recv_ck" [(.var "self")]), (.app "Add#32" [(.app "Session.send_n" [(.var "self")]), (.lit (ImpLit.int 1))]), (.app "Session.recv_n" [(.var "self")]), (.app "Session.my_sk" [(.var "self")]), (.app "Session.my_pk" [(.var "self")]), (.app "Session.remote_pk" [(.var "self")]), (.app "Add#64" [(.app ".step" [(.var "self")]), (.lit (ImpLit.int 1))])])]), (.var "ghost")])))))), (.nonePat, (.tuple [(.app "None" []), (.var "ghost")]))])))
+  (.letBind "self" (.var "self") (.letBind "ghost" (.var "ghost") (.letBind "pt" (.var "pt") (.letBind "pt_len" (.var "pt_len") (.letBind "ad" (.var "ad") (.match_ (.app "ratchet_encrypt" [(.app ".st" [(.var "self")]), (.var "pt"), (.var "pt_len"), (.var "ad")]) [(.somePat (.tuplePat [.varPat "st1", .varPat "h", .varPat "ct", .varPat "n"]), (.seq (.seq (.letBind "ghost" (.app "event" [(.var "ghost"), (.lit (ImpLit.int 0)), (.app "Add#64" [(.app ".step" [(.var "self")]), (.lit (ImpLit.int 1))])]) (.var "ghost")) .unitVal) (.tuple [(.tuple [(.app "Session" [(.var "st1"), (.app "Add#64" [(.app ".step" [(.var "self")]), (.lit (ImpLit.int 1))])]), (.app "Some" [(.tuple [(.var "h"), (.var "ct"), (.var "n")])])]), (.var "ghost")]))), (.nonePat, (.tuple [(.tuple [(.var "self"), (.app "None" [])]), (.var "ghost")]))]))))))
 
 def Session_receive_impExpr : ImpExpr :=
-  (.letBind "self" (.var "self") (.letBind "ghost" (.var "ghost") (.match_ (.app "Session.recv_ck" [(.var "self")]) [(.somePat (.varPat "recv_ck"), (.letBind "new_recv_ck" (.app "kdf_ck" [(.var "recv_ck"), (.lit (ImpLit.int 1))]) (.letBind "mk" (.app "kdf_ck" [(.var "recv_ck"), (.lit (ImpLit.int 2))]) (.seq (.seq (.letBind "ghost" (.app "recv" [(.var "ghost"), (.app ".step" [(.var "self")]), (.var "mk")]) (.var "ghost")) .unitVal) (.seq (.seq (.letBind "ghost" (.app "event" [(.var "ghost"), (.lit (ImpLit.int 1)), (.app "Add#64" [(.app ".step" [(.var "self")]), (.lit (ImpLit.int 1))])]) (.var "ghost")) .unitVal) (.tuple [(.app "Some" [(.app "Session" [(.app "Session.root_key" [(.var "self")]), (.app "Session.send_ck" [(.var "self")]), (.app "Some" [(.var "new_recv_ck")]), (.app "Session.send_n" [(.var "self")]), (.app "Add#32" [(.app "Session.recv_n" [(.var "self")]), (.lit (ImpLit.int 1))]), (.app "Session.my_sk" [(.var "self")]), (.app "Session.my_pk" [(.var "self")]), (.app "Session.remote_pk" [(.var "self")]), (.app "Add#64" [(.app ".step" [(.var "self")]), (.lit (ImpLit.int 1))])])]), (.var "ghost")])))))), (.nonePat, (.tuple [(.app "None" []), (.var "ghost")]))])))
-
-def Session_dh_ratchet_impExpr : ImpExpr :=
-  (.letBind "self" (.var "self") (.letBind "ghost" (.var "ghost") (.letBind "new_remote_pk" (.var "new_remote_pk") (.letBind "new_my_sk" (.var "new_my_sk") (.letBind "new_my_pk" (.var "new_my_pk") (.letBind "dh1" (.app "dh" [(.app "Session.my_sk" [(.var "self")]), (.var "new_remote_pk")]) (.letBind "_tup" (.app "kdf_rk" [(.app "Session.root_key" [(.var "self")]), (.var "dh1")]) (.letBind "rk1" (.proj (.var "_tup") 0) (.letBind "new_recv_ck" (.proj (.var "_tup") 1) (.letBind "dh2" (.app "dh" [(.var "new_my_sk"), (.var "new_remote_pk")]) (.letBind "_tup" (.app "kdf_rk" [(.var "rk1"), (.var "dh2")]) (.letBind "rk2" (.proj (.var "_tup") 0) (.letBind "new_send_ck" (.proj (.var "_tup") 1) (.seq (.seq (.letBind "ghost" (.app "event" [(.var "ghost"), (.lit (ImpLit.int 2)), (.app "Add#64" [(.app ".step" [(.var "self")]), (.lit (ImpLit.int 1))])]) (.var "ghost")) .unitVal) (.tuple [(.app "Session" [(.var "rk2"), (.app "Some" [(.var "new_send_ck")]), (.app "Some" [(.var "new_recv_ck")]), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.var "new_my_sk"), (.var "new_my_pk"), (.var "new_remote_pk"), (.app "Add#64" [(.app ".step" [(.var "self")]), (.lit (ImpLit.int 1))])]), (.var "ghost")])))))))))))))))
-
-def MAX_MSG_LEN_impExpr : ImpExpr :=
-  (.lit (ImpLit.int 256))
+  (.letBind "self" (.var "self") (.letBind "ghost" (.var "ghost") (.letBind "h" (.var "h") (.letBind "ct" (.var "ct") (.letBind "ct_len" (.var "ct_len") (.letBind "ad" (.var "ad") (.letBind "new_sk" (.var "new_sk") (.letBind "new_pk" (.var "new_pk") (.match_ (.app "ratchet_decrypt" [(.app ".st" [(.var "self")]), (.var "h"), (.var "ct"), (.var "ct_len"), (.var "ad"), (.var "new_sk"), (.var "new_pk")]) [(.somePat (.tuplePat [.varPat "st1", .varPat "pt", .varPat "n"]), (.seq (.seq (.letBind "ghost" (.app "event" [(.var "ghost"), (.lit (ImpLit.int 1)), (.app "Add#64" [(.app ".step" [(.var "self")]), (.lit (ImpLit.int 1))])]) (.var "ghost")) .unitVal) (.tuple [(.tuple [(.app "Session" [(.var "st1"), (.app "Add#64" [(.app ".step" [(.var "self")]), (.lit (ImpLit.int 1))])]), (.app "Some" [(.tuple [(.var "pt"), (.var "n")])])]), (.var "ghost")]))), (.nonePat, (.tuple [(.tuple [(.var "self"), (.app "None" [])]), (.var "ghost")]))])))))))))
 
 def MAX_PLAINTEXT_LEN_impExpr : ImpExpr :=
   (.lit (ImpLit.int 256))
 
+def BLOCK_LEN_impExpr : ImpExpr :=
+  (.lit (ImpLit.int 16))
+
+def TAG_LEN_impExpr : ImpExpr :=
+  (.lit (ImpLit.int 8))
+
+def MAX_CT_LEN_impExpr : ImpExpr :=
+  (.lit (ImpLit.int 280))
+
+def AD_LEN_impExpr : ImpExpr :=
+  (.lit (ImpLit.int 64))
+
+def HEADER_LEN_impExpr : ImpExpr :=
+  (.lit (ImpLit.int 40))
+
+def FULL_AD_LEN_impExpr : ImpExpr :=
+  (.lit (ImpLit.int 104))
+
+def MAX_SKIP_impExpr : ImpExpr :=
+  (.lit (ImpLit.int 16))
+
+def MAX_STORED_impExpr : ImpExpr :=
+  (.lit (ImpLit.int 32))
+
+def KDF_RK_INFO_impExpr : ImpExpr :=
+  (.app "array_lit" [(.lit (ImpLit.int 87)), (.lit (ImpLit.int 104)), (.lit (ImpLit.int 105)), (.lit (ImpLit.int 115)), (.lit (ImpLit.int 112)), (.lit (ImpLit.int 101)), (.lit (ImpLit.int 114)), (.lit (ImpLit.int 82)), (.lit (ImpLit.int 97)), (.lit (ImpLit.int 116)), (.lit (ImpLit.int 99)), (.lit (ImpLit.int 104)), (.lit (ImpLit.int 101)), (.lit (ImpLit.int 116))])
+
+def MESSAGE_KEY_SEED_impExpr : ImpExpr :=
+  (.app "array_lit" [(.lit (ImpLit.int 1))])
+
+def CHAIN_KEY_SEED_impExpr : ImpExpr :=
+  (.app "array_lit" [(.lit (ImpLit.int 2))])
+
+def ct_len_impExpr : ImpExpr :=
+  (.letBind "pt_len" (.var "pt_len") (.app "Add#size" [(.app "Mul#size" [(.app "Add#size" [(.app "Div#size" [(.var "pt_len"), (.var "BLOCK_LEN")]), (.lit (ImpLit.int 1))]), (.var "BLOCK_LEN")]), (.var "TAG_LEN")]))
+
 def ck_const_impExpr : ImpExpr :=
-  (.letBind "c" (.var "c") (.app "repeat" [(.var "c"), (.lit (ImpLit.int 32))]))
+  (.letBind "c" (.var "c") (.app "repeat" [(.var "c"), (.lit (ImpLit.int 1))]))
 
 def kdf_ck_impExpr : ImpExpr :=
-  (.letBind "chain_key" (.var "chain_key") (.letBind "constant" (.var "constant") (.app "hmac_sha256" [(.var "chain_key"), (.app "ck_const" [(.var "constant")])])))
+  (.letBind "ck" (.var "ck") (.tuple [(.app "hmac_sha256" [(.var "ck"), (.app "ck_const" [(.lit (ImpLit.int 2))])]), (.app "hmac_sha256" [(.var "ck"), (.app "ck_const" [(.lit (ImpLit.int 1))])])]))
+
+def split64_impExpr : ImpExpr :=
+  (.letBind "x" (.var "x") (.letBind "a" (.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))]) (.letBind "b" (.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))]) (.seq (.forFold "i" (.lit (ImpLit.int 0)) (.lit (ImpLit.int 32)) (.seq (.seq (.letBind "a" (.app "array_update" [(.var "a"), (.var "i"), (.app "index" [(.var "x"), (.var "i")])]) (.var "a")) .unitVal) (.seq (.seq (.letBind "b" (.app "array_update" [(.var "b"), (.var "i"), (.app "index" [(.var "x"), (.app "Add#size" [(.lit (ImpLit.int 32)), (.var "i")])])]) (.var "b")) .unitVal) .unitVal))) (.tuple [(.var "a"), (.var "b")])))))
 
 def kdf_rk_impExpr : ImpExpr :=
-  (.letBind "root_key" (.var "root_key") (.letBind "dh_output" (.var "dh_output") (.letBind "prk" (.app "hkdf_extract" [(.var "root_key"), (.var "dh_output")]) (.letBind "new_rk" (.app "hkdf_expand" [(.var "prk"), (.app "repeat" [(.lit (ImpLit.int 1)), (.lit (ImpLit.int 32))])]) (.letBind "new_ck" (.app "hkdf_expand" [(.var "prk"), (.app "repeat" [(.lit (ImpLit.int 2)), (.lit (ImpLit.int 32))])]) (.tuple [(.var "new_rk"), (.var "new_ck")]))))))
+  (.letBind "rk" (.var "rk") (.letBind "dh_out" (.var "dh_out") (.app "split64" [(.app "hkdf_expand_64" [(.app "hkdf_extract" [(.var "rk"), (.var "dh_out")]), (.var "KDF_RK_INFO")])])))
 
 def dh_impExpr : ImpExpr :=
-  (.letBind "my_sk" (.var "my_sk") (.letBind "their_pk" (.var "their_pk") (.app "x25519" [(.var "my_sk"), (.var "their_pk")])))
+  (.letBind "sk" (.var "sk") (.letBind "pk" (.var "pk") (.app "x25519" [(.var "sk"), (.var "pk")])))
 
-def kdf_chain_step_impExpr : ImpExpr :=
-  (.letBind "ck" (.var "ck") (.letBind "new_ck" (.app "kdf_ck" [(.var "ck"), (.lit (ImpLit.int 1))]) (.letBind "mk" (.app "kdf_ck" [(.var "ck"), (.lit (ImpLit.int 2))]) (.tuple [(.var "new_ck"), (.var "mk")]))))
+def eq32_impExpr : ImpExpr :=
+  (.letBind "a" (.var "a") (.letBind "b" (.var "b") (.letBind "acc" (.lit (ImpLit.int 0)) (.seq (.forFold "i" (.lit (ImpLit.int 0)) (.lit (ImpLit.int 32)) (.seq (.seq (.letBind "acc" (.app "BitOr#8" [(.var "acc"), (.app "BitXor#8" [(.app "index" [(.var "a"), (.var "i")]), (.app "index" [(.var "b"), (.var "i")])])]) (.var "acc")) .unitVal) .unitVal)) (.app "Eq" [(.var "acc"), (.lit (ImpLit.int 0))])))))
 
-def kdf_chain_advance_impExpr : ImpExpr :=
-  (.letBind "ck" (.var "ck") (.letBind "steps" (.var "steps") (.letBind "current" (.var "ck") (.seq (.forFold "_i" (.lit (ImpLit.int 0)) (.var "steps") (.letBind "_tup" (.app "kdf_chain_step" [(.var "current")]) (.letBind "next_ck" (.proj (.var "_tup") 0) (.letBind "_" (.proj (.var "_tup") 1) (.seq (.seq (.letBind "current" (.var "next_ck") (.var "current")) .unitVal) .unitVal))))) (.var "current")))))
+def encode_header_impExpr : ImpExpr :=
+  (.letBind "h" (.var "h") (.letBind "out" (.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 40))]) (.seq (.forFold "i" (.lit (ImpLit.int 0)) (.lit (ImpLit.int 32)) (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.var "i"), (.app "index" [(.app ".dh" [(.var "h")]), (.var "i")])]) (.var "out")) .unitVal) .unitVal)) (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.lit (ImpLit.int 32)), (.app "cast#8" [(.app "Shr#32" [(.app "MessageHeader.pn" [(.var "h")]), (.lit (ImpLit.int 24))])])]) (.var "out")) .unitVal) (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.lit (ImpLit.int 33)), (.app "cast#8" [(.app "BitAnd#32" [(.app "Shr#32" [(.app "MessageHeader.pn" [(.var "h")]), (.lit (ImpLit.int 16))]), (.lit (ImpLit.int 255))])])]) (.var "out")) .unitVal) (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.lit (ImpLit.int 34)), (.app "cast#8" [(.app "BitAnd#32" [(.app "Shr#32" [(.app "MessageHeader.pn" [(.var "h")]), (.lit (ImpLit.int 8))]), (.lit (ImpLit.int 255))])])]) (.var "out")) .unitVal) (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.lit (ImpLit.int 35)), (.app "cast#8" [(.app "BitAnd#32" [(.app "MessageHeader.pn" [(.var "h")]), (.lit (ImpLit.int 255))])])]) (.var "out")) .unitVal) (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.lit (ImpLit.int 36)), (.app "cast#8" [(.app "Shr#32" [(.app ".n" [(.var "h")]), (.lit (ImpLit.int 24))])])]) (.var "out")) .unitVal) (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.lit (ImpLit.int 37)), (.app "cast#8" [(.app "BitAnd#32" [(.app "Shr#32" [(.app ".n" [(.var "h")]), (.lit (ImpLit.int 16))]), (.lit (ImpLit.int 255))])])]) (.var "out")) .unitVal) (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.lit (ImpLit.int 38)), (.app "cast#8" [(.app "BitAnd#32" [(.app "Shr#32" [(.app ".n" [(.var "h")]), (.lit (ImpLit.int 8))]), (.lit (ImpLit.int 255))])])]) (.var "out")) .unitVal) (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.lit (ImpLit.int 39)), (.app "cast#8" [(.app "BitAnd#32" [(.app ".n" [(.var "h")]), (.lit (ImpLit.int 255))])])]) (.var "out")) .unitVal) (.var "out"))))))))))))
 
-def ratchet_init_initiator_impExpr : ImpExpr :=
-  (.letBind "root_key" (.var "root_key") (.letBind "my_sk" (.var "my_sk") (.letBind "my_pk" (.var "my_pk") (.letBind "remote_pk" (.var "remote_pk") (.letBind "dh_out" (.app "dh" [(.var "my_sk"), (.var "remote_pk")]) (.letBind "_tup" (.app "kdf_rk" [(.var "root_key"), (.var "dh_out")]) (.letBind "new_rk" (.proj (.var "_tup") 0) (.letBind "send_ck" (.proj (.var "_tup") 1) (.app "RatchetState" [(.var "new_rk"), (.app "Some" [(.var "send_ck")]), (.app "None" []), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.var "my_sk"), (.var "my_pk"), (.var "remote_pk"), (.lit (ImpLit.int 0))])))))))))
+def concat_ad_impExpr : ImpExpr :=
+  (.letBind "ad" (.var "ad") (.letBind "h" (.var "h") (.letBind "enc" (.app "encode_header" [(.var "h")]) (.letBind "out" (.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 104))]) (.seq (.forFold "i" (.lit (ImpLit.int 0)) (.var "AD_LEN") (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.var "i"), (.app "index" [(.var "ad"), (.var "i")])]) (.var "out")) .unitVal) .unitVal)) (.seq (.forFold "i" (.lit (ImpLit.int 0)) (.var "HEADER_LEN") (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.app "Add#size" [(.var "AD_LEN"), (.var "i")]), (.app "index" [(.var "enc"), (.var "i")])]) (.var "out")) .unitVal) .unitVal)) (.var "out")))))))
 
-def ratchet_init_responder_impExpr : ImpExpr :=
-  (.letBind "root_key" (.var "root_key") (.letBind "my_sk" (.var "my_sk") (.letBind "my_pk" (.var "my_pk") (.letBind "remote_pk" (.var "remote_pk") (.app "RatchetState" [(.var "root_key"), (.app "None" []), (.app "None" []), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.var "my_sk"), (.var "my_pk"), (.var "remote_pk"), (.lit (ImpLit.int 0))])))))
+def ratchet_init_alice_impExpr : ImpExpr :=
+  (.letBind "sk" (.var "sk") (.letBind "bob_pk" (.var "bob_pk") (.letBind "my_sk" (.var "my_sk") (.letBind "my_pk" (.var "my_pk") (.letBind "_tup" (.app "kdf_rk" [(.var "sk"), (.app "dh" [(.var "my_sk"), (.var "bob_pk")])]) (.letBind "rk" (.proj (.var "_tup") 0) (.letBind "cks" (.proj (.var "_tup") 1) (.app "RatchetState" [(.var "my_sk"), (.var "my_pk"), (.app "Some" [(.var "bob_pk")]), (.var "rk"), (.app "Some" [(.var "cks")]), (.app "None" []), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.app "repeat" [(.lit (ImpLit.bool false)), (.lit (ImpLit.int 32))]), (.app "repeat" [(.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))]), (.lit (ImpLit.int 32))]), (.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))]), (.app "repeat" [(.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))]), (.lit (ImpLit.int 32))])]))))))))
+
+def ratchet_init_bob_impExpr : ImpExpr :=
+  (.letBind "sk" (.var "sk") (.letBind "my_sk" (.var "my_sk") (.letBind "my_pk" (.var "my_pk") (.app "RatchetState" [(.var "my_sk"), (.var "my_pk"), (.app "None" []), (.var "sk"), (.app "None" []), (.app "None" []), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.app "repeat" [(.lit (ImpLit.bool false)), (.lit (ImpLit.int 32))]), (.app "repeat" [(.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))]), (.lit (ImpLit.int 32))]), (.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))]), (.app "repeat" [(.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))]), (.lit (ImpLit.int 32))])]))))
 
 def ratchet_encrypt_impExpr : ImpExpr :=
-  (.letBind "state" (.var "state") (.letBind "plaintext" (.var "plaintext") (.letBind "pt_len" (.var "pt_len") (.match_ (.app "RatchetState.send_ck" [(.var "state")]) [(.somePat (.varPat "send_ck"), (.letBind "_tup" (.app "kdf_chain_step" [(.var "send_ck")]) (.letBind "new_send_ck" (.proj (.var "_tup") 0) (.letBind "mk" (.proj (.var "_tup") 1) (.letBind "header" (.app "MessageHeader" [(.app "RatchetState.my_pk" [(.var "state")]), (.app "RatchetState.send_n" [(.var "state")]), (.app ".prev_send_n" [(.var "state")])]) (.letBind "ciphertext" (.app "aead_encrypt" [(.var "mk"), (.var "plaintext"), (.var "pt_len"), (.app "RatchetState.my_pk" [(.var "state")])]) (.letBind "new_state" (.app "RatchetState" [(.app "RatchetState.root_key" [(.var "state")]), (.app "Some" [(.var "new_send_ck")]), (.app "RatchetState.recv_ck" [(.var "state")]), (.app "Add#32" [(.app "RatchetState.send_n" [(.var "state")]), (.lit (ImpLit.int 1))]), (.app "RatchetState.recv_n" [(.var "state")]), (.app "RatchetState.my_sk" [(.var "state")]), (.app "RatchetState.my_pk" [(.var "state")]), (.app "RatchetState.remote_pk" [(.var "state")]), (.app ".prev_send_n" [(.var "state")])]) (.app "Some" [(.tuple [(.var "new_state"), (.var "header"), (.var "ciphertext")])])))))))), (.nonePat, (.app "None" []))]))))
+  (.letBind "state" (.var "state") (.letBind "pt" (.var "pt") (.letBind "pt_len" (.var "pt_len") (.letBind "ad" (.var "ad") (.match_ (.app ".cks" [(.var "state")]) [(.nonePat, (.app "None" [])), (.somePat (.varPat "ck"), (.letBind "_tup" (.app "kdf_ck" [(.var "ck")]) (.letBind "ck1" (.proj (.var "_tup") 0) (.letBind "mk" (.proj (.var "_tup") 1) (.letBind "header" (.app "MessageHeader" [(.app ".dhs_pk" [(.var "state")]), (.app "RatchetState.pn" [(.var "state")]), (.app ".ns" [(.var "state")])]) (.letBind "ct" (.app "aead_encrypt" [(.var "mk"), (.var "pt"), (.var "pt_len"), (.app "concat_ad" [(.var "ad"), (.var "header")])]) (.app "Some" [(.tuple [(.letBind "_fru_base" (.var "state") (.app "RatchetState" [(.app ".dhs_sk" [(.var "_fru_base")]), (.app ".dhs_pk" [(.var "_fru_base")]), (.app ".dhr" [(.var "_fru_base")]), (.app ".rk" [(.var "_fru_base")]), (.app "Some" [(.var "ck1")]), (.app ".ckr" [(.var "_fru_base")]), (.app "Add#32" [(.app ".ns" [(.var "state")]), (.lit (ImpLit.int 1))]), (.app ".nr" [(.var "_fru_base")]), (.app "RatchetState.pn" [(.var "_fru_base")]), (.app ".sk_used" [(.var "_fru_base")]), (.app ".sk_dh" [(.var "_fru_base")]), (.app ".sk_n" [(.var "_fru_base")]), (.app ".sk_mk" [(.var "_fru_base")])])), (.var "header"), (.var "ct"), (.app "ct_len" [(.var "pt_len")])])])))))))])))))
+
+def store_find_impExpr : ImpExpr :=
+  (.letBind "s" (.var "s") (.letBind "dh_pub" (.var "dh_pub") (.letBind "n" (.var "n") (.letBind "acc" (.tuple [(.lit (ImpLit.bool false)), (.lit (ImpLit.int 0))]) (.seq (.forFold "i" (.lit (ImpLit.int 0)) (.var "MAX_STORED") (.letBind "hit" (.app "&&" [(.app "&&" [(.app "index" [(.app ".sk_used" [(.var "s")]), (.var "i")]), (.app "eq32" [(.app "index" [(.app ".sk_dh" [(.var "s")]), (.var "i")]), (.var "dh_pub")])]), (.app "Eq" [(.app "index" [(.app ".sk_n" [(.var "s")]), (.var "i")]), (.var "n")])]) (.ifThenElse (.app "&&" [(.app "Not" [(.proj (.var "acc") 0)]), (.var "hit")]) (.seq (.seq (.letBind "acc" (.tuple [(.lit (ImpLit.bool true)), (.var "i")]) (.var "acc")) .unitVal) .unitVal) .unitVal))) (.var "acc"))))))
+
+def store_take_impExpr : ImpExpr :=
+  (.letBind "s" (.var "s") (.letBind "i" (.var "i") (.letBind "mk" (.app "index" [(.app ".sk_mk" [(.var "s")]), (.var "i")]) (.letBind "t" (.var "s") (.seq (.seq (.letBind "t" (.app "struct_update#RatchetState#9#13" [(.var "t"), (.app "array_update" [(.app ".sk_used" [(.var "t")]), (.var "i"), (.lit (ImpLit.bool false))])]) (.var "t")) .unitVal) (.seq (.seq (.letBind "t" (.app "struct_update#RatchetState#10#13" [(.var "t"), (.app "array_update" [(.app ".sk_dh" [(.var "t")]), (.var "i"), (.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))])])]) (.var "t")) .unitVal) (.seq (.seq (.letBind "t" (.app "struct_update#RatchetState#11#13" [(.var "t"), (.app "array_update" [(.app ".sk_n" [(.var "t")]), (.var "i"), (.lit (ImpLit.int 0))])]) (.var "t")) .unitVal) (.seq (.seq (.letBind "t" (.app "struct_update#RatchetState#12#13" [(.var "t"), (.app "array_update" [(.app ".sk_mk" [(.var "t")]), (.var "i"), (.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))])])]) (.var "t")) .unitVal) (.tuple [(.var "t"), (.var "mk")])))))))))
+
+def store_insert_impExpr : ImpExpr :=
+  (.letBind "s" (.var "s") (.letBind "dh_pub" (.var "dh_pub") (.letBind "n" (.var "n") (.letBind "mk" (.var "mk") (.letBind "state" (.var "s") (.letBind "done" (.lit (ImpLit.bool false)) (.seq (.letBind "used" (.lit (ImpLit.int 0)) (.letBind "dhs" (.lit (ImpLit.int 0)) (.letBind "nums" (.lit (ImpLit.int 0)) (.letBind "mks" (.lit (ImpLit.int 0)) (.forFold "i" (.lit (ImpLit.int 0)) (.var "MAX_STORED") (.ifThenElse (.app "&&" [(.app "Not" [(.var "done")]), (.app "Not" [(.app "index" [(.app ".sk_used" [(.var "state")]), (.var "i")])])]) (.letBind "used" (.app ".sk_used" [(.var "state")]) (.seq (.seq (.letBind "used" (.app "array_update" [(.var "used"), (.var "i"), (.lit (ImpLit.bool true))]) (.var "used")) .unitVal) (.letBind "dhs" (.app ".sk_dh" [(.var "state")]) (.seq (.seq (.letBind "dhs" (.app "array_update" [(.var "dhs"), (.var "i"), (.var "dh_pub")]) (.var "dhs")) .unitVal) (.letBind "nums" (.app ".sk_n" [(.var "state")]) (.seq (.seq (.letBind "nums" (.app "array_update" [(.var "nums"), (.var "i"), (.var "n")]) (.var "nums")) .unitVal) (.letBind "mks" (.app ".sk_mk" [(.var "state")]) (.seq (.seq (.letBind "mks" (.app "array_update" [(.var "mks"), (.var "i"), (.var "mk")]) (.var "mks")) .unitVal) (.seq (.seq (.letBind "state" (.app "RatchetState" [(.app ".dhs_sk" [(.var "state")]), (.app ".dhs_pk" [(.var "state")]), (.app ".dhr" [(.var "state")]), (.app ".rk" [(.var "state")]), (.app ".cks" [(.var "state")]), (.app ".ckr" [(.var "state")]), (.app ".ns" [(.var "state")]), (.app ".nr" [(.var "state")]), (.app "RatchetState.pn" [(.var "state")]), (.var "used"), (.var "dhs"), (.var "nums"), (.var "mks")]) (.var "state")) .unitVal) (.seq (.seq (.letBind "done" (.lit (ImpLit.bool true)) (.var "done")) .unitVal) .unitVal)))))))))) .unitVal)))))) (.ifThenElse (.var "done") (.app "Some" [(.var "state")]) (.app "None" [])))))))))
+
+def try_skipped_message_keys_impExpr : ImpExpr :=
+  (.letBind "s" (.var "s") (.letBind "h" (.var "h") (.letBind "_tup" (.app "store_find" [(.var "s"), (.app ".dh" [(.var "h")]), (.app ".n" [(.var "h")])]) (.letBind "found" (.proj (.var "_tup") 0) (.letBind "i" (.proj (.var "_tup") 1) (.ifThenElse (.var "found") (.app "Some" [(.app "store_take" [(.var "s"), (.var "i")])]) (.app "None" [])))))))
+
+def skip_message_keys_impExpr : ImpExpr :=
+  (.letBind "s" (.var "s") (.letBind "until" (.var "until") (.ifThenElse (.app "&&" [(.app "Gt" [(.var "until"), (.app ".nr" [(.var "s")])]), (.app "Gt" [(.app "Sub#32" [(.var "until"), (.app ".nr" [(.var "s")])]), (.var "MAX_SKIP")])]) (.app "None" []) (.match_ (.app ".ckr" [(.var "s")]) [(.nonePat, (.app "Some" [(.var "s")])), (.somePat (.varPat "ck0"), (.letBind "dhr" (.match_ (.app ".dhr" [(.var "s")]) [(.somePat (.varPat "r"), (.var "r")), (.nonePat, (.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))]))]) (.letBind "acc" (.tuple [(.var "s"), (.var "ck0"), (.lit (ImpLit.bool true))]) (.seq (.forFold "_i" (.lit (ImpLit.int 0)) (.var "MAX_SKIP") (.letBind "_tup" (.var "acc") (.letBind "st" (.proj (.var "_tup") 0) (.letBind "ck" (.proj (.var "_tup") 1) (.letBind "ok" (.proj (.var "_tup") 2) (.ifThenElse (.app "&&" [(.var "ok"), (.app "Lt" [(.app ".nr" [(.var "st")]), (.var "until")])]) (.letBind "_tup" (.app "kdf_ck" [(.var "ck")]) (.letBind "ck1" (.proj (.var "_tup") 0) (.letBind "mk" (.proj (.var "_tup") 1) (.match_ (.app "store_insert" [(.var "st"), (.var "dhr"), (.app ".nr" [(.var "st")]), (.var "mk")]) [(.somePat (.varPat "st1"), (.seq (.seq (.letBind "acc" (.tuple [(.app "RatchetState" [(.app ".dhs_sk" [(.var "st1")]), (.app ".dhs_pk" [(.var "st1")]), (.app ".dhr" [(.var "st1")]), (.app ".rk" [(.var "st1")]), (.app ".cks" [(.var "st1")]), (.app "Some" [(.var "ck1")]), (.app ".ns" [(.var "st1")]), (.app "Add#32" [(.app ".nr" [(.var "st1")]), (.lit (ImpLit.int 1))]), (.app "RatchetState.pn" [(.var "st1")]), (.app ".sk_used" [(.var "st1")]), (.app ".sk_dh" [(.var "st1")]), (.app ".sk_n" [(.var "st1")]), (.app ".sk_mk" [(.var "st1")])]), (.var "ck1"), (.lit (ImpLit.bool true))]) (.var "acc")) .unitVal) .unitVal)), (.nonePat, (.seq (.seq (.letBind "acc" (.tuple [(.var "st"), (.var "ck"), (.lit (ImpLit.bool false))]) (.var "acc")) .unitVal) .unitVal))])))) .unitVal)))))) (.letBind "_tup" (.var "acc") (.letBind "st" (.proj (.var "_tup") 0) (.letBind "_" (.proj (.var "_tup") 1) (.letBind "ok" (.proj (.var "_tup") 2) (.ifThenElse (.var "ok") (.app "Some" [(.var "st")]) (.app "None" []))))))))))]))))
+
+def dh_ratchet_recv_half_impExpr : ImpExpr :=
+  (.letBind "s" (.var "s") (.letBind "dh_r" (.var "dh_r") (.letBind "_tup" (.app "kdf_rk" [(.app ".rk" [(.var "s")]), (.app "dh" [(.app ".dhs_sk" [(.var "s")]), (.var "dh_r")])]) (.letBind "rk1" (.proj (.var "_tup") 0) (.letBind "ckr1" (.proj (.var "_tup") 1) (.letBind "_fru_base" (.var "s") (.app "RatchetState" [(.app ".dhs_sk" [(.var "_fru_base")]), (.app ".dhs_pk" [(.var "_fru_base")]), (.app "Some" [(.var "dh_r")]), (.var "rk1"), (.app ".cks" [(.var "_fru_base")]), (.app "Some" [(.var "ckr1")]), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.app ".ns" [(.var "s")]), (.app ".sk_used" [(.var "_fru_base")]), (.app ".sk_dh" [(.var "_fru_base")]), (.app ".sk_n" [(.var "_fru_base")]), (.app ".sk_mk" [(.var "_fru_base")])])))))))
+
+def dh_ratchet_send_half_impExpr : ImpExpr :=
+  (.letBind "s" (.var "s") (.letBind "new_sk" (.var "new_sk") (.letBind "new_pk" (.var "new_pk") (.match_ (.app ".dhr" [(.var "s")]) [(.nonePat, (.var "s")), (.somePat (.varPat "r"), (.letBind "_tup" (.app "kdf_rk" [(.app ".rk" [(.var "s")]), (.app "dh" [(.var "new_sk"), (.var "r")])]) (.letBind "rk2" (.proj (.var "_tup") 0) (.letBind "cks2" (.proj (.var "_tup") 1) (.letBind "_fru_base" (.var "s") (.app "RatchetState" [(.var "new_sk"), (.var "new_pk"), (.app ".dhr" [(.var "_fru_base")]), (.var "rk2"), (.app "Some" [(.var "cks2")]), (.app ".ckr" [(.var "_fru_base")]), (.app ".ns" [(.var "_fru_base")]), (.app ".nr" [(.var "_fru_base")]), (.app "RatchetState.pn" [(.var "_fru_base")]), (.app ".sk_used" [(.var "_fru_base")]), (.app ".sk_dh" [(.var "_fru_base")]), (.app ".sk_n" [(.var "_fru_base")]), (.app ".sk_mk" [(.var "_fru_base")])]))))))]))))
+
+def dh_ratchet_impExpr : ImpExpr :=
+  (.letBind "s" (.var "s") (.letBind "dh_r" (.var "dh_r") (.letBind "new_sk" (.var "new_sk") (.letBind "new_pk" (.var "new_pk") (.app "dh_ratchet_send_half" [(.app "dh_ratchet_recv_half" [(.var "s"), (.var "dh_r")]), (.var "new_sk"), (.var "new_pk")])))))
+
+def ratchet_receive_key_impExpr : ImpExpr :=
+  (.letBind "s" (.var "s") (.letBind "h" (.var "h") (.letBind "new_sk" (.var "new_sk") (.letBind "new_pk" (.var "new_pk") (.match_ (.app "try_skipped_message_keys" [(.var "s"), (.var "h")]) [(.somePat (.varPat "r"), (.app "Some" [(.var "r")])), (.nonePat, (.letBind "is_new" (.match_ (.app ".dhr" [(.var "s")]) [(.somePat (.varPat "r"), (.app "Not" [(.app "eq32" [(.var "r"), (.app ".dh" [(.var "h")])])])), (.nonePat, (.lit (ImpLit.bool true)))]) (.letBind "s1" (.ifThenElse (.var "is_new") (.match_ (.app "skip_message_keys" [(.var "s"), (.app "MessageHeader.pn" [(.var "h")])]) [(.somePat (.varPat "t"), (.app "Some" [(.app "dh_ratchet" [(.var "t"), (.app ".dh" [(.var "h")]), (.var "new_sk"), (.var "new_pk")])])), (.nonePat, (.app "None" []))]) (.ifThenElse (.app "Lt" [(.app ".n" [(.var "h")]), (.app ".nr" [(.var "s")])]) (.app "None" []) (.app "Some" [(.var "s")]))) (.match_ (.var "s1") [(.nonePat, (.app "None" [])), (.somePat (.varPat "t1"), (.match_ (.app "skip_message_keys" [(.var "t1"), (.app ".n" [(.var "h")])]) [(.nonePat, (.app "None" [])), (.somePat (.varPat "t2"), (.match_ (.app ".ckr" [(.var "t2")]) [(.nonePat, (.app "None" [])), (.somePat (.varPat "ck"), (.letBind "_tup" (.app "kdf_ck" [(.var "ck")]) (.letBind "ck1" (.proj (.var "_tup") 0) (.letBind "mk" (.proj (.var "_tup") 1) (.app "Some" [(.tuple [(.app "RatchetState" [(.app ".dhs_sk" [(.var "t2")]), (.app ".dhs_pk" [(.var "t2")]), (.app ".dhr" [(.var "t2")]), (.app ".rk" [(.var "t2")]), (.app ".cks" [(.var "t2")]), (.app "Some" [(.var "ck1")]), (.app ".ns" [(.var "t2")]), (.app "Add#32" [(.app ".nr" [(.var "t2")]), (.lit (ImpLit.int 1))]), (.app "RatchetState.pn" [(.var "t2")]), (.app ".sk_used" [(.var "t2")]), (.app ".sk_dh" [(.var "t2")]), (.app ".sk_n" [(.var "t2")]), (.app ".sk_mk" [(.var "t2")])]), (.var "mk")])])))))]))]))]))))])))))
 
 def ratchet_decrypt_impExpr : ImpExpr :=
-  (.letBind "state" (.var "state") (.letBind "header" (.var "header") (.letBind "ciphertext" (.var "ciphertext") (.letBind "ct_len" (.var "ct_len") (.match_ (.app "RatchetState.recv_ck" [(.var "state")]) [(.somePat (.varPat "recv_ck"), (.letBind "_tup" (.app "kdf_chain_step" [(.var "recv_ck")]) (.letBind "new_recv_ck" (.proj (.var "_tup") 0) (.letBind "mk" (.proj (.var "_tup") 1) (.letBind "plaintext" (.app "aead_decrypt" [(.var "mk"), (.var "ciphertext"), (.var "ct_len"), (.app ".dh_public" [(.var "header")])]) (.letBind "new_state" (.app "RatchetState" [(.app "RatchetState.root_key" [(.var "state")]), (.app "RatchetState.send_ck" [(.var "state")]), (.app "Some" [(.var "new_recv_ck")]), (.app "RatchetState.send_n" [(.var "state")]), (.app "Add#32" [(.app "RatchetState.recv_n" [(.var "state")]), (.lit (ImpLit.int 1))]), (.app "RatchetState.my_sk" [(.var "state")]), (.app "RatchetState.my_pk" [(.var "state")]), (.app "RatchetState.remote_pk" [(.var "state")]), (.app ".prev_send_n" [(.var "state")])]) (.app "Some" [(.tuple [(.var "new_state"), (.var "plaintext")])]))))))), (.nonePat, (.app "None" []))])))))
+  (.letBind "s" (.var "s") (.letBind "h" (.var "h") (.letBind "ct" (.var "ct") (.letBind "ct_len" (.var "ct_len") (.letBind "ad" (.var "ad") (.letBind "new_sk" (.var "new_sk") (.letBind "new_pk" (.var "new_pk") (.match_ (.app "ratchet_receive_key" [(.var "s"), (.var "h"), (.var "new_sk"), (.var "new_pk")]) [(.nonePat, (.app "None" [])), (.somePat (.tuplePat [.varPat "s1", .varPat "mk"]), (.match_ (.app "aead_decrypt" [(.var "mk"), (.var "ct"), (.var "ct_len"), (.app "concat_ad" [(.var "ad"), (.var "h")])]) [(.nonePat, (.app "None" [])), (.somePat (.tuplePat [.varPat "pt", .varPat "n"]), (.app "Some" [(.tuple [(.var "s1"), (.var "pt"), (.var "n")])]))]))]))))))))
 
-def dh_ratchet_step_impExpr : ImpExpr :=
-  (.letBind "state" (.var "state") (.letBind "new_remote_pk" (.var "new_remote_pk") (.letBind "new_my_sk" (.var "new_my_sk") (.letBind "new_my_pk" (.var "new_my_pk") (.letBind "dh_out1" (.app "dh" [(.app "RatchetState.my_sk" [(.var "state")]), (.var "new_remote_pk")]) (.letBind "_tup" (.app "kdf_rk" [(.app "RatchetState.root_key" [(.var "state")]), (.var "dh_out1")]) (.letBind "rk1" (.proj (.var "_tup") 0) (.letBind "new_recv_ck" (.proj (.var "_tup") 1) (.letBind "dh_out2" (.app "dh" [(.var "new_my_sk"), (.var "new_remote_pk")]) (.letBind "_tup" (.app "kdf_rk" [(.var "rk1"), (.var "dh_out2")]) (.letBind "rk2" (.proj (.var "_tup") 0) (.letBind "new_send_ck" (.proj (.var "_tup") 1) (.app "RatchetState" [(.var "rk2"), (.app "Some" [(.var "new_send_ck")]), (.app "Some" [(.var "new_recv_ck")]), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.var "new_my_sk"), (.var "new_my_pk"), (.var "new_remote_pk"), (.app "RatchetState.send_n" [(.var "state")])])))))))))))))
+def Uninitialized_establish_alice_texpr : TExpr :=
+  (.mk (.letBind "self" (.mk (.var "self") ty_10) (.mk (.letBind "ghost" (.mk (.var "ghost") ty_28) (.mk (.letBind "sk" (.mk (.var "sk") ty_18) (.mk (.letBind "bob_pk" (.mk (.var "bob_pk") ty_18) (.mk (.letBind "my_sk" (.mk (.var "my_sk") ty_18) (.mk (.letBind "my_pk" (.mk (.var "my_pk") ty_18) (.mk (.seq (.mk (.seq (.mk (.letBind "ghost" (.mk (.app "event" [(.mk (.var "ghost") ty_28), (.mk (.lit (ImpLit.int 3)) ty_39), (.mk (.lit (ImpLit.int 0)) ty_38)]) ty_36) (.mk (.var "ghost") ty_36)) ty_36) (.mk .unitVal .unit)) ty_36) (.mk (.tuple [(.mk (.app "Session" [(.mk (.app "ratchet_init_alice" [(.mk (.var "sk") ty_18), (.mk (.var "bob_pk") ty_18), (.mk (.var "my_sk") ty_18), (.mk (.var "my_pk") ty_18)]) ty_8), (.mk (.lit (ImpLit.int 0)) ty_38)]) ty_9), (.mk (.var "ghost") ty_41)]) ty_41)) ty_9)) ty_9)) ty_9)) ty_9)) ty_9)) ty_9)) ty_9)
 
-def Uninitialized_establish_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") (.adt "Uninitialized" [])) (.mk (.letBind "ghost" (.mk (.var "ghost") ty_14) (.mk (.letBind "root_key" (.mk (.var "root_key") ty_8) (.mk (.letBind "my_sk" (.mk (.var "my_sk") ty_8) (.mk (.letBind "my_pk" (.mk (.var "my_pk") ty_8) (.mk (.letBind "remote_pk" (.mk (.var "remote_pk") ty_8) (.mk (.letBind "dh_out" (.mk (.app "dh" [(.mk (.var "my_sk") ty_8), (.mk (.var "remote_pk") ty_8)]) ty_8) (.mk (.letBind "_tup" (.mk (.app "kdf_rk" [(.mk (.var "root_key") ty_8), (.mk (.var "dh_out") ty_8)]) ty_16) (.mk (.letBind "new_rk" (.mk (.proj (.mk (.var "_tup") ty_16) 0) ty_21) (.mk (.letBind "send_ck" (.mk (.proj (.mk (.var "_tup") ty_16) 1) ty_21) (.mk (.seq (.mk (.seq (.mk (.letBind "ghost" (.mk (.app "event" [(.mk (.var "ghost") ty_14), (.mk (.lit (ImpLit.int 3)) ty_19), (.mk (.lit (ImpLit.int 0)) ty_18)]) ty_15) (.mk (.var "ghost") ty_15)) ty_15) (.mk .unitVal .unit)) ty_15) (.mk (.tuple [(.mk (.app "Session" [(.mk (.var "new_rk") ty_8), (.mk (.app "Some" [(.mk (.var "send_ck") ty_8)]) ty_2), (.mk (.app "None" []) ty_2), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.var "my_sk") ty_8), (.mk (.var "my_pk") ty_8), (.mk (.var "remote_pk") ty_8), (.mk (.lit (ImpLit.int 0)) ty_18)]) ty_6), (.mk (.var "ghost") ty_21)]) ty_21)) ty_6)) ty_21)) ty_21)) ty_21)) ty_6)) ty_6)) ty_6)) ty_6)) ty_6)) ty_6)) ty_6)
+def Uninitialized_establish_bob_texpr : TExpr :=
+  (.mk (.letBind "self" (.mk (.var "self") ty_10) (.mk (.letBind "ghost" (.mk (.var "ghost") ty_28) (.mk (.letBind "sk" (.mk (.var "sk") ty_18) (.mk (.letBind "my_sk" (.mk (.var "my_sk") ty_18) (.mk (.letBind "my_pk" (.mk (.var "my_pk") ty_18) (.mk (.seq (.mk (.seq (.mk (.letBind "ghost" (.mk (.app "event" [(.mk (.var "ghost") ty_28), (.mk (.lit (ImpLit.int 3)) ty_39), (.mk (.lit (ImpLit.int 0)) ty_38)]) ty_36) (.mk (.var "ghost") ty_36)) ty_36) (.mk .unitVal .unit)) ty_36) (.mk (.tuple [(.mk (.app "Session" [(.mk (.app "ratchet_init_bob" [(.mk (.var "sk") ty_18), (.mk (.var "my_sk") ty_18), (.mk (.var "my_pk") ty_18)]) ty_8), (.mk (.lit (ImpLit.int 0)) ty_38)]) ty_9), (.mk (.var "ghost") ty_41)]) ty_41)) ty_9)) ty_9)) ty_9)) ty_9)) ty_9)) ty_9)
 
 def Session_step_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") ty_11) (.mk (.app ".step" [(.mk (.var "self") ty_11)]) ty_18)) ty_18)
+  (.mk (.letBind "self" (.mk (.var "self") ty_23) (.mk (.app ".step" [(.mk (.var "self") ty_23)]) ty_38)) ty_38)
 
-def Session_root_key_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") ty_11) (.mk (.app "Session.root_key" [(.mk (.var "self") ty_11)]) ty_8)) ty_12)
-
-def Session_send_ck_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") ty_11) (.mk (.app "Session.send_ck" [(.mk (.var "self") ty_11)]) ty_2)) ty_2)
-
-def Session_recv_ck_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") ty_11) (.mk (.app "Session.recv_ck" [(.mk (.var "self") ty_11)]) ty_2)) ty_2)
-
-def Session_send_n_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") ty_11) (.mk (.app "Session.send_n" [(.mk (.var "self") ty_11)]) ty_17)) ty_17)
-
-def Session_recv_n_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") ty_11) (.mk (.app "Session.recv_n" [(.mk (.var "self") ty_11)]) ty_17)) ty_17)
-
-def Session_my_pk_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") ty_11) (.mk (.app "Session.my_pk" [(.mk (.var "self") ty_11)]) ty_8)) ty_12)
-
-def Session_remote_pk_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") ty_11) (.mk (.app "Session.remote_pk" [(.mk (.var "self") ty_11)]) ty_8)) ty_12)
+def Session_state_texpr : TExpr :=
+  (.mk (.letBind "self" (.mk (.var "self") ty_23) (.mk (.app ".st" [(.mk (.var "self") ty_23)]) ty_8)) ty_22)
 
 def Session_send_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") ty_6) (.mk (.letBind "ghost" (.mk (.var "ghost") ty_14) (.mk (.match_ (.mk (.app "Session.send_ck" [(.mk (.var "self") ty_6)]) ty_2) [(.somePat (.varPat "send_ck"), (.mk (.letBind "new_send_ck" (.mk (.app "kdf_ck" [(.mk (.var "send_ck") ty_8), (.mk (.lit (ImpLit.int 1)) ty_19)]) ty_8) (.mk (.letBind "mk" (.mk (.app "kdf_ck" [(.mk (.var "send_ck") ty_8), (.mk (.lit (ImpLit.int 2)) ty_19)]) ty_8) (.mk (.seq (.mk (.seq (.mk (.letBind "ghost" (.mk (.app "send" [(.mk (.var "ghost") ty_14), (.mk (.app ".step" [(.mk (.var "self") ty_6)]) ty_18), (.mk (.var "mk") ty_8)]) ty_15) (.mk (.var "ghost") ty_15)) ty_15) (.mk .unitVal .unit)) ty_15) (.mk (.seq (.mk (.seq (.mk (.letBind "ghost" (.mk (.app "event" [(.mk (.var "ghost") ty_14), (.mk (.lit (ImpLit.int 0)) ty_19), (.mk (.app "Add#64" [(.mk (.app ".step" [(.mk (.var "self") ty_6)]) ty_18), (.mk (.lit (ImpLit.int 1)) ty_18)]) ty_18)]) ty_15) (.mk (.var "ghost") ty_15)) ty_15) (.mk .unitVal .unit)) ty_15) (.mk (.tuple [(.mk (.app "Some" [(.mk (.app "Session" [(.mk (.app "Session.root_key" [(.mk (.var "self") ty_6)]) ty_8), (.mk (.app "Some" [(.mk (.var "new_send_ck") ty_8)]) ty_2), (.mk (.app "Session.recv_ck" [(.mk (.var "self") ty_6)]) ty_2), (.mk (.app "Add#32" [(.mk (.app "Session.send_n" [(.mk (.var "self") ty_6)]) ty_17), (.mk (.lit (ImpLit.int 1)) ty_17)]) ty_17), (.mk (.app "Session.recv_n" [(.mk (.var "self") ty_6)]) ty_17), (.mk (.app "Session.my_sk" [(.mk (.var "self") ty_6)]) ty_8), (.mk (.app "Session.my_pk" [(.mk (.var "self") ty_6)]) ty_8), (.mk (.app "Session.remote_pk" [(.mk (.var "self") ty_6)]) ty_8), (.mk (.app "Add#64" [(.mk (.app ".step" [(.mk (.var "self") ty_6)]) ty_18), (.mk (.lit (ImpLit.int 1)) ty_18)]) ty_18)]) ty_6)]) ty_1), (.mk (.var "ghost") ty_21)]) ty_21)) ty_1)) ty_1)) ty_21)) ty_1)), (.nonePat, (.mk (.tuple [(.mk (.app "None" []) ty_1), (.mk (.var "ghost") ty_21)]) ty_21))]) ty_1)) ty_1)) ty_1)
+  (.mk (.letBind "self" (.mk (.var "self") ty_9) (.mk (.letBind "ghost" (.mk (.var "ghost") ty_28) (.mk (.letBind "pt" (.mk (.var "pt") ty_24) (.mk (.letBind "pt_len" (.mk (.var "pt_len") ty_40) (.mk (.letBind "ad" (.mk (.var "ad") ty_27) (.mk (.match_ (.mk (.app "ratchet_encrypt" [(.mk (.app ".st" [(.mk (.var "self") ty_9)]) ty_8), (.mk (.var "pt") ty_24), (.mk (.var "pt_len") ty_40), (.mk (.var "ad") ty_27)]) ty_4) [(.somePat (.tuplePat [.varPat "st1", .varPat "h", .varPat "ct", .varPat "n"]), (.mk (.seq (.mk (.seq (.mk (.letBind "ghost" (.mk (.app "event" [(.mk (.var "ghost") ty_28), (.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.app "Add#64" [(.mk (.app ".step" [(.mk (.var "self") ty_9)]) ty_38), (.mk (.lit (ImpLit.int 1)) ty_38)]) ty_38)]) ty_36) (.mk (.var "ghost") ty_36)) ty_36) (.mk .unitVal .unit)) ty_36) (.mk (.tuple [(.mk (.tuple [(.mk (.app "Session" [(.mk (.var "st1") ty_8), (.mk (.app "Add#64" [(.mk (.app ".step" [(.mk (.var "self") ty_9)]) ty_38), (.mk (.lit (ImpLit.int 1)) ty_38)]) ty_38)]) ty_9), (.mk (.app "Some" [(.mk (.tuple [(.mk (.var "h") ty_0), (.mk (.var "ct") ty_17), (.mk (.var "n") ty_40)]) (.tuple [(.adt "MessageHeader" []), (.array (.uint .w8) 280), (.uint .wsize)]))]) ty_3)]) ty_32), (.mk (.var "ghost") ty_41)]) ty_41)) ty_32)), (.nonePat, (.mk (.tuple [(.mk (.tuple [(.mk (.var "self") ty_9), (.mk (.app "None" []) ty_3)]) ty_32), (.mk (.var "ghost") ty_41)]) ty_41))]) ty_32)) ty_32)) ty_32)) ty_32)) ty_32)) ty_32)
 
 def Session_receive_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") ty_6) (.mk (.letBind "ghost" (.mk (.var "ghost") ty_14) (.mk (.match_ (.mk (.app "Session.recv_ck" [(.mk (.var "self") ty_6)]) ty_2) [(.somePat (.varPat "recv_ck"), (.mk (.letBind "new_recv_ck" (.mk (.app "kdf_ck" [(.mk (.var "recv_ck") ty_8), (.mk (.lit (ImpLit.int 1)) ty_19)]) ty_8) (.mk (.letBind "mk" (.mk (.app "kdf_ck" [(.mk (.var "recv_ck") ty_8), (.mk (.lit (ImpLit.int 2)) ty_19)]) ty_8) (.mk (.seq (.mk (.seq (.mk (.letBind "ghost" (.mk (.app "recv" [(.mk (.var "ghost") ty_14), (.mk (.app ".step" [(.mk (.var "self") ty_6)]) ty_18), (.mk (.var "mk") ty_8)]) ty_15) (.mk (.var "ghost") ty_15)) ty_15) (.mk .unitVal .unit)) ty_15) (.mk (.seq (.mk (.seq (.mk (.letBind "ghost" (.mk (.app "event" [(.mk (.var "ghost") ty_14), (.mk (.lit (ImpLit.int 1)) ty_19), (.mk (.app "Add#64" [(.mk (.app ".step" [(.mk (.var "self") ty_6)]) ty_18), (.mk (.lit (ImpLit.int 1)) ty_18)]) ty_18)]) ty_15) (.mk (.var "ghost") ty_15)) ty_15) (.mk .unitVal .unit)) ty_15) (.mk (.tuple [(.mk (.app "Some" [(.mk (.app "Session" [(.mk (.app "Session.root_key" [(.mk (.var "self") ty_6)]) ty_8), (.mk (.app "Session.send_ck" [(.mk (.var "self") ty_6)]) ty_2), (.mk (.app "Some" [(.mk (.var "new_recv_ck") ty_8)]) ty_2), (.mk (.app "Session.send_n" [(.mk (.var "self") ty_6)]) ty_17), (.mk (.app "Add#32" [(.mk (.app "Session.recv_n" [(.mk (.var "self") ty_6)]) ty_17), (.mk (.lit (ImpLit.int 1)) ty_17)]) ty_17), (.mk (.app "Session.my_sk" [(.mk (.var "self") ty_6)]) ty_8), (.mk (.app "Session.my_pk" [(.mk (.var "self") ty_6)]) ty_8), (.mk (.app "Session.remote_pk" [(.mk (.var "self") ty_6)]) ty_8), (.mk (.app "Add#64" [(.mk (.app ".step" [(.mk (.var "self") ty_6)]) ty_18), (.mk (.lit (ImpLit.int 1)) ty_18)]) ty_18)]) ty_6)]) ty_1), (.mk (.var "ghost") ty_21)]) ty_21)) ty_1)) ty_1)) ty_21)) ty_1)), (.nonePat, (.mk (.tuple [(.mk (.app "None" []) ty_1), (.mk (.var "ghost") ty_21)]) ty_21))]) ty_1)) ty_1)) ty_1)
-
-def Session_dh_ratchet_texpr : TExpr :=
-  (.mk (.letBind "self" (.mk (.var "self") ty_6) (.mk (.letBind "ghost" (.mk (.var "ghost") ty_14) (.mk (.letBind "new_remote_pk" (.mk (.var "new_remote_pk") ty_12) (.mk (.letBind "new_my_sk" (.mk (.var "new_my_sk") ty_12) (.mk (.letBind "new_my_pk" (.mk (.var "new_my_pk") ty_12) (.mk (.letBind "dh1" (.mk (.app "dh" [(.mk (.app "Session.my_sk" [(.mk (.var "self") ty_6)]) ty_8), (.mk (.var "new_remote_pk") ty_12)]) ty_8) (.mk (.letBind "_tup" (.mk (.app "kdf_rk" [(.mk (.app "Session.root_key" [(.mk (.var "self") ty_6)]) ty_8), (.mk (.var "dh1") ty_8)]) ty_16) (.mk (.letBind "rk1" (.mk (.proj (.mk (.var "_tup") ty_16) 0) ty_21) (.mk (.letBind "new_recv_ck" (.mk (.proj (.mk (.var "_tup") ty_16) 1) ty_21) (.mk (.letBind "dh2" (.mk (.app "dh" [(.mk (.var "new_my_sk") ty_12), (.mk (.var "new_remote_pk") ty_12)]) ty_8) (.mk (.letBind "_tup" (.mk (.app "kdf_rk" [(.mk (.var "rk1") ty_8), (.mk (.var "dh2") ty_8)]) ty_16) (.mk (.letBind "rk2" (.mk (.proj (.mk (.var "_tup") ty_16) 0) ty_21) (.mk (.letBind "new_send_ck" (.mk (.proj (.mk (.var "_tup") ty_16) 1) ty_21) (.mk (.seq (.mk (.seq (.mk (.letBind "ghost" (.mk (.app "event" [(.mk (.var "ghost") ty_14), (.mk (.lit (ImpLit.int 2)) ty_19), (.mk (.app "Add#64" [(.mk (.app ".step" [(.mk (.var "self") ty_6)]) ty_18), (.mk (.lit (ImpLit.int 1)) ty_18)]) ty_18)]) ty_15) (.mk (.var "ghost") ty_15)) ty_15) (.mk .unitVal .unit)) ty_15) (.mk (.tuple [(.mk (.app "Session" [(.mk (.var "rk2") ty_8), (.mk (.app "Some" [(.mk (.var "new_send_ck") ty_8)]) ty_2), (.mk (.app "Some" [(.mk (.var "new_recv_ck") ty_8)]) ty_2), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.var "new_my_sk") ty_12), (.mk (.var "new_my_pk") ty_12), (.mk (.var "new_remote_pk") ty_12), (.mk (.app "Add#64" [(.mk (.app ".step" [(.mk (.var "self") ty_6)]) ty_18), (.mk (.lit (ImpLit.int 1)) ty_18)]) ty_18)]) ty_6), (.mk (.var "ghost") ty_21)]) ty_21)) ty_6)) ty_21)) ty_21)) ty_21)) ty_21)) ty_21)) ty_21)) ty_21)) ty_6)) ty_6)) ty_6)) ty_6)) ty_6)) ty_6)
-
-def MAX_MSG_LEN_texpr : TExpr :=
-  (.mk (.lit (ImpLit.int 256)) ty_20)
+  (.mk (.letBind "self" (.mk (.var "self") ty_9) (.mk (.letBind "ghost" (.mk (.var "ghost") ty_28) (.mk (.letBind "h" (.mk (.var "h") ty_21) (.mk (.letBind "ct" (.mk (.var "ct") ty_25) (.mk (.letBind "ct_len" (.mk (.var "ct_len") ty_40) (.mk (.letBind "ad" (.mk (.var "ad") ty_27) (.mk (.letBind "new_sk" (.mk (.var "new_sk") ty_26) (.mk (.letBind "new_pk" (.mk (.var "new_pk") ty_26) (.mk (.match_ (.mk (.app "ratchet_decrypt" [(.mk (.app ".st" [(.mk (.var "self") ty_9)]) ty_8), (.mk (.var "h") ty_21), (.mk (.var "ct") ty_25), (.mk (.var "ct_len") ty_40), (.mk (.var "ad") ty_27), (.mk (.var "new_sk") ty_26), (.mk (.var "new_pk") ty_26)]) ty_5) [(.somePat (.tuplePat [.varPat "st1", .varPat "pt", .varPat "n"]), (.mk (.seq (.mk (.seq (.mk (.letBind "ghost" (.mk (.app "event" [(.mk (.var "ghost") ty_28), (.mk (.lit (ImpLit.int 1)) ty_39), (.mk (.app "Add#64" [(.mk (.app ".step" [(.mk (.var "self") ty_9)]) ty_38), (.mk (.lit (ImpLit.int 1)) ty_38)]) ty_38)]) ty_36) (.mk (.var "ghost") ty_36)) ty_36) (.mk .unitVal .unit)) ty_36) (.mk (.tuple [(.mk (.tuple [(.mk (.app "Session" [(.mk (.var "st1") ty_8), (.mk (.app "Add#64" [(.mk (.app ".step" [(.mk (.var "self") ty_9)]) ty_38), (.mk (.lit (ImpLit.int 1)) ty_38)]) ty_38)]) ty_9), (.mk (.app "Some" [(.mk (.tuple [(.mk (.var "pt") ty_16), (.mk (.var "n") ty_40)]) (.tuple [(.array (.uint .w8) 256), (.uint .wsize)]))]) ty_7)]) ty_33), (.mk (.var "ghost") ty_41)]) ty_41)) ty_33)), (.nonePat, (.mk (.tuple [(.mk (.tuple [(.mk (.var "self") ty_9), (.mk (.app "None" []) ty_7)]) ty_33), (.mk (.var "ghost") ty_41)]) ty_41))]) ty_33)) ty_33)) ty_33)) ty_33)) ty_33)) ty_33)) ty_33)) ty_33)) ty_33)
 
 def MAX_PLAINTEXT_LEN_texpr : TExpr :=
-  (.mk (.lit (ImpLit.int 256)) ty_20)
+  (.mk (.lit (ImpLit.int 256)) ty_40)
+
+def BLOCK_LEN_texpr : TExpr :=
+  (.mk (.lit (ImpLit.int 16)) ty_40)
+
+def TAG_LEN_texpr : TExpr :=
+  (.mk (.lit (ImpLit.int 8)) ty_40)
+
+def MAX_CT_LEN_texpr : TExpr :=
+  (.mk (.lit (ImpLit.int 280)) ty_40)
+
+def AD_LEN_texpr : TExpr :=
+  (.mk (.lit (ImpLit.int 64)) ty_40)
+
+def HEADER_LEN_texpr : TExpr :=
+  (.mk (.lit (ImpLit.int 40)) ty_40)
+
+def FULL_AD_LEN_texpr : TExpr :=
+  (.mk (.lit (ImpLit.int 104)) ty_40)
+
+def MAX_SKIP_texpr : TExpr :=
+  (.mk (.lit (ImpLit.int 16)) ty_37)
+
+def MAX_STORED_texpr : TExpr :=
+  (.mk (.lit (ImpLit.int 32)) ty_40)
+
+def KDF_RK_INFO_texpr : TExpr :=
+  (.mk (.app "array_lit" [(.mk (.lit (ImpLit.int 87)) ty_39), (.mk (.lit (ImpLit.int 104)) ty_39), (.mk (.lit (ImpLit.int 105)) ty_39), (.mk (.lit (ImpLit.int 115)) ty_39), (.mk (.lit (ImpLit.int 112)) ty_39), (.mk (.lit (ImpLit.int 101)) ty_39), (.mk (.lit (ImpLit.int 114)) ty_39), (.mk (.lit (ImpLit.int 82)) ty_39), (.mk (.lit (ImpLit.int 97)) ty_39), (.mk (.lit (ImpLit.int 116)) ty_39), (.mk (.lit (ImpLit.int 99)) ty_39), (.mk (.lit (ImpLit.int 104)) ty_39), (.mk (.lit (ImpLit.int 101)) ty_39), (.mk (.lit (ImpLit.int 116)) ty_39)]) ty_15)
+
+def MESSAGE_KEY_SEED_texpr : TExpr :=
+  (.mk (.app "array_lit" [(.mk (.lit (ImpLit.int 1)) ty_39)]) ty_13)
+
+def CHAIN_KEY_SEED_texpr : TExpr :=
+  (.mk (.app "array_lit" [(.mk (.lit (ImpLit.int 2)) ty_39)]) ty_13)
+
+def ct_len_texpr : TExpr :=
+  (.mk (.letBind "pt_len" (.mk (.var "pt_len") ty_40) (.mk (.app "Add#size" [(.mk (.app "Mul#size" [(.mk (.app "Add#size" [(.mk (.app "Div#size" [(.mk (.var "pt_len") ty_40), (.mk (.var "BLOCK_LEN") ty_40)]) ty_40), (.mk (.lit (ImpLit.int 1)) ty_40)]) ty_40), (.mk (.var "BLOCK_LEN") ty_40)]) ty_40), (.mk (.var "TAG_LEN") ty_40)]) ty_40)) ty_40)
 
 def ck_const_texpr : TExpr :=
-  (.mk (.letBind "c" (.mk (.var "c") ty_19) (.mk (.app "repeat" [(.mk (.var "c") ty_19), (.mk (.lit (ImpLit.int 32)) ty_20)]) ty_8)) ty_8)
+  (.mk (.letBind "c" (.mk (.var "c") ty_39) (.mk (.app "repeat" [(.mk (.var "c") ty_39), (.mk (.lit (ImpLit.int 1)) ty_40)]) ty_13)) ty_13)
 
 def kdf_ck_texpr : TExpr :=
-  (.mk (.letBind "chain_key" (.mk (.var "chain_key") ty_12) (.mk (.letBind "constant" (.mk (.var "constant") ty_19) (.mk (.app "hmac_sha256" [(.mk (.var "chain_key") ty_12), (.mk (.app "ck_const" [(.mk (.var "constant") ty_19)]) ty_8)]) ty_8)) ty_8)) ty_8)
+  (.mk (.letBind "ck" (.mk (.var "ck") ty_26) (.mk (.tuple [(.mk (.app "hmac_sha256" [(.mk (.var "ck") ty_26), (.mk (.app "ck_const" [(.mk (.lit (ImpLit.int 2)) ty_39)]) ty_13)]) ty_18), (.mk (.app "hmac_sha256" [(.mk (.var "ck") ty_26), (.mk (.app "ck_const" [(.mk (.lit (ImpLit.int 1)) ty_39)]) ty_13)]) ty_18)]) ty_34)) ty_34)
+
+def split64_texpr : TExpr :=
+  (.mk (.letBind "x" (.mk (.var "x") ty_27) (.mk (.letBind "a" (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_18) (.mk (.letBind "b" (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_18) (.mk (.seq (.mk (.forFold "i" (.mk (.lit (ImpLit.int 0)) ty_40) (.mk (.lit (ImpLit.int 32)) ty_40) (.mk (.seq (.mk (.seq (.mk (.letBind "a" (.mk (.app "array_update" [(.mk (.var "a") ty_18), (.mk (.var "i") ty_40), (.mk (.app "index" [(.mk (.var "x") ty_27), (.mk (.var "i") ty_40)]) ty_39)]) ty_39) (.mk (.var "a") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "b" (.mk (.app "array_update" [(.mk (.var "b") ty_18), (.mk (.var "i") ty_40), (.mk (.app "index" [(.mk (.var "x") ty_27), (.mk (.app "Add#size" [(.mk (.lit (ImpLit.int 32)) ty_40), (.mk (.var "i") ty_40)]) ty_40)]) ty_39)]) ty_39) (.mk (.var "b") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit)) .unit)) .unit) (.mk (.tuple [(.mk (.var "a") ty_18), (.mk (.var "b") ty_18)]) ty_34)) ty_34)) ty_41)) ty_34)) ty_34)
 
 def kdf_rk_texpr : TExpr :=
-  (.mk (.letBind "root_key" (.mk (.var "root_key") ty_12) (.mk (.letBind "dh_output" (.mk (.var "dh_output") ty_12) (.mk (.letBind "prk" (.mk (.app "hkdf_extract" [(.mk (.var "root_key") ty_12), (.mk (.var "dh_output") ty_12)]) ty_8) (.mk (.letBind "new_rk" (.mk (.app "hkdf_expand" [(.mk (.var "prk") ty_8), (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 1)) ty_19), (.mk (.lit (ImpLit.int 32)) ty_20)]) ty_8)]) ty_8) (.mk (.letBind "new_ck" (.mk (.app "hkdf_expand" [(.mk (.var "prk") ty_8), (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 2)) ty_19), (.mk (.lit (ImpLit.int 32)) ty_20)]) ty_8)]) ty_8) (.mk (.tuple [(.mk (.var "new_rk") ty_8), (.mk (.var "new_ck") ty_8)]) ty_16)) ty_21)) ty_21)) ty_16)) ty_16)) ty_16)
+  (.mk (.letBind "rk" (.mk (.var "rk") ty_26) (.mk (.letBind "dh_out" (.mk (.var "dh_out") ty_26) (.mk (.app "split64" [(.mk (.app "hkdf_expand_64" [(.mk (.app "hkdf_extract" [(.mk (.var "rk") ty_26), (.mk (.var "dh_out") ty_26)]) ty_18), (.mk (.var "KDF_RK_INFO") ty_15)]) (.array (.uint .w8) 64))]) ty_34)) ty_34)) ty_34)
 
 def dh_texpr : TExpr :=
-  (.mk (.letBind "my_sk" (.mk (.var "my_sk") ty_12) (.mk (.letBind "their_pk" (.mk (.var "their_pk") ty_12) (.mk (.app "x25519" [(.mk (.var "my_sk") ty_12), (.mk (.var "their_pk") ty_12)]) ty_8)) ty_8)) ty_8)
+  (.mk (.letBind "sk" (.mk (.var "sk") ty_26) (.mk (.letBind "pk" (.mk (.var "pk") ty_26) (.mk (.app "x25519" [(.mk (.var "sk") ty_26), (.mk (.var "pk") ty_26)]) ty_18)) ty_18)) ty_18)
 
-def kdf_chain_step_texpr : TExpr :=
-  (.mk (.letBind "ck" (.mk (.var "ck") ty_12) (.mk (.letBind "new_ck" (.mk (.app "kdf_ck" [(.mk (.var "ck") ty_12), (.mk (.lit (ImpLit.int 1)) ty_19)]) ty_8) (.mk (.letBind "mk" (.mk (.app "kdf_ck" [(.mk (.var "ck") ty_12), (.mk (.lit (ImpLit.int 2)) ty_19)]) ty_8) (.mk (.tuple [(.mk (.var "new_ck") ty_8), (.mk (.var "mk") ty_8)]) ty_16)) ty_21)) ty_16)) ty_16)
+def eq32_texpr : TExpr :=
+  (.mk (.letBind "a" (.mk (.var "a") ty_26) (.mk (.letBind "b" (.mk (.var "b") ty_26) (.mk (.letBind "acc" (.mk (.lit (ImpLit.int 0)) ty_39) (.mk (.seq (.mk (.forFold "i" (.mk (.lit (ImpLit.int 0)) ty_40) (.mk (.lit (ImpLit.int 32)) ty_40) (.mk (.seq (.mk (.seq (.mk (.letBind "acc" (.mk (.app "BitOr#8" [(.mk (.var "acc") ty_39), (.mk (.app "BitXor#8" [(.mk (.app "index" [(.mk (.var "a") ty_26), (.mk (.var "i") ty_40)]) ty_39), (.mk (.app "index" [(.mk (.var "b") ty_26), (.mk (.var "i") ty_40)]) ty_39)]) ty_39)]) ty_39) (.mk (.var "acc") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit)) .unit) (.mk (.app "Eq" [(.mk (.var "acc") ty_39), (.mk (.lit (ImpLit.int 0)) ty_39)]) .bool)) .bool)) .bool)) .bool)) .bool)
 
-def kdf_chain_advance_texpr : TExpr :=
-  (.mk (.letBind "ck" (.mk (.var "ck") ty_12) (.mk (.letBind "steps" (.mk (.var "steps") ty_20) (.mk (.letBind "current" (.mk (.var "ck") ty_12) (.mk (.seq (.mk (.forFold "_i" (.mk (.lit (ImpLit.int 0)) ty_20) (.mk (.var "steps") ty_20) (.mk (.letBind "_tup" (.mk (.app "kdf_chain_step" [(.mk (.var "current") ty_8)]) ty_16) (.mk (.letBind "next_ck" (.mk (.proj (.mk (.var "_tup") ty_16) 0) ty_21) (.mk (.letBind "_" (.mk (.proj (.mk (.var "_tup") ty_16) 1) ty_21) (.mk (.seq (.mk (.seq (.mk (.letBind "current" (.mk (.var "next_ck") ty_8) (.mk (.var "current") ty_8)) ty_8) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit)) ty_21)) ty_21)) .unit)) .unit) (.mk (.var "current") ty_8)) ty_8)) ty_8)) ty_8)) ty_8)
+def encode_header_texpr : TExpr :=
+  (.mk (.letBind "h" (.mk (.var "h") ty_21) (.mk (.letBind "out" (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.lit (ImpLit.int 40)) ty_40)]) ty_19) (.mk (.seq (.mk (.forFold "i" (.mk (.lit (ImpLit.int 0)) ty_40) (.mk (.lit (ImpLit.int 32)) ty_40) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_19), (.mk (.var "i") ty_40), (.mk (.app "index" [(.mk (.app ".dh" [(.mk (.var "h") ty_21)]) ty_18), (.mk (.var "i") ty_40)]) ty_39)]) ty_39) (.mk (.var "out") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_19), (.mk (.lit (ImpLit.int 32)) ty_40), (.mk (.app "cast#8" [(.mk (.app "Shr#32" [(.mk (.app "MessageHeader.pn" [(.mk (.var "h") ty_21)]) ty_37), (.mk (.lit (ImpLit.int 24)) ty_29)]) ty_37)]) ty_39)]) ty_39) (.mk (.var "out") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_19), (.mk (.lit (ImpLit.int 33)) ty_40), (.mk (.app "cast#8" [(.mk (.app "BitAnd#32" [(.mk (.app "Shr#32" [(.mk (.app "MessageHeader.pn" [(.mk (.var "h") ty_21)]) ty_37), (.mk (.lit (ImpLit.int 16)) ty_29)]) ty_37), (.mk (.lit (ImpLit.int 255)) ty_37)]) ty_37)]) ty_39)]) ty_39) (.mk (.var "out") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_19), (.mk (.lit (ImpLit.int 34)) ty_40), (.mk (.app "cast#8" [(.mk (.app "BitAnd#32" [(.mk (.app "Shr#32" [(.mk (.app "MessageHeader.pn" [(.mk (.var "h") ty_21)]) ty_37), (.mk (.lit (ImpLit.int 8)) ty_29)]) ty_37), (.mk (.lit (ImpLit.int 255)) ty_37)]) ty_37)]) ty_39)]) ty_39) (.mk (.var "out") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_19), (.mk (.lit (ImpLit.int 35)) ty_40), (.mk (.app "cast#8" [(.mk (.app "BitAnd#32" [(.mk (.app "MessageHeader.pn" [(.mk (.var "h") ty_21)]) ty_37), (.mk (.lit (ImpLit.int 255)) ty_37)]) ty_37)]) ty_39)]) ty_39) (.mk (.var "out") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_19), (.mk (.lit (ImpLit.int 36)) ty_40), (.mk (.app "cast#8" [(.mk (.app "Shr#32" [(.mk (.app ".n" [(.mk (.var "h") ty_21)]) ty_37), (.mk (.lit (ImpLit.int 24)) ty_29)]) ty_37)]) ty_39)]) ty_39) (.mk (.var "out") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_19), (.mk (.lit (ImpLit.int 37)) ty_40), (.mk (.app "cast#8" [(.mk (.app "BitAnd#32" [(.mk (.app "Shr#32" [(.mk (.app ".n" [(.mk (.var "h") ty_21)]) ty_37), (.mk (.lit (ImpLit.int 16)) ty_29)]) ty_37), (.mk (.lit (ImpLit.int 255)) ty_37)]) ty_37)]) ty_39)]) ty_39) (.mk (.var "out") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_19), (.mk (.lit (ImpLit.int 38)) ty_40), (.mk (.app "cast#8" [(.mk (.app "BitAnd#32" [(.mk (.app "Shr#32" [(.mk (.app ".n" [(.mk (.var "h") ty_21)]) ty_37), (.mk (.lit (ImpLit.int 8)) ty_29)]) ty_37), (.mk (.lit (ImpLit.int 255)) ty_37)]) ty_37)]) ty_39)]) ty_39) (.mk (.var "out") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_19), (.mk (.lit (ImpLit.int 39)) ty_40), (.mk (.app "cast#8" [(.mk (.app "BitAnd#32" [(.mk (.app ".n" [(.mk (.var "h") ty_21)]) ty_37), (.mk (.lit (ImpLit.int 255)) ty_37)]) ty_37)]) ty_39)]) ty_39) (.mk (.var "out") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk (.var "out") ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)
 
-def ratchet_init_initiator_texpr : TExpr :=
-  (.mk (.letBind "root_key" (.mk (.var "root_key") ty_12) (.mk (.letBind "my_sk" (.mk (.var "my_sk") ty_12) (.mk (.letBind "my_pk" (.mk (.var "my_pk") ty_12) (.mk (.letBind "remote_pk" (.mk (.var "remote_pk") ty_12) (.mk (.letBind "dh_out" (.mk (.app "dh" [(.mk (.var "my_sk") ty_12), (.mk (.var "remote_pk") ty_12)]) ty_8) (.mk (.letBind "_tup" (.mk (.app "kdf_rk" [(.mk (.var "root_key") ty_12), (.mk (.var "dh_out") ty_8)]) ty_16) (.mk (.letBind "new_rk" (.mk (.proj (.mk (.var "_tup") ty_16) 0) ty_21) (.mk (.letBind "send_ck" (.mk (.proj (.mk (.var "_tup") ty_16) 1) ty_21) (.mk (.app "RatchetState" [(.mk (.var "new_rk") ty_8), (.mk (.app "Some" [(.mk (.var "send_ck") ty_8)]) ty_2), (.mk (.app "None" []) ty_2), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.var "my_sk") ty_12), (.mk (.var "my_pk") ty_12), (.mk (.var "remote_pk") ty_12), (.mk (.lit (ImpLit.int 0)) ty_17)]) ty_5)) ty_21)) ty_21)) ty_21)) ty_5)) ty_5)) ty_5)) ty_5)) ty_5)
+def concat_ad_texpr : TExpr :=
+  (.mk (.letBind "ad" (.mk (.var "ad") ty_27) (.mk (.letBind "h" (.mk (.var "h") ty_21) (.mk (.letBind "enc" (.mk (.app "encode_header" [(.mk (.var "h") ty_21)]) ty_19) (.mk (.letBind "out" (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.lit (ImpLit.int 104)) ty_40)]) ty_14) (.mk (.seq (.mk (.forFold "i" (.mk (.lit (ImpLit.int 0)) ty_40) (.mk (.var "AD_LEN") ty_40) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_14), (.mk (.var "i") ty_40), (.mk (.app "index" [(.mk (.var "ad") ty_27), (.mk (.var "i") ty_40)]) ty_39)]) ty_39) (.mk (.var "out") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit)) .unit) (.mk (.seq (.mk (.forFold "i" (.mk (.lit (ImpLit.int 0)) ty_40) (.mk (.var "HEADER_LEN") ty_40) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_14), (.mk (.app "Add#size" [(.mk (.var "AD_LEN") ty_40), (.mk (.var "i") ty_40)]) ty_40), (.mk (.app "index" [(.mk (.var "enc") ty_19), (.mk (.var "i") ty_40)]) ty_39)]) ty_39) (.mk (.var "out") ty_39)) ty_39) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit)) .unit) (.mk (.var "out") ty_14)) ty_14)) ty_14)) ty_41)) ty_14)) ty_14)) ty_14)
 
-def ratchet_init_responder_texpr : TExpr :=
-  (.mk (.letBind "root_key" (.mk (.var "root_key") ty_12) (.mk (.letBind "my_sk" (.mk (.var "my_sk") ty_12) (.mk (.letBind "my_pk" (.mk (.var "my_pk") ty_12) (.mk (.letBind "remote_pk" (.mk (.var "remote_pk") ty_12) (.mk (.app "RatchetState" [(.mk (.var "root_key") ty_12), (.mk (.app "None" []) ty_2), (.mk (.app "None" []) ty_2), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.var "my_sk") ty_12), (.mk (.var "my_pk") ty_12), (.mk (.var "remote_pk") ty_12), (.mk (.lit (ImpLit.int 0)) ty_17)]) ty_5)) ty_5)) ty_5)) ty_5)) ty_5)
+def ratchet_init_alice_texpr : TExpr :=
+  (.mk (.letBind "sk" (.mk (.var "sk") ty_26) (.mk (.letBind "bob_pk" (.mk (.var "bob_pk") ty_26) (.mk (.letBind "my_sk" (.mk (.var "my_sk") ty_26) (.mk (.letBind "my_pk" (.mk (.var "my_pk") ty_26) (.mk (.letBind "_tup" (.mk (.app "kdf_rk" [(.mk (.var "sk") ty_26), (.mk (.app "dh" [(.mk (.var "my_sk") ty_26), (.mk (.var "bob_pk") ty_26)]) ty_18)]) ty_34) (.mk (.letBind "rk" (.mk (.proj (.mk (.var "_tup") ty_34) 0) ty_41) (.mk (.letBind "cks" (.mk (.proj (.mk (.var "_tup") ty_34) 1) ty_41) (.mk (.app "RatchetState" [(.mk (.var "my_sk") ty_26), (.mk (.var "my_pk") ty_26), (.mk (.app "Some" [(.mk (.var "bob_pk") ty_26)]) ty_2), (.mk (.var "rk") ty_18), (.mk (.app "Some" [(.mk (.var "cks") ty_18)]) ty_2), (.mk (.app "None" []) ty_2), (.mk (.lit (ImpLit.int 0)) ty_37), (.mk (.lit (ImpLit.int 0)) ty_37), (.mk (.lit (ImpLit.int 0)) ty_37), (.mk (.app "repeat" [(.mk (.lit (ImpLit.bool false)) .bool), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_20), (.mk (.app "repeat" [(.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_18), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_11), (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_37), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_12), (.mk (.app "repeat" [(.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_18), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_11)]) ty_8)) ty_41)) ty_41)) ty_8)) ty_8)) ty_8)) ty_8)) ty_8)
+
+def ratchet_init_bob_texpr : TExpr :=
+  (.mk (.letBind "sk" (.mk (.var "sk") ty_26) (.mk (.letBind "my_sk" (.mk (.var "my_sk") ty_26) (.mk (.letBind "my_pk" (.mk (.var "my_pk") ty_26) (.mk (.app "RatchetState" [(.mk (.var "my_sk") ty_26), (.mk (.var "my_pk") ty_26), (.mk (.app "None" []) ty_2), (.mk (.var "sk") ty_26), (.mk (.app "None" []) ty_2), (.mk (.app "None" []) ty_2), (.mk (.lit (ImpLit.int 0)) ty_37), (.mk (.lit (ImpLit.int 0)) ty_37), (.mk (.lit (ImpLit.int 0)) ty_37), (.mk (.app "repeat" [(.mk (.lit (ImpLit.bool false)) .bool), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_20), (.mk (.app "repeat" [(.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_18), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_11), (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_37), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_12), (.mk (.app "repeat" [(.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_18), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_11)]) ty_8)) ty_8)) ty_8)) ty_8)
 
 def ratchet_encrypt_texpr : TExpr :=
-  (.mk (.letBind "state" (.mk (.var "state") ty_10) (.mk (.letBind "plaintext" (.mk (.var "plaintext") ty_13) (.mk (.letBind "pt_len" (.mk (.var "pt_len") ty_20) (.mk (.match_ (.mk (.app "RatchetState.send_ck" [(.mk (.var "state") ty_10)]) ty_2) [(.somePat (.varPat "send_ck"), (.mk (.letBind "_tup" (.mk (.app "kdf_chain_step" [(.mk (.var "send_ck") ty_8)]) ty_16) (.mk (.letBind "new_send_ck" (.mk (.proj (.mk (.var "_tup") ty_16) 0) ty_21) (.mk (.letBind "mk" (.mk (.proj (.mk (.var "_tup") ty_16) 1) ty_21) (.mk (.letBind "header" (.mk (.app "MessageHeader" [(.mk (.app "RatchetState.my_pk" [(.mk (.var "state") ty_10)]) ty_8), (.mk (.app "RatchetState.send_n" [(.mk (.var "state") ty_10)]) ty_17), (.mk (.app ".prev_send_n" [(.mk (.var "state") ty_10)]) ty_17)]) ty_0) (.mk (.letBind "ciphertext" (.mk (.app "aead_encrypt" [(.mk (.var "mk") ty_8), (.mk (.var "plaintext") ty_13), (.mk (.var "pt_len") ty_20), (.mk (.app "RatchetState.my_pk" [(.mk (.var "state") ty_10)]) ty_8)]) ty_7) (.mk (.letBind "new_state" (.mk (.app "RatchetState" [(.mk (.app "RatchetState.root_key" [(.mk (.var "state") ty_10)]) ty_8), (.mk (.app "Some" [(.mk (.var "new_send_ck") ty_8)]) ty_2), (.mk (.app "RatchetState.recv_ck" [(.mk (.var "state") ty_10)]) ty_2), (.mk (.app "Add#32" [(.mk (.app "RatchetState.send_n" [(.mk (.var "state") ty_10)]) ty_17), (.mk (.lit (ImpLit.int 1)) ty_17)]) ty_17), (.mk (.app "RatchetState.recv_n" [(.mk (.var "state") ty_10)]) ty_17), (.mk (.app "RatchetState.my_sk" [(.mk (.var "state") ty_10)]) ty_8), (.mk (.app "RatchetState.my_pk" [(.mk (.var "state") ty_10)]) ty_8), (.mk (.app "RatchetState.remote_pk" [(.mk (.var "state") ty_10)]) ty_8), (.mk (.app ".prev_send_n" [(.mk (.var "state") ty_10)]) ty_17)]) ty_5) (.mk (.app "Some" [(.mk (.tuple [(.mk (.var "new_state") ty_5), (.mk (.var "header") ty_0), (.mk (.var "ciphertext") ty_7)]) (.tuple [(.adt "RatchetState" []), (.adt "MessageHeader" []), (.array (.uint .w8) 256)]))]) ty_3)) ty_21)) ty_21)) ty_21)) ty_21)) ty_21)) ty_3)), (.nonePat, (.mk (.app "None" []) ty_3))]) ty_3)) ty_3)) ty_3)) ty_3)
+  (.mk (.letBind "state" (.mk (.var "state") ty_22) (.mk (.letBind "pt" (.mk (.var "pt") ty_24) (.mk (.letBind "pt_len" (.mk (.var "pt_len") ty_40) (.mk (.letBind "ad" (.mk (.var "ad") ty_27) (.mk (.match_ (.mk (.app ".cks" [(.mk (.var "state") ty_22)]) ty_2) [(.nonePat, (.mk (.app "None" []) ty_4)), (.somePat (.varPat "ck"), (.mk (.letBind "_tup" (.mk (.app "kdf_ck" [(.mk (.var "ck") ty_18)]) ty_34) (.mk (.letBind "ck1" (.mk (.proj (.mk (.var "_tup") ty_34) 0) ty_41) (.mk (.letBind "mk" (.mk (.proj (.mk (.var "_tup") ty_34) 1) ty_41) (.mk (.letBind "header" (.mk (.app "MessageHeader" [(.mk (.app ".dhs_pk" [(.mk (.var "state") ty_22)]) ty_18), (.mk (.app "RatchetState.pn" [(.mk (.var "state") ty_22)]) ty_37), (.mk (.app ".ns" [(.mk (.var "state") ty_22)]) ty_37)]) ty_0) (.mk (.letBind "ct" (.mk (.app "aead_encrypt" [(.mk (.var "mk") ty_18), (.mk (.var "pt") ty_24), (.mk (.var "pt_len") ty_40), (.mk (.app "concat_ad" [(.mk (.var "ad") ty_27), (.mk (.var "header") ty_0)]) ty_14)]) ty_17) (.mk (.app "Some" [(.mk (.tuple [(.mk (.letBind "_fru_base" (.mk (.var "state") ty_22) (.mk (.app "RatchetState" [(.mk (.app ".dhs_sk" [(.mk (.var "_fru_base") ty_8)]) ty_18), (.mk (.app ".dhs_pk" [(.mk (.var "_fru_base") ty_8)]) ty_18), (.mk (.app ".dhr" [(.mk (.var "_fru_base") ty_8)]) ty_2), (.mk (.app ".rk" [(.mk (.var "_fru_base") ty_8)]) ty_18), (.mk (.app "Some" [(.mk (.var "ck1") ty_18)]) ty_2), (.mk (.app ".ckr" [(.mk (.var "_fru_base") ty_8)]) ty_2), (.mk (.app "Add#32" [(.mk (.app ".ns" [(.mk (.var "state") ty_22)]) ty_37), (.mk (.lit (ImpLit.int 1)) ty_37)]) ty_37), (.mk (.app ".nr" [(.mk (.var "_fru_base") ty_8)]) ty_37), (.mk (.app "RatchetState.pn" [(.mk (.var "_fru_base") ty_8)]) ty_37), (.mk (.app ".sk_used" [(.mk (.var "_fru_base") ty_8)]) ty_20), (.mk (.app ".sk_dh" [(.mk (.var "_fru_base") ty_8)]) ty_11), (.mk (.app ".sk_n" [(.mk (.var "_fru_base") ty_8)]) ty_12), (.mk (.app ".sk_mk" [(.mk (.var "_fru_base") ty_8)]) ty_11)]) ty_8)) ty_8), (.mk (.var "header") ty_0), (.mk (.var "ct") ty_17), (.mk (.app "ct_len" [(.mk (.var "pt_len") ty_40)]) ty_40)]) (.tuple [(.adt "RatchetState" []), (.adt "MessageHeader" []), (.array (.uint .w8) 280), (.uint .wsize)]))]) ty_4)) ty_41)) ty_41)) ty_41)) ty_41)) ty_4))]) ty_4)) ty_4)) ty_4)) ty_4)) ty_4)
+
+def store_find_texpr : TExpr :=
+  (.mk (.letBind "s" (.mk (.var "s") ty_22) (.mk (.letBind "dh_pub" (.mk (.var "dh_pub") ty_26) (.mk (.letBind "n" (.mk (.var "n") ty_37) (.mk (.letBind "acc" (.mk (.tuple [(.mk (.lit (ImpLit.bool false)) .bool), (.mk (.lit (ImpLit.int 0)) ty_40)]) ty_35) (.mk (.seq (.mk (.forFold "i" (.mk (.lit (ImpLit.int 0)) ty_40) (.mk (.var "MAX_STORED") ty_40) (.mk (.letBind "hit" (.mk (.app "&&" [(.mk (.app "&&" [(.mk (.app "index" [(.mk (.app ".sk_used" [(.mk (.var "s") ty_22)]) ty_20), (.mk (.var "i") ty_40)]) .bool), (.mk (.app "eq32" [(.mk (.app "index" [(.mk (.app ".sk_dh" [(.mk (.var "s") ty_22)]) ty_11), (.mk (.var "i") ty_40)]) ty_18), (.mk (.var "dh_pub") ty_26)]) .bool)]) .bool), (.mk (.app "Eq" [(.mk (.app "index" [(.mk (.app ".sk_n" [(.mk (.var "s") ty_22)]) ty_12), (.mk (.var "i") ty_40)]) ty_37), (.mk (.var "n") ty_37)]) .bool)]) .bool) (.mk (.ifThenElse (.mk (.app "&&" [(.mk (.app "Not" [(.mk (.proj (.mk (.var "acc") ty_35) 0) .bool)]) .bool), (.mk (.var "hit") .bool)]) .bool) (.mk (.seq (.mk (.seq (.mk (.letBind "acc" (.mk (.tuple [(.mk (.lit (ImpLit.bool true)) .bool), (.mk (.var "i") ty_40)]) ty_35) (.mk (.var "acc") ty_35)) ty_35) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit)) .unit)) .unit) (.mk (.var "acc") ty_35)) ty_35)) ty_35)) ty_35)) ty_35)) ty_35)
+
+def store_take_texpr : TExpr :=
+  (.mk (.letBind "s" (.mk (.var "s") ty_22) (.mk (.letBind "i" (.mk (.var "i") ty_40) (.mk (.letBind "mk" (.mk (.app "index" [(.mk (.app ".sk_mk" [(.mk (.var "s") ty_22)]) ty_11), (.mk (.var "i") ty_40)]) ty_18) (.mk (.letBind "t" (.mk (.var "s") ty_22) (.mk (.seq (.mk (.seq (.mk (.letBind "t" (.mk (.app "struct_update#RatchetState#9#13" [(.mk (.var "t") ty_8), (.mk (.app "array_update" [(.mk (.app ".sk_used" [(.mk (.var "t") ty_8)]) ty_20), (.mk (.var "i") ty_40), (.mk (.lit (ImpLit.bool false)) .bool)]) ty_20)]) ty_8) (.mk (.var "t") ty_8)) ty_8) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "t" (.mk (.app "struct_update#RatchetState#10#13" [(.mk (.var "t") ty_8), (.mk (.app "array_update" [(.mk (.app ".sk_dh" [(.mk (.var "t") ty_8)]) ty_11), (.mk (.var "i") ty_40), (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_18)]) ty_11)]) ty_8) (.mk (.var "t") ty_8)) ty_8) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "t" (.mk (.app "struct_update#RatchetState#11#13" [(.mk (.var "t") ty_8), (.mk (.app "array_update" [(.mk (.app ".sk_n" [(.mk (.var "t") ty_8)]) ty_12), (.mk (.var "i") ty_40), (.mk (.lit (ImpLit.int 0)) ty_37)]) ty_12)]) ty_8) (.mk (.var "t") ty_8)) ty_8) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "t" (.mk (.app "struct_update#RatchetState#12#13" [(.mk (.var "t") ty_8), (.mk (.app "array_update" [(.mk (.app ".sk_mk" [(.mk (.var "t") ty_8)]) ty_11), (.mk (.var "i") ty_40), (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_18)]) ty_11)]) ty_8) (.mk (.var "t") ty_8)) ty_8) (.mk .unitVal .unit)) .unit) (.mk (.tuple [(.mk (.var "t") ty_8), (.mk (.var "mk") ty_18)]) ty_31)) ty_31)) ty_31)) ty_31)) ty_31)) ty_41)) ty_31)) ty_31)) ty_31)
+
+def store_insert_texpr : TExpr :=
+  (.mk (.letBind "s" (.mk (.var "s") ty_22) (.mk (.letBind "dh_pub" (.mk (.var "dh_pub") ty_26) (.mk (.letBind "n" (.mk (.var "n") ty_37) (.mk (.letBind "mk" (.mk (.var "mk") ty_26) (.mk (.letBind "state" (.mk (.var "s") ty_22) (.mk (.letBind "done" (.mk (.lit (ImpLit.bool false)) .bool) (.mk (.seq (.mk (.letBind "used" (.mk (.lit (ImpLit.int 0)) .int) (.mk (.letBind "dhs" (.mk (.lit (ImpLit.int 0)) .int) (.mk (.letBind "nums" (.mk (.lit (ImpLit.int 0)) .int) (.mk (.letBind "mks" (.mk (.lit (ImpLit.int 0)) .int) (.mk (.forFold "i" (.mk (.lit (ImpLit.int 0)) ty_40) (.mk (.var "MAX_STORED") ty_40) (.mk (.ifThenElse (.mk (.app "&&" [(.mk (.app "Not" [(.mk (.var "done") .bool)]) .bool), (.mk (.app "Not" [(.mk (.app "index" [(.mk (.app ".sk_used" [(.mk (.var "state") ty_8)]) ty_20), (.mk (.var "i") ty_40)]) .bool)]) .bool)]) .bool) (.mk (.letBind "used" (.mk (.app ".sk_used" [(.mk (.var "state") ty_8)]) ty_20) (.mk (.seq (.mk (.seq (.mk (.letBind "used" (.mk (.app "array_update" [(.mk (.var "used") ty_20), (.mk (.var "i") ty_40), (.mk (.lit (ImpLit.bool true)) .bool)]) .bool) (.mk (.var "used") .bool)) .bool) (.mk .unitVal .unit)) .unit) (.mk (.letBind "dhs" (.mk (.app ".sk_dh" [(.mk (.var "state") ty_8)]) ty_11) (.mk (.seq (.mk (.seq (.mk (.letBind "dhs" (.mk (.app "array_update" [(.mk (.var "dhs") ty_11), (.mk (.var "i") ty_40), (.mk (.var "dh_pub") ty_26)]) ty_18) (.mk (.var "dhs") ty_18)) ty_18) (.mk .unitVal .unit)) .unit) (.mk (.letBind "nums" (.mk (.app ".sk_n" [(.mk (.var "state") ty_8)]) ty_12) (.mk (.seq (.mk (.seq (.mk (.letBind "nums" (.mk (.app "array_update" [(.mk (.var "nums") ty_12), (.mk (.var "i") ty_40), (.mk (.var "n") ty_37)]) ty_37) (.mk (.var "nums") ty_37)) ty_37) (.mk .unitVal .unit)) .unit) (.mk (.letBind "mks" (.mk (.app ".sk_mk" [(.mk (.var "state") ty_8)]) ty_11) (.mk (.seq (.mk (.seq (.mk (.letBind "mks" (.mk (.app "array_update" [(.mk (.var "mks") ty_11), (.mk (.var "i") ty_40), (.mk (.var "mk") ty_26)]) ty_18) (.mk (.var "mks") ty_18)) ty_18) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "state" (.mk (.app "RatchetState" [(.mk (.app ".dhs_sk" [(.mk (.var "state") ty_8)]) ty_18), (.mk (.app ".dhs_pk" [(.mk (.var "state") ty_8)]) ty_18), (.mk (.app ".dhr" [(.mk (.var "state") ty_8)]) ty_2), (.mk (.app ".rk" [(.mk (.var "state") ty_8)]) ty_18), (.mk (.app ".cks" [(.mk (.var "state") ty_8)]) ty_2), (.mk (.app ".ckr" [(.mk (.var "state") ty_8)]) ty_2), (.mk (.app ".ns" [(.mk (.var "state") ty_8)]) ty_37), (.mk (.app ".nr" [(.mk (.var "state") ty_8)]) ty_37), (.mk (.app "RatchetState.pn" [(.mk (.var "state") ty_8)]) ty_37), (.mk (.var "used") ty_20), (.mk (.var "dhs") ty_11), (.mk (.var "nums") ty_12), (.mk (.var "mks") ty_11)]) ty_8) (.mk (.var "state") ty_8)) ty_8) (.mk .unitVal .unit)) .unit) (.mk (.seq (.mk (.seq (.mk (.letBind "done" (.mk (.lit (ImpLit.bool true)) .bool) (.mk (.var "done") .bool)) .bool) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit)) .unit)) .unit)) ty_41)) ty_41)) ty_41)) ty_41)) ty_41)) ty_41)) .unit) (.mk .unitVal .unit)) .unit)) .unit)) .unit)) .unit)) .unit)) .unit) (.mk (.ifThenElse (.mk (.var "done") .bool) (.mk (.app "Some" [(.mk (.var "state") ty_8)]) ty_1) (.mk (.app "None" []) ty_1)) ty_1)) ty_1)) ty_41)) ty_1)) ty_1)) ty_1)) ty_1)) ty_1)
+
+def try_skipped_message_keys_texpr : TExpr :=
+  (.mk (.letBind "s" (.mk (.var "s") ty_22) (.mk (.letBind "h" (.mk (.var "h") ty_21) (.mk (.letBind "_tup" (.mk (.app "store_find" [(.mk (.var "s") ty_22), (.mk (.app ".dh" [(.mk (.var "h") ty_21)]) ty_18), (.mk (.app ".n" [(.mk (.var "h") ty_21)]) ty_37)]) ty_35) (.mk (.letBind "found" (.mk (.proj (.mk (.var "_tup") ty_35) 0) ty_41) (.mk (.letBind "i" (.mk (.proj (.mk (.var "_tup") ty_35) 1) ty_41) (.mk (.ifThenElse (.mk (.var "found") .bool) (.mk (.app "Some" [(.mk (.app "store_take" [(.mk (.var "s") ty_22), (.mk (.var "i") ty_40)]) ty_31)]) ty_6) (.mk (.app "None" []) ty_6)) ty_6)) ty_41)) ty_41)) ty_6)) ty_6)) ty_6)
+
+def skip_message_keys_texpr : TExpr :=
+  (.mk (.letBind "s" (.mk (.var "s") ty_22) (.mk (.letBind "until" (.mk (.var "until") ty_37) (.mk (.ifThenElse (.mk (.app "&&" [(.mk (.app "Gt" [(.mk (.var "until") ty_37), (.mk (.app ".nr" [(.mk (.var "s") ty_22)]) ty_37)]) .bool), (.mk (.app "Gt" [(.mk (.app "Sub#32" [(.mk (.var "until") ty_37), (.mk (.app ".nr" [(.mk (.var "s") ty_22)]) ty_37)]) ty_37), (.mk (.var "MAX_SKIP") ty_37)]) .bool)]) .bool) (.mk (.app "None" []) ty_1) (.mk (.match_ (.mk (.app ".ckr" [(.mk (.var "s") ty_22)]) ty_2) [(.nonePat, (.mk (.app "Some" [(.mk (.var "s") ty_22)]) ty_1)), (.somePat (.varPat "ck0"), (.mk (.letBind "dhr" (.mk (.match_ (.mk (.app ".dhr" [(.mk (.var "s") ty_22)]) ty_2) [(.somePat (.varPat "r"), (.mk (.var "r") ty_18)), (.nonePat, (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_39), (.mk (.lit (ImpLit.int 32)) ty_40)]) ty_18))]) ty_18) (.mk (.letBind "acc" (.mk (.tuple [(.mk (.var "s") ty_22), (.mk (.var "ck0") ty_18), (.mk (.lit (ImpLit.bool true)) .bool)]) ty_30) (.mk (.seq (.mk (.forFold "_i" (.mk (.lit (ImpLit.int 0)) ty_37) (.mk (.var "MAX_SKIP") ty_37) (.mk (.letBind "_tup" (.mk (.var "acc") ty_30) (.mk (.letBind "st" (.mk (.proj (.mk (.var "_tup") ty_30) 0) ty_41) (.mk (.letBind "ck" (.mk (.proj (.mk (.var "_tup") ty_30) 1) ty_41) (.mk (.letBind "ok" (.mk (.proj (.mk (.var "_tup") ty_30) 2) ty_41) (.mk (.ifThenElse (.mk (.app "&&" [(.mk (.var "ok") .bool), (.mk (.app "Lt" [(.mk (.app ".nr" [(.mk (.var "st") ty_8)]) ty_37), (.mk (.var "until") ty_37)]) .bool)]) .bool) (.mk (.letBind "_tup" (.mk (.app "kdf_ck" [(.mk (.var "ck") ty_18)]) ty_34) (.mk (.letBind "ck1" (.mk (.proj (.mk (.var "_tup") ty_34) 0) ty_41) (.mk (.letBind "mk" (.mk (.proj (.mk (.var "_tup") ty_34) 1) ty_41) (.mk (.match_ (.mk (.app "store_insert" [(.mk (.var "st") ty_8), (.mk (.var "dhr") ty_18), (.mk (.app ".nr" [(.mk (.var "st") ty_8)]) ty_37), (.mk (.var "mk") ty_18)]) ty_1) [(.somePat (.varPat "st1"), (.mk (.seq (.mk (.seq (.mk (.letBind "acc" (.mk (.tuple [(.mk (.app "RatchetState" [(.mk (.app ".dhs_sk" [(.mk (.var "st1") ty_8)]) ty_18), (.mk (.app ".dhs_pk" [(.mk (.var "st1") ty_8)]) ty_18), (.mk (.app ".dhr" [(.mk (.var "st1") ty_8)]) ty_2), (.mk (.app ".rk" [(.mk (.var "st1") ty_8)]) ty_18), (.mk (.app ".cks" [(.mk (.var "st1") ty_8)]) ty_2), (.mk (.app "Some" [(.mk (.var "ck1") ty_18)]) ty_2), (.mk (.app ".ns" [(.mk (.var "st1") ty_8)]) ty_37), (.mk (.app "Add#32" [(.mk (.app ".nr" [(.mk (.var "st1") ty_8)]) ty_37), (.mk (.lit (ImpLit.int 1)) ty_37)]) ty_37), (.mk (.app "RatchetState.pn" [(.mk (.var "st1") ty_8)]) ty_37), (.mk (.app ".sk_used" [(.mk (.var "st1") ty_8)]) ty_20), (.mk (.app ".sk_dh" [(.mk (.var "st1") ty_8)]) ty_11), (.mk (.app ".sk_n" [(.mk (.var "st1") ty_8)]) ty_12), (.mk (.app ".sk_mk" [(.mk (.var "st1") ty_8)]) ty_11)]) ty_8), (.mk (.var "ck1") ty_18), (.mk (.lit (ImpLit.bool true)) .bool)]) ty_30) (.mk (.var "acc") ty_30)) ty_30) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit)), (.nonePat, (.mk (.seq (.mk (.seq (.mk (.letBind "acc" (.mk (.tuple [(.mk (.var "st") ty_8), (.mk (.var "ck") ty_18), (.mk (.lit (ImpLit.bool false)) .bool)]) ty_30) (.mk (.var "acc") ty_30)) ty_30) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit))]) .unit)) ty_41)) ty_41)) .unit) (.mk .unitVal .unit)) .unit)) ty_41)) ty_41)) ty_41)) .unit)) .unit) (.mk (.letBind "_tup" (.mk (.var "acc") ty_30) (.mk (.letBind "st" (.mk (.proj (.mk (.var "_tup") ty_30) 0) ty_41) (.mk (.letBind "_" (.mk (.proj (.mk (.var "_tup") ty_30) 1) ty_41) (.mk (.letBind "ok" (.mk (.proj (.mk (.var "_tup") ty_30) 2) ty_41) (.mk (.ifThenElse (.mk (.var "ok") .bool) (.mk (.app "Some" [(.mk (.var "st") ty_8)]) ty_1) (.mk (.app "None" []) ty_1)) ty_1)) ty_41)) ty_41)) ty_41)) ty_41)) ty_41)) ty_41)) ty_1))]) ty_1)) ty_1)) ty_1)) ty_1)
+
+def dh_ratchet_recv_half_texpr : TExpr :=
+  (.mk (.letBind "s" (.mk (.var "s") ty_22) (.mk (.letBind "dh_r" (.mk (.var "dh_r") ty_26) (.mk (.letBind "_tup" (.mk (.app "kdf_rk" [(.mk (.app ".rk" [(.mk (.var "s") ty_22)]) ty_18), (.mk (.app "dh" [(.mk (.app ".dhs_sk" [(.mk (.var "s") ty_22)]) ty_18), (.mk (.var "dh_r") ty_26)]) ty_18)]) ty_34) (.mk (.letBind "rk1" (.mk (.proj (.mk (.var "_tup") ty_34) 0) ty_41) (.mk (.letBind "ckr1" (.mk (.proj (.mk (.var "_tup") ty_34) 1) ty_41) (.mk (.letBind "_fru_base" (.mk (.var "s") ty_22) (.mk (.app "RatchetState" [(.mk (.app ".dhs_sk" [(.mk (.var "_fru_base") ty_8)]) ty_18), (.mk (.app ".dhs_pk" [(.mk (.var "_fru_base") ty_8)]) ty_18), (.mk (.app "Some" [(.mk (.var "dh_r") ty_26)]) ty_2), (.mk (.var "rk1") ty_18), (.mk (.app ".cks" [(.mk (.var "_fru_base") ty_8)]) ty_2), (.mk (.app "Some" [(.mk (.var "ckr1") ty_18)]) ty_2), (.mk (.lit (ImpLit.int 0)) ty_37), (.mk (.lit (ImpLit.int 0)) ty_37), (.mk (.app ".ns" [(.mk (.var "s") ty_22)]) ty_37), (.mk (.app ".sk_used" [(.mk (.var "_fru_base") ty_8)]) ty_20), (.mk (.app ".sk_dh" [(.mk (.var "_fru_base") ty_8)]) ty_11), (.mk (.app ".sk_n" [(.mk (.var "_fru_base") ty_8)]) ty_12), (.mk (.app ".sk_mk" [(.mk (.var "_fru_base") ty_8)]) ty_11)]) ty_8)) ty_8)) ty_41)) ty_41)) ty_8)) ty_8)) ty_8)
+
+def dh_ratchet_send_half_texpr : TExpr :=
+  (.mk (.letBind "s" (.mk (.var "s") ty_22) (.mk (.letBind "new_sk" (.mk (.var "new_sk") ty_26) (.mk (.letBind "new_pk" (.mk (.var "new_pk") ty_26) (.mk (.match_ (.mk (.app ".dhr" [(.mk (.var "s") ty_22)]) ty_2) [(.nonePat, (.mk (.var "s") ty_22)), (.somePat (.varPat "r"), (.mk (.letBind "_tup" (.mk (.app "kdf_rk" [(.mk (.app ".rk" [(.mk (.var "s") ty_22)]) ty_18), (.mk (.app "dh" [(.mk (.var "new_sk") ty_26), (.mk (.var "r") ty_18)]) ty_18)]) ty_34) (.mk (.letBind "rk2" (.mk (.proj (.mk (.var "_tup") ty_34) 0) ty_41) (.mk (.letBind "cks2" (.mk (.proj (.mk (.var "_tup") ty_34) 1) ty_41) (.mk (.letBind "_fru_base" (.mk (.var "s") ty_22) (.mk (.app "RatchetState" [(.mk (.var "new_sk") ty_26), (.mk (.var "new_pk") ty_26), (.mk (.app ".dhr" [(.mk (.var "_fru_base") ty_8)]) ty_2), (.mk (.var "rk2") ty_18), (.mk (.app "Some" [(.mk (.var "cks2") ty_18)]) ty_2), (.mk (.app ".ckr" [(.mk (.var "_fru_base") ty_8)]) ty_2), (.mk (.app ".ns" [(.mk (.var "_fru_base") ty_8)]) ty_37), (.mk (.app ".nr" [(.mk (.var "_fru_base") ty_8)]) ty_37), (.mk (.app "RatchetState.pn" [(.mk (.var "_fru_base") ty_8)]) ty_37), (.mk (.app ".sk_used" [(.mk (.var "_fru_base") ty_8)]) ty_20), (.mk (.app ".sk_dh" [(.mk (.var "_fru_base") ty_8)]) ty_11), (.mk (.app ".sk_n" [(.mk (.var "_fru_base") ty_8)]) ty_12), (.mk (.app ".sk_mk" [(.mk (.var "_fru_base") ty_8)]) ty_11)]) ty_8)) ty_8)) ty_41)) ty_41)) ty_8))]) ty_8)) ty_8)) ty_8)) ty_8)
+
+def dh_ratchet_texpr : TExpr :=
+  (.mk (.letBind "s" (.mk (.var "s") ty_22) (.mk (.letBind "dh_r" (.mk (.var "dh_r") ty_26) (.mk (.letBind "new_sk" (.mk (.var "new_sk") ty_26) (.mk (.letBind "new_pk" (.mk (.var "new_pk") ty_26) (.mk (.app "dh_ratchet_send_half" [(.mk (.app "dh_ratchet_recv_half" [(.mk (.var "s") ty_22), (.mk (.var "dh_r") ty_26)]) ty_8), (.mk (.var "new_sk") ty_26), (.mk (.var "new_pk") ty_26)]) ty_8)) ty_8)) ty_8)) ty_8)) ty_8)
+
+def ratchet_receive_key_texpr : TExpr :=
+  (.mk (.letBind "s" (.mk (.var "s") ty_22) (.mk (.letBind "h" (.mk (.var "h") ty_21) (.mk (.letBind "new_sk" (.mk (.var "new_sk") ty_26) (.mk (.letBind "new_pk" (.mk (.var "new_pk") ty_26) (.mk (.match_ (.mk (.app "try_skipped_message_keys" [(.mk (.var "s") ty_22), (.mk (.var "h") ty_21)]) ty_6) [(.somePat (.varPat "r"), (.mk (.app "Some" [(.mk (.var "r") ty_31)]) ty_6)), (.nonePat, (.mk (.letBind "is_new" (.mk (.match_ (.mk (.app ".dhr" [(.mk (.var "s") ty_22)]) ty_2) [(.somePat (.varPat "r"), (.mk (.app "Not" [(.mk (.app "eq32" [(.mk (.var "r") ty_18), (.mk (.app ".dh" [(.mk (.var "h") ty_21)]) ty_18)]) .bool)]) .bool)), (.nonePat, (.mk (.lit (ImpLit.bool true)) .bool))]) .bool) (.mk (.letBind "s1" (.mk (.ifThenElse (.mk (.var "is_new") .bool) (.mk (.match_ (.mk (.app "skip_message_keys" [(.mk (.var "s") ty_22), (.mk (.app "MessageHeader.pn" [(.mk (.var "h") ty_21)]) ty_37)]) ty_1) [(.somePat (.varPat "t"), (.mk (.app "Some" [(.mk (.app "dh_ratchet" [(.mk (.var "t") ty_8), (.mk (.app ".dh" [(.mk (.var "h") ty_21)]) ty_18), (.mk (.var "new_sk") ty_26), (.mk (.var "new_pk") ty_26)]) ty_8)]) ty_1)), (.nonePat, (.mk (.app "None" []) ty_1))]) ty_1) (.mk (.ifThenElse (.mk (.app "Lt" [(.mk (.app ".n" [(.mk (.var "h") ty_21)]) ty_37), (.mk (.app ".nr" [(.mk (.var "s") ty_22)]) ty_37)]) .bool) (.mk (.app "None" []) ty_1) (.mk (.app "Some" [(.mk (.var "s") ty_22)]) ty_1)) ty_1)) ty_1) (.mk (.match_ (.mk (.var "s1") ty_1) [(.nonePat, (.mk (.app "None" []) ty_6)), (.somePat (.varPat "t1"), (.mk (.match_ (.mk (.app "skip_message_keys" [(.mk (.var "t1") ty_8), (.mk (.app ".n" [(.mk (.var "h") ty_21)]) ty_37)]) ty_1) [(.nonePat, (.mk (.app "None" []) ty_6)), (.somePat (.varPat "t2"), (.mk (.match_ (.mk (.app ".ckr" [(.mk (.var "t2") ty_8)]) ty_2) [(.nonePat, (.mk (.app "None" []) ty_6)), (.somePat (.varPat "ck"), (.mk (.letBind "_tup" (.mk (.app "kdf_ck" [(.mk (.var "ck") ty_18)]) ty_34) (.mk (.letBind "ck1" (.mk (.proj (.mk (.var "_tup") ty_34) 0) ty_41) (.mk (.letBind "mk" (.mk (.proj (.mk (.var "_tup") ty_34) 1) ty_41) (.mk (.app "Some" [(.mk (.tuple [(.mk (.app "RatchetState" [(.mk (.app ".dhs_sk" [(.mk (.var "t2") ty_8)]) ty_18), (.mk (.app ".dhs_pk" [(.mk (.var "t2") ty_8)]) ty_18), (.mk (.app ".dhr" [(.mk (.var "t2") ty_8)]) ty_2), (.mk (.app ".rk" [(.mk (.var "t2") ty_8)]) ty_18), (.mk (.app ".cks" [(.mk (.var "t2") ty_8)]) ty_2), (.mk (.app "Some" [(.mk (.var "ck1") ty_18)]) ty_2), (.mk (.app ".ns" [(.mk (.var "t2") ty_8)]) ty_37), (.mk (.app "Add#32" [(.mk (.app ".nr" [(.mk (.var "t2") ty_8)]) ty_37), (.mk (.lit (ImpLit.int 1)) ty_37)]) ty_37), (.mk (.app "RatchetState.pn" [(.mk (.var "t2") ty_8)]) ty_37), (.mk (.app ".sk_used" [(.mk (.var "t2") ty_8)]) ty_20), (.mk (.app ".sk_dh" [(.mk (.var "t2") ty_8)]) ty_11), (.mk (.app ".sk_n" [(.mk (.var "t2") ty_8)]) ty_12), (.mk (.app ".sk_mk" [(.mk (.var "t2") ty_8)]) ty_11)]) ty_8), (.mk (.var "mk") ty_18)]) ty_31)]) ty_6)) ty_41)) ty_41)) ty_6))]) ty_6))]) ty_6))]) ty_6)) ty_41)) ty_6))]) ty_6)) ty_6)) ty_6)) ty_6)) ty_6)
 
 def ratchet_decrypt_texpr : TExpr :=
-  (.mk (.letBind "state" (.mk (.var "state") ty_10) (.mk (.letBind "header" (.mk (.var "header") ty_9) (.mk (.letBind "ciphertext" (.mk (.var "ciphertext") ty_13) (.mk (.letBind "ct_len" (.mk (.var "ct_len") ty_20) (.mk (.match_ (.mk (.app "RatchetState.recv_ck" [(.mk (.var "state") ty_10)]) ty_2) [(.somePat (.varPat "recv_ck"), (.mk (.letBind "_tup" (.mk (.app "kdf_chain_step" [(.mk (.var "recv_ck") ty_8)]) ty_16) (.mk (.letBind "new_recv_ck" (.mk (.proj (.mk (.var "_tup") ty_16) 0) ty_21) (.mk (.letBind "mk" (.mk (.proj (.mk (.var "_tup") ty_16) 1) ty_21) (.mk (.letBind "plaintext" (.mk (.app "aead_decrypt" [(.mk (.var "mk") ty_8), (.mk (.var "ciphertext") ty_13), (.mk (.var "ct_len") ty_20), (.mk (.app ".dh_public" [(.mk (.var "header") ty_9)]) ty_8)]) ty_7) (.mk (.letBind "new_state" (.mk (.app "RatchetState" [(.mk (.app "RatchetState.root_key" [(.mk (.var "state") ty_10)]) ty_8), (.mk (.app "RatchetState.send_ck" [(.mk (.var "state") ty_10)]) ty_2), (.mk (.app "Some" [(.mk (.var "new_recv_ck") ty_8)]) ty_2), (.mk (.app "RatchetState.send_n" [(.mk (.var "state") ty_10)]) ty_17), (.mk (.app "Add#32" [(.mk (.app "RatchetState.recv_n" [(.mk (.var "state") ty_10)]) ty_17), (.mk (.lit (ImpLit.int 1)) ty_17)]) ty_17), (.mk (.app "RatchetState.my_sk" [(.mk (.var "state") ty_10)]) ty_8), (.mk (.app "RatchetState.my_pk" [(.mk (.var "state") ty_10)]) ty_8), (.mk (.app "RatchetState.remote_pk" [(.mk (.var "state") ty_10)]) ty_8), (.mk (.app ".prev_send_n" [(.mk (.var "state") ty_10)]) ty_17)]) ty_5) (.mk (.app "Some" [(.mk (.tuple [(.mk (.var "new_state") ty_5), (.mk (.var "plaintext") ty_7)]) (.tuple [(.adt "RatchetState" []), (.array (.uint .w8) 256)]))]) ty_4)) ty_21)) ty_21)) ty_21)) ty_21)) ty_4)), (.nonePat, (.mk (.app "None" []) ty_4))]) ty_4)) ty_4)) ty_4)) ty_4)) ty_4)
+  (.mk (.letBind "s" (.mk (.var "s") ty_22) (.mk (.letBind "h" (.mk (.var "h") ty_21) (.mk (.letBind "ct" (.mk (.var "ct") ty_25) (.mk (.letBind "ct_len" (.mk (.var "ct_len") ty_40) (.mk (.letBind "ad" (.mk (.var "ad") ty_27) (.mk (.letBind "new_sk" (.mk (.var "new_sk") ty_26) (.mk (.letBind "new_pk" (.mk (.var "new_pk") ty_26) (.mk (.match_ (.mk (.app "ratchet_receive_key" [(.mk (.var "s") ty_22), (.mk (.var "h") ty_21), (.mk (.var "new_sk") ty_26), (.mk (.var "new_pk") ty_26)]) ty_6) [(.nonePat, (.mk (.app "None" []) ty_5)), (.somePat (.tuplePat [.varPat "s1", .varPat "mk"]), (.mk (.match_ (.mk (.app "aead_decrypt" [(.mk (.var "mk") ty_18), (.mk (.var "ct") ty_25), (.mk (.var "ct_len") ty_40), (.mk (.app "concat_ad" [(.mk (.var "ad") ty_27), (.mk (.var "h") ty_21)]) ty_14)]) ty_7) [(.nonePat, (.mk (.app "None" []) ty_5)), (.somePat (.tuplePat [.varPat "pt", .varPat "n"]), (.mk (.app "Some" [(.mk (.tuple [(.mk (.var "s1") ty_8), (.mk (.var "pt") ty_16), (.mk (.var "n") ty_40)]) (.tuple [(.adt "RatchetState" []), (.array (.uint .w8) 256), (.uint .wsize)]))]) ty_5))]) ty_5))]) ty_5)) ty_5)) ty_5)) ty_5)) ty_5)) ty_5)) ty_5)) ty_5)
 
-def dh_ratchet_step_texpr : TExpr :=
-  (.mk (.letBind "state" (.mk (.var "state") ty_10) (.mk (.letBind "new_remote_pk" (.mk (.var "new_remote_pk") ty_12) (.mk (.letBind "new_my_sk" (.mk (.var "new_my_sk") ty_12) (.mk (.letBind "new_my_pk" (.mk (.var "new_my_pk") ty_12) (.mk (.letBind "dh_out1" (.mk (.app "dh" [(.mk (.app "RatchetState.my_sk" [(.mk (.var "state") ty_10)]) ty_8), (.mk (.var "new_remote_pk") ty_12)]) ty_8) (.mk (.letBind "_tup" (.mk (.app "kdf_rk" [(.mk (.app "RatchetState.root_key" [(.mk (.var "state") ty_10)]) ty_8), (.mk (.var "dh_out1") ty_8)]) ty_16) (.mk (.letBind "rk1" (.mk (.proj (.mk (.var "_tup") ty_16) 0) ty_21) (.mk (.letBind "new_recv_ck" (.mk (.proj (.mk (.var "_tup") ty_16) 1) ty_21) (.mk (.letBind "dh_out2" (.mk (.app "dh" [(.mk (.var "new_my_sk") ty_12), (.mk (.var "new_remote_pk") ty_12)]) ty_8) (.mk (.letBind "_tup" (.mk (.app "kdf_rk" [(.mk (.var "rk1") ty_8), (.mk (.var "dh_out2") ty_8)]) ty_16) (.mk (.letBind "rk2" (.mk (.proj (.mk (.var "_tup") ty_16) 0) ty_21) (.mk (.letBind "new_send_ck" (.mk (.proj (.mk (.var "_tup") ty_16) 1) ty_21) (.mk (.app "RatchetState" [(.mk (.var "rk2") ty_8), (.mk (.app "Some" [(.mk (.var "new_send_ck") ty_8)]) ty_2), (.mk (.app "Some" [(.mk (.var "new_recv_ck") ty_8)]) ty_2), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.var "new_my_sk") ty_12), (.mk (.var "new_my_pk") ty_12), (.mk (.var "new_remote_pk") ty_12), (.mk (.app "RatchetState.send_n" [(.mk (.var "state") ty_10)]) ty_17)]) ty_5)) ty_21)) ty_21)) ty_21)) ty_21)) ty_21)) ty_21)) ty_21)) ty_5)) ty_5)) ty_5)) ty_5)) ty_5)
-
-example : Uninitialized_establish_texpr.erase = Uninitialized_establish_impExpr := rfl
+example : Uninitialized_establish_alice_texpr.erase = Uninitialized_establish_alice_impExpr := rfl
+example : Uninitialized_establish_bob_texpr.erase = Uninitialized_establish_bob_impExpr := rfl
 example : Session_step_texpr.erase = Session_step_impExpr := rfl
-example : Session_root_key_texpr.erase = Session_root_key_impExpr := rfl
-example : Session_send_ck_texpr.erase = Session_send_ck_impExpr := rfl
-example : Session_recv_ck_texpr.erase = Session_recv_ck_impExpr := rfl
-example : Session_send_n_texpr.erase = Session_send_n_impExpr := rfl
-example : Session_recv_n_texpr.erase = Session_recv_n_impExpr := rfl
-example : Session_my_pk_texpr.erase = Session_my_pk_impExpr := rfl
-example : Session_remote_pk_texpr.erase = Session_remote_pk_impExpr := rfl
+example : Session_state_texpr.erase = Session_state_impExpr := rfl
 example : Session_send_texpr.erase = Session_send_impExpr := rfl
 example : Session_receive_texpr.erase = Session_receive_impExpr := rfl
-example : Session_dh_ratchet_texpr.erase = Session_dh_ratchet_impExpr := rfl
-example : MAX_MSG_LEN_texpr.erase = MAX_MSG_LEN_impExpr := rfl
 example : MAX_PLAINTEXT_LEN_texpr.erase = MAX_PLAINTEXT_LEN_impExpr := rfl
+example : BLOCK_LEN_texpr.erase = BLOCK_LEN_impExpr := rfl
+example : TAG_LEN_texpr.erase = TAG_LEN_impExpr := rfl
+example : MAX_CT_LEN_texpr.erase = MAX_CT_LEN_impExpr := rfl
+example : AD_LEN_texpr.erase = AD_LEN_impExpr := rfl
+example : HEADER_LEN_texpr.erase = HEADER_LEN_impExpr := rfl
+example : FULL_AD_LEN_texpr.erase = FULL_AD_LEN_impExpr := rfl
+example : MAX_SKIP_texpr.erase = MAX_SKIP_impExpr := rfl
+example : MAX_STORED_texpr.erase = MAX_STORED_impExpr := rfl
+example : KDF_RK_INFO_texpr.erase = KDF_RK_INFO_impExpr := rfl
+example : MESSAGE_KEY_SEED_texpr.erase = MESSAGE_KEY_SEED_impExpr := rfl
+example : CHAIN_KEY_SEED_texpr.erase = CHAIN_KEY_SEED_impExpr := rfl
+example : ct_len_texpr.erase = ct_len_impExpr := rfl
 example : ck_const_texpr.erase = ck_const_impExpr := rfl
 example : kdf_ck_texpr.erase = kdf_ck_impExpr := rfl
+example : split64_texpr.erase = split64_impExpr := rfl
 example : kdf_rk_texpr.erase = kdf_rk_impExpr := rfl
 example : dh_texpr.erase = dh_impExpr := rfl
-example : kdf_chain_step_texpr.erase = kdf_chain_step_impExpr := rfl
-example : kdf_chain_advance_texpr.erase = kdf_chain_advance_impExpr := rfl
-example : ratchet_init_initiator_texpr.erase = ratchet_init_initiator_impExpr := rfl
-example : ratchet_init_responder_texpr.erase = ratchet_init_responder_impExpr := rfl
+example : eq32_texpr.erase = eq32_impExpr := rfl
+example : encode_header_texpr.erase = encode_header_impExpr := rfl
+example : concat_ad_texpr.erase = concat_ad_impExpr := rfl
+example : ratchet_init_alice_texpr.erase = ratchet_init_alice_impExpr := rfl
+example : ratchet_init_bob_texpr.erase = ratchet_init_bob_impExpr := rfl
 example : ratchet_encrypt_texpr.erase = ratchet_encrypt_impExpr := rfl
+example : store_find_texpr.erase = store_find_impExpr := rfl
+example : store_take_texpr.erase = store_take_impExpr := rfl
+example : store_insert_texpr.erase = store_insert_impExpr := rfl
+example : try_skipped_message_keys_texpr.erase = try_skipped_message_keys_impExpr := rfl
+example : skip_message_keys_texpr.erase = skip_message_keys_impExpr := rfl
+example : dh_ratchet_recv_half_texpr.erase = dh_ratchet_recv_half_impExpr := rfl
+example : dh_ratchet_send_half_texpr.erase = dh_ratchet_send_half_impExpr := rfl
+example : dh_ratchet_texpr.erase = dh_ratchet_impExpr := rfl
+example : ratchet_receive_key_texpr.erase = ratchet_receive_key_impExpr := rfl
 example : ratchet_decrypt_texpr.erase = ratchet_decrypt_impExpr := rfl
-example : dh_ratchet_step_texpr.erase = dh_ratchet_step_impExpr := rfl
 
 end  -- noncomputable section
 

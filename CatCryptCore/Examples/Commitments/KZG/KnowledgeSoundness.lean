@@ -13,14 +13,17 @@ public import Mathlib.Algebra.Field.ZMod
 /-!
 # KZG Knowledge Soundness in the AGM
 
-This file proves knowledge soundness of KZG in the Algebraic Group Model:
-any adversary that produces a valid evaluation proof must "know" the
+This file proves knowledge soundness of KZG in the Algebraic Group Model against
+adversaries that receive the powers `srs₁` in `G₁` and not the verification key
+`srs₂` in `G₂`, which KZG publishes and which only the check of the game uses:
+such an adversary that produces a valid evaluation proof must "know" the
 committed polynomial (in the AGM sense).
 
 ## Main theorems
 
 * `KZG_knowledge_sound` — the knowledge soundness game is bounded by
-  `(t + 1)` times the t-SDH advantage of the reduction `ks_to_tSDH`
+  `(t + 1)` times the advantage of the reduction `ks_to_tSDH` in the t-SDH game
+  `tSDH_Game`, whose adversary also receives the `G₁` powers only
 * `honestAGMOutput_checks` — the honest committer's output passes the game's
   representation and pairing checks, with representations extracting to the
   committed polynomial and its witness polynomial (`honestAGMOutput_toPoly`)
@@ -61,7 +64,8 @@ variable (P : PairingGroup) (t : ℕ)
 
 /-- Knowledge soundness game for KZG in the algebraic group model.
 
-    The game samples `α`, runs the adversary on the SRS `srs₁ α t`, and the
+    The game samples `α`, runs the adversary on the SRS `srs₁ α t` alone (the
+    adversary does not receive the verification key `srs₂ α`), and the
     adversary wins if:
     1. The commitment representation is valid for that SRS;
     2. The witness representation is valid for that SRS;
@@ -239,8 +243,9 @@ theorem tsdh_of_root_eq (α : ZMod P.p) :
 
 /-! ## Knowledge Soundness Theorem -/
 
-/-- KZG is knowledge-sound in the AGM:
-    any AGM adversary that breaks knowledge soundness can be used to break t-SDH.
+/-- KZG is knowledge-sound in the AGM against adversaries that receive the `G₁` powers and
+    not the verification key: any such AGM adversary that breaks knowledge soundness can be
+    used to break t-SDH on the `G₁` powers.
 
     More precisely, the probability that an AGM adversary produces a valid
     evaluation proof for an incorrect value is bounded by `(t+1) × tSDH_Advantage`.

@@ -62,6 +62,14 @@ expected cost of rewinding.
   Kreisel's no-counterexample interpretation, which gives metastability bounds. The
   `DNLogicTest*` modules apply the extraction to Euclid's theorem, monotone convergence and the
   hybrid lemma.
+- [`DNLogicTestPrimes`](DNLogicTestPrimes.lean): Euclid's theorem that every `n` has a prime
+  `p > n`, as a classical derivation `CDeriv` from two hypotheses, with extraction and bound.
+- [`DNLogicTestMonotone`](DNLogicTestMonotone.lean): the combinatorial core of the metastability
+  of a nondecreasing sequence in `[0, 1]`, as a realized axiom (`gapHyp a`) of the Diller–Nahm
+  logic.
+- [`DNLogicTestHybrid`](DNLogicTestHybrid.lean): the averaging step of a hybrid argument: if
+  `ε ≤ |a q - a 0|` then some `j < q` has `ε / q ≤ |a (j + 1) - a j|`, mined from its classical
+  proof.
 
 ## Type theory and parametricity
 

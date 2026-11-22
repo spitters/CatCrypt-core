@@ -16,4 +16,17 @@ bash scripts/deletion-gate.sh staged || exit 1
 staged=$(git diff --cached --name-only --diff-filter=AM -- '*.lean')
 bash scripts/duplicate-decl-guard.sh $staged || exit 1
 
+# The gates against empty statements (text only, a few seconds), when Lean, a document
+# that names headlines or a file of the gates is staged.
+if git diff --cached --name-only \
+     | grep -qE '^CatCryptCore/.*\.lean$|^README\.md$|^JoyOfCrypto\.md$|/MLKEM/QROM\.md$|^scripts/(unbounded-hardness-|headline-witness|test_headline_witness|gate-copies|shared-gates)'; then
+  bash scripts/unbounded-hardness-ratchet.sh || exit 1
+  bash scripts/headline-witness-gate.sh || exit 1
+fi
+if git diff --cached --name-only \
+     | grep -qE '^scripts/(unbounded-hardness-|headline-witness|test_headline_witness|gate-copies|shared-gates)'; then
+  bash scripts/gate-copies.sh || exit 1
+  bash scripts/test_headline_witness_gate.sh || exit 1
+fi
+
 exit 0

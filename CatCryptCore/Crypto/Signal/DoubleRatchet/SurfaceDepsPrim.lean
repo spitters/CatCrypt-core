@@ -11,12 +11,14 @@ public import CatCryptCore.Crypto.Signal.DoubleRatchet.SurfaceDeps
 /-!
 # The extracted Signal double ratchet with state corruption from PRG and AEAD security
 
-The corruption bound `signalDR_extracted_corrupt_advantage_le` of the extracted double ratchet
-has an FS-AEAD term of the libcrux symmetric ratchet at the reduction `smcFSRed`. For an
-adversary whose interactions ask at most `q` queries, `fsaead_corrupt_advantage_le` bounds that
-term by the PRG advantages of the chain PRG `Signal.FSAEAD.toPRG libcrux_fsaeadConfig` at the
-hybrid reductions `fsCorrPRGRed` for the positions `i < q` and the AEAD advantage of
-`Signal.FSAEAD.toAEAD libcrux_fsaeadConfig` at `fsCorrAEADRed`.
+The corruption bound of `drExtractedSM`, the store-free abstraction of the extracted double
+ratchet whose corruptions return the key material `drExpose`, over the ACD construction with
+headers consists of DDH terms, PRF-PRNG terms of the HKDF root step `signalDRRoot B`, the PRG
+advantages of the chain PRG `signalDRPRG` at the hybrid reductions `fsCorrPRGRed` for the
+positions `i < q` and the AEAD advantage of the libcrux AEAD `signalDRAEAD B` at
+`fsCorrAEADRed`, all at the reductions of the header wrapper adversary `toHdr (drHdrAD id)` of
+the encoded and relabelled adversary. The theorems of this file state that bound at an X25519
+function and at the libcrux X25519.
 
 ## Main results
 
@@ -51,14 +53,17 @@ open scoped ENNReal
 variable (B : Curve25519Point) [Fact (addOrderOf B = curve25519SubgroupOrder)]
 
 open CatCrypt.Crypto.KeyAgreement.X25519 in
-/-- **The extracted Signal double ratchet with state corruption from DDH, PRF-PRNG, PRG and AEAD
-security, at an X25519 function.** Under the hypotheses of
-`signalDR_extracted_corrupt_advantage_le_of_hom`, for an adversary `A` whose interactions ask at
-most `q` queries, the advantage in the corruption game over `signalDRSMOf B sm` is at most the
-DDH and PRF-PRNG terms of that theorem, the PRG advantages of the libcrux chain PRG at
-`fsCorrPRGRed` for the positions `i < q` and both challenge bits, and the AEAD advantage of the
-libcrux AEAD at `fsCorrAEADRed`, all at the FS-AEAD reduction `smcFSRed` of the encoded and
-relabelled adversary. -/
+/-- **The store-free abstraction of the extracted Signal double ratchet with corruption of its key
+material, from DDH, PRF-PRNG, PRG and AEAD security, at an X25519 function.** Under
+`X25519HomOf sm bp B`, with `2 ≤ ΔFS` and `2 ≤ ΔPCS`,
+for an adversary `A` whose interactions ask at most `q` queries, the advantage in the corruption
+game over `signalDRSMOf B sm` is at most the DDH advantages in `G25519 B` of
+`ckaCorruptDDHRedOf signedE ΔFS ΔPCS` plus `4 Δ25519`, the PRF-PRNG advantages of
+`signalDRRoot B`, the PRG advantages of the chain PRG `signalDRPRG` at `fsCorrPRGRed` for the
+positions `i < q` and both challenge bits, and the AEAD advantage of `signalDRAEAD B` at
+`fsCorrAEADRed`, all at the reductions of the header wrapper adversary `toHdr (drHdrAD id)` of the
+encoded and relabelled adversary. The theorem is
+`signalDR_extracted_corrupt_advantage_le_of_hom`. -/
 theorem signalDR_extracted_corrupt_advantage_le_of_hom_prim
     {sm : Vector UInt8 32 → Vector UInt8 32 → Vector UInt8 32}
     {bp : Vector UInt8 32 → Vector UInt8 32} (hH : X25519HomOf sm bp B) {ΔFS ΔPCS : ℕ}
@@ -67,47 +72,35 @@ theorem signalDR_extracted_corrupt_advantage_le_of_hom_prim
     (hA : ∀ t T, (A.play t T).IsQueryBound q) :
     (signalDRSMOf B sm).corruptAdvantage ΔFS ΔPCS A ≤
       ∑ b : Bool, (DDH_Advantage (G25519 B) (ckaCorruptDDHRedOf (G := G25519 B) signedE ΔFS ΔPCS
-          (smcCKARed (hkdfRoot (libcruxRootKdf encU)) (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-            (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) b
-            (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM)) +
-          4 * Δ25519) +
-        ∑ b : Bool, PRFPRNG_Advantage (hkdfRoot (libcruxRootKdf encU))
-          (smcRootRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
-            (Signal.FSAEAD.toPRG libcrux_fsaeadConfig) (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
-            ΔFS ΔPCS b (dhInitPOf (G25519 B) signedE)
-            (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM) +
-        (∑ i ∈ Finset.range q, PRG_Advantage (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-            (fsCorrPRGRed (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-              (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) false i
-              (smcFSRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
-                (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-                (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) ΔFS ΔPCS
-                (dhInitPOf (G25519 B) signedE)
-                (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM)) +
-          ∑ i ∈ Finset.range q, PRG_Advantage (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-            (fsCorrPRGRed (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-              (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) true i
-              (smcFSRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
-                (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-                (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) ΔFS ΔPCS
-                (dhInitPOf (G25519 B) signedE)
-                (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM)) +
-          AEAD_CCA_Advantage (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
-            (fsCorrAEADRed (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-              (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
-              (smcFSRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
-                (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-                (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) ΔFS ΔPCS
-                (dhInitPOf (G25519 B) signedE)
-                (A.comap (vecToArrayInt ∘ encU) vecToArrayInt
-                  (signalDRLibcruxLeak B)).toSM))) := by
-  refine (signalDR_extracted_corrupt_advantage_le_of_hom B hH hFS hPCS A).trans ?_
-  gcongr
-  exact fsaead_corrupt_advantage_le _ _ q _ (smcFSRed_isQueryBoundBy _ _ _ _ _ _ _ _ q
-    (SMSchemeAdv.toSM_play_isQueryBound (SMSchemeAdv.comap_play_isQueryBound hA)))
+          (smcCKARed (signalDRRoot B) (signalDRPRG) (signalDRAEAD B) b
+            ((A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toHdr
+              (drHdrAD id)))) + 4 * Δ25519) +
+        ∑ b : Bool, PRFPRNG_Advantage (signalDRRoot B)
+          (smcRootRed (dhCKAOf (G25519 B) signedE) (signalDRRoot B) (signalDRPRG)
+            (signalDRAEAD B) ΔFS ΔPCS b (dhInitPOf (G25519 B) signedE)
+            ((A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toHdr
+              (drHdrAD id))) +
+        (∑ i ∈ Finset.range q, PRG_Advantage (signalDRPRG) (fsCorrPRGRed (signalDRPRG)
+            (signalDRAEAD B) false i (smcFSRed (dhCKAOf (G25519 B) signedE) (signalDRRoot B)
+              (signalDRPRG) (signalDRAEAD B) ΔFS ΔPCS (dhInitPOf (G25519 B) signedE)
+              ((A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toHdr
+                (drHdrAD id)))) +
+          ∑ i ∈ Finset.range q, PRG_Advantage (signalDRPRG) (fsCorrPRGRed (signalDRPRG)
+            (signalDRAEAD B) true i (smcFSRed (dhCKAOf (G25519 B) signedE) (signalDRRoot B)
+              (signalDRPRG) (signalDRAEAD B) ΔFS ΔPCS (dhInitPOf (G25519 B) signedE)
+              ((A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toHdr
+                (drHdrAD id)))) +
+          AEAD_CCA_Advantage (signalDRAEAD B)
+            (fsCorrAEADRed (signalDRPRG) (signalDRAEAD B)
+              (smcFSRed (dhCKAOf (G25519 B) signedE) (signalDRRoot B) (signalDRPRG)
+                (signalDRAEAD B) ΔFS ΔPCS (dhInitPOf (G25519 B) signedE)
+                ((A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toHdr
+                  (drHdrAD id))))) :=
+  signalDR_extracted_corrupt_advantage_le_of_hom B hH hFS hPCS A q hA
 
-/-- **The extracted Signal double ratchet with state corruption from DDH, PRF-PRNG, PRG and AEAD
-security.** Under `X25519Hom B`, with `2 ≤ ΔFS`, `2 ≤ ΔPCS`, for an adversary `A` whose
+/-- **The store-free abstraction of the extracted Signal double ratchet with corruption of its key
+material, from DDH, PRF-PRNG, PRG and AEAD security.** Under `X25519Hom B`, with `2 ≤ ΔFS`,
+`2 ≤ ΔPCS`, for an adversary `A` whose
 interactions ask at most `q` queries, the advantage in the corruption game over
 `signalDRLibcruxSM B` is at most the bound of `signalDR_extracted_corrupt_advantage_le_of_hom_prim`.
 The theorem is `signalDR_extracted_corrupt_advantage_le_of_hom_prim` at `X25519Hom B`. -/
@@ -117,39 +110,30 @@ theorem signalDR_extracted_corrupt_advantage_le_prim (hH : X25519Hom B) {ΔFS Δ
     (hA : ∀ t T, (A.play t T).IsQueryBound q) :
     (signalDRLibcruxSM B).corruptAdvantage ΔFS ΔPCS A ≤
       ∑ b : Bool, (DDH_Advantage (G25519 B) (ckaCorruptDDHRedOf (G := G25519 B) signedE ΔFS ΔPCS
-          (smcCKARed (hkdfRoot (libcruxRootKdf encU)) (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-            (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) b
-            (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM)) +
-          4 * Δ25519) +
-        ∑ b : Bool, PRFPRNG_Advantage (hkdfRoot (libcruxRootKdf encU))
-          (smcRootRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
-            (Signal.FSAEAD.toPRG libcrux_fsaeadConfig) (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
-            ΔFS ΔPCS b (dhInitPOf (G25519 B) signedE)
-            (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM) +
-        (∑ i ∈ Finset.range q, PRG_Advantage (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-            (fsCorrPRGRed (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-              (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) false i
-              (smcFSRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
-                (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-                (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) ΔFS ΔPCS
-                (dhInitPOf (G25519 B) signedE)
-                (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM)) +
-          ∑ i ∈ Finset.range q, PRG_Advantage (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-            (fsCorrPRGRed (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-              (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) true i
-              (smcFSRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
-                (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-                (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) ΔFS ΔPCS
-                (dhInitPOf (G25519 B) signedE)
-                (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM)) +
-          AEAD_CCA_Advantage (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
-            (fsCorrAEADRed (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-              (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig)
-              (smcFSRed (dhCKAOf (G25519 B) signedE) (hkdfRoot (libcruxRootKdf encU))
-                (Signal.FSAEAD.toPRG libcrux_fsaeadConfig)
-                (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) ΔFS ΔPCS
-                (dhInitPOf (G25519 B) signedE)
-                (A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toSM))) :=
+          (smcCKARed (signalDRRoot B) (signalDRPRG) (signalDRAEAD B) b
+            ((A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toHdr
+              (drHdrAD id)))) + 4 * Δ25519) +
+        ∑ b : Bool, PRFPRNG_Advantage (signalDRRoot B)
+          (smcRootRed (dhCKAOf (G25519 B) signedE) (signalDRRoot B) (signalDRPRG)
+            (signalDRAEAD B) ΔFS ΔPCS b (dhInitPOf (G25519 B) signedE)
+            ((A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toHdr
+              (drHdrAD id))) +
+        (∑ i ∈ Finset.range q, PRG_Advantage (signalDRPRG) (fsCorrPRGRed (signalDRPRG)
+            (signalDRAEAD B) false i (smcFSRed (dhCKAOf (G25519 B) signedE) (signalDRRoot B)
+              (signalDRPRG) (signalDRAEAD B) ΔFS ΔPCS (dhInitPOf (G25519 B) signedE)
+              ((A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toHdr
+                (drHdrAD id)))) +
+          ∑ i ∈ Finset.range q, PRG_Advantage (signalDRPRG) (fsCorrPRGRed (signalDRPRG)
+            (signalDRAEAD B) true i (smcFSRed (dhCKAOf (G25519 B) signedE) (signalDRRoot B)
+              (signalDRPRG) (signalDRAEAD B) ΔFS ΔPCS (dhInitPOf (G25519 B) signedE)
+              ((A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toHdr
+                (drHdrAD id)))) +
+          AEAD_CCA_Advantage (signalDRAEAD B)
+            (fsCorrAEADRed (signalDRPRG) (signalDRAEAD B)
+              (smcFSRed (dhCKAOf (G25519 B) signedE) (signalDRRoot B) (signalDRPRG)
+                (signalDRAEAD B) ΔFS ΔPCS (dhInitPOf (G25519 B) signedE)
+                ((A.comap (vecToArrayInt ∘ encU) vecToArrayInt (signalDRLibcruxLeak B)).toHdr
+                  (drHdrAD id))))) :=
   signalDR_extracted_corrupt_advantage_le_of_hom_prim B hH hFS hPCS A q hA
 
 end CatCrypt.Crypto.Signal.DoubleRatchet.SurfaceDeps

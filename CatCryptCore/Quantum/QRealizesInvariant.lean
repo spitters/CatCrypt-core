@@ -271,7 +271,7 @@ theorem sidistOn_bind_left_of_support {S : Set A} {S' : β → Set B} (s : SubIn
   calc ∑' b, absDiff (accept ((k₁ b).frame (Fin r)) ψ ((s.frame (Fin r)).branch b ρ))
           (accept ((k₂ b).frame (Fin r)) ψ ((s.frame (Fin r)).branch b ρ))
       ≤ ∑' b, ENNReal.ofReal ((s.frame (Fin r)).branch b ρ).trace.re * W :=
-        ENNReal.tsum_le_tsum fun b => by
+        tsum_le_tsum fun b => by
           by_cases hb : s.branch b = 0
           · have h0 : (s.frame (Fin r)).branch b ρ = 0 := by
               rw [DSubInstrument.branch_frame_apply, hb, MatrixMap.amplify_zero]
@@ -450,7 +450,7 @@ theorem absDiff_test_le_of_add_eq {X : Type} [Fintype X] (φ₁ φ₂ : QTest X)
 /-- **Gentle decomposition** on `Fin N`. For a positive semidefinite `ρ` of trace at most `1`
 and a projector `P`, `ρ + N = PρP + P'` with `P'`, `N` positive semidefinite and
 `tr P' + tr N ≤ 2 √(tr((1 − P) ρ))`. -/
-theorem exists_compress_decomp_fin {N : ℕ} (P : _root_.Quantum.GentleMeasurement.Projector N)
+theorem exists_compress_decomp_fin {N : ℕ} (P : _root_.Quantum.GentleMeasurement.Projector (Fin N))
     {ρ : Matrix (Fin N) (Fin N) ℂ} (hρ : ρ.PosSemidef) (htr : ρ.trace.re ≤ 1) :
     ∃ Pp Nn : Matrix (Fin N) (Fin N) ℂ, Pp.PosSemidef ∧ Nn.PosSemidef ∧
       ρ + Nn = P.val * ρ * P.val + Pp ∧

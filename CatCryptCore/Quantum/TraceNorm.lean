@@ -278,7 +278,7 @@ private lemma spectralProjection_isEffect (X : Matrix n n ℂ) (hX : X.IsHermiti
       (U : Matrix n n ℂ) * (1 - diagonal d) * star (U : Matrix n n ℂ) from by
       rw [mul_sub, sub_mul, mul_one, hUU]]
     have : 1 - diagonal d = diagonal (fun i => 1 - d i) := by
-      ext i j; simp [diagonal, one_apply]; split_ifs <;> simp_all
+      ext i j; simp [diagonal, Matrix.one_apply]; split_ifs <;> simp_all
     rw [this]
     exact conj_psd _ (by rw [posSemidef_diagonal_iff]; intro i; simp [d]; split_ifs <;> simp)
 

@@ -94,8 +94,8 @@ theorem dilation_conjTranspose_mul_self (e : Fin (d * r) ≃ Fin D)
     (K : Fin r → Matrix (Fin d) (Fin d) ℂ) :
     (dilation e K)ᴴ * dilation e K = ∑ i, (K i)ᴴ * K i := by
   ext y y'
-  rw [mul_apply, sum_register e, Matrix.sum_apply, Finset.sum_comm]
-  simp [mul_apply, conjTranspose_apply, dilation_apply_pair]
+  rw [Matrix.mul_apply, sum_register e, Matrix.sum_apply, Finset.sum_comm]
+  simp [Matrix.mul_apply, conjTranspose_apply, dilation_apply_pair]
 
 /-- Kraus operators satisfying the completeness relation give an isometry. -/
 theorem dilation_conjTranspose_mul_self_eq_one (e : Fin (d * r) ≃ Fin D)
@@ -109,7 +109,7 @@ theorem trAnc_dilation_conj (e : Fin (d * r) ≃ Fin D) (K : Fin r → Matrix (F
     trAnc e (dilation e K * ρ * (dilation e K)ᴴ) = ∑ i, K i * ρ * (K i)ᴴ := by
   ext x x'
   rw [trAnc_apply, Matrix.sum_apply]
-  simp [mul_apply, conjTranspose_apply, dilation_apply_pair]
+  simp [Matrix.mul_apply, conjTranspose_apply, dilation_apply_pair]
 
 /-! ## Extension of an isometry to a unitary -/
 
@@ -128,7 +128,7 @@ theorem ancEmbed_conj (e : Fin (d * r) ≃ Fin D) (ρ : Matrix (Fin d) (Fin d) �
   ext a b
   obtain ⟨⟨x, i⟩, rfl⟩ := ((finProdEquiv d r).trans e).surjective a
   obtain ⟨⟨x', i'⟩, rfl⟩ := ((finProdEquiv d r).trans e).surjective b
-  simp [ancEmbed, mul_apply, conjTranspose_apply, kronecker_apply, Matrix.diagonal_apply,
+  simp [ancEmbed, Matrix.mul_apply, conjTranspose_apply, kronecker_apply, Matrix.diagonal_apply,
     Pi.single_apply]
   rcases eq_or_ne i 0 with rfl | hi <;> rcases eq_or_ne i' 0 with rfl | hi' <;>
     simp [*, Ne.symm]
@@ -145,7 +145,7 @@ theorem exists_unitary_mul_ancEmbed (e : Fin (d * r) ≃ Fin D) {V : Matrix (Fin
     rw [orthonormal_iff_ite]
     intro y y'
     have h := congrFun (congrFun hV y) y'
-    rw [mul_apply, one_apply] at h
+    rw [Matrix.mul_apply, Matrix.one_apply] at h
     rw [← h]
     simp only [col, PiLp.inner_apply, conjTranspose_apply, RCLike.inner_apply]
     exact Finset.sum_congr rfl fun _ _ => mul_comm _ _
@@ -163,7 +163,7 @@ theorem exists_unitary_mul_ancEmbed (e : Fin (d * r) ≃ Fin D) {V : Matrix (Fin
   have hby : b (j y) = col y := by
     rw [hb _ ⟨y, rfl⟩]
     simp [v, hj.extend_apply]
-  simp [ancEmbed, mul_apply, Module.Basis.toMatrix_apply]
+  simp [ancEmbed, Matrix.mul_apply, Module.Basis.toMatrix_apply]
   exact congrArg (fun w => w.ofLp a) hby
 
 /-- For `U * ancEmbed e = V`, conjugating `ρ ⊗ |0⟩⟨0|` by `U` is conjugating `ρ` by `V`. -/
@@ -214,7 +214,7 @@ theorem exists_purification (e : Fin (d * d) ≃ Fin D) {ρ : Matrix (Fin d) (Fi
     rw [hB]
     ext x x'
     rw [trAnc_apply]
-    simp [ψ, mul_apply, conjTranspose_apply, vecMulVec_apply]
+    simp [ψ, Matrix.mul_apply, conjTranspose_apply, vecMulVec_apply]
   refine ⟨ψ, ?_, hρψ⟩
   rw [← htr, hρψ, trace_trAnc, trace_vecMulVec, dotProduct_comm]
 

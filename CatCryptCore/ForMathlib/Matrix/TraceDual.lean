@@ -46,8 +46,8 @@ theorem exists_unitary_forall_norm_trace_mul_le (M : Matrix n n ℂ) :
   have htr : ∀ K : Matrix n n ℂ,
       (K * M).trace = ∑ k, (s k : ℂ) * (b k ⬝ᵥ (K *ᵥ a k)) := by
     intro K
-    simp only [trace, diag_apply, mul_apply, hM, mulVec, dotProduct, Finset.mul_sum,
-      ]
+    simp only [trace, diag_apply, Matrix.mul_apply, hM, mulVec, dotProduct,
+      Finset.mul_sum]
     rw [Finset.sum_comm]
     conv_lhs => enter [2, x]; rw [Finset.sum_comm]
     rw [Finset.sum_comm]

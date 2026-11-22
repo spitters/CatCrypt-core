@@ -78,6 +78,20 @@ structure CKADef (St Msg Key : Type) where
   /-- Receiving: next state and key from the received message. -/
   recv : St → Msg → St × Key
 
+/-- A CKA scheme whose sending algorithm is given with its randomness in `Rand`:
+`sendR s r` is the next state, the message and the key of a send from state `s` with the
+randomness `r`. -/
+class CKACoins {St Msg Key : Type} (C : CKADef St Msg Key) (Rand : outParam Type) where
+  /-- The sending algorithm with explicit randomness. -/
+  sendR : St → Rand → St × Msg × Key
+
+/-- The explicit-randomness sending algorithm is that of the scheme: sending samples a uniform
+randomness and runs `sendR`. -/
+def CKACoins.Sound {St Msg Key Rand : Type} (C : CKADef St Msg Key) [CKACoins C Rand]
+    [Fintype Rand] [Nonempty Rand] : Prop :=
+  ∀ s, C.send s = SPComp.bind (SPComp.sample Rand) fun r =>
+    SPComp.pure (CKACoins.sendR (C := C) s r)
+
 /-- The view of the CKA adversary: the public value of the initialisation, the transcript of
 the epochs before the challenge, the challenge message and key, and the transcript of the
 epochs after the challenge. -/

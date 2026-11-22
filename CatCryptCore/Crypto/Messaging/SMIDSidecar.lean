@@ -99,7 +99,9 @@ structure SidecarDef (PSt PHdr S : Type) where
   /-- The next state and the salt of a receiver at a header, or `none`. -/
   rkey : PSt → PHdr → Option (PSt × S)
 
-/-- An encoding of a sidecar header, a salt and associated data as one word. -/
+/-- An encoding of a sidecar header, a salt and associated data as one word. An injective
+packing into a finite word type `W` forces a single salt and a single sidecar header, so
+statements over `SidecarPack` apply only to runs with a constant salt. -/
 structure SidecarPack (PHdr S W : Type) where
   /-- The encoding. -/
   pack : PHdr → S → W → W
@@ -116,7 +118,9 @@ def sidecarMsg (P : SidecarDef PSt PHdr S) (E : SidecarPack PHdr S W) (y : PSt) 
     W × W :=
   (m.1, E.pack (P.hdr y) (P.next y).2 m.2)
 
-/-- **The scheme `M` with the sidecar `P` mixed into every message.** -/
+/-- **The scheme `M` with the sidecar `P` mixed into every message.** The injective packing
+`SidecarPack` into a finite word type forces a single salt and a single sidecar header, so the
+scheme models only runs with a constant salt. -/
 noncomputable def smidSidecar (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
     (P : SidecarDef PSt PHdr S) (E : SidecarPack PHdr S W) :
     SMIDScheme (St × PSt) Pub Rand W Ct (Leak × PSt) (Hdr × PHdr) (K × S) where
@@ -685,7 +689,9 @@ theorem smIDGame_sidecar (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
 /-- **The advantage against the sidecar scheme.** For every sidecar `P`, every encoding `E`
 and every adversary `A`, the advantage against `smidSidecar M P E` is at most the advantage
 against `M` of `sidecarRed P E A` plus the probabilities of a wrong salt in the real game and
-in the game with a uniform challenge and decryption from the log. -/
+in the game with a uniform challenge and decryption from the log. The injective packing
+`SidecarPack` into a finite word type forces a single salt and a single sidecar header, so the
+statement applies only to runs with a constant salt. -/
 theorem SMIDScheme.idAdvantage_sidecar_le (M : SMIDScheme St Pub Rand W Ct Leak Hdr K)
     (P : SidecarDef PSt PHdr S) (E : SidecarPack PHdr S W) (ΔFS ΔPCS : ℕ)
     (A : SMIDAdv Pub W (Hdr × PHdr) Ct (Leak × PSt)) :
@@ -721,10 +727,11 @@ theorem SMIDScheme.idAdvantage_sidecar_le (M : SMIDScheme St Pub Rand W Ct Leak 
 
 section ComapAD
 
-variable {W' : Type} [SampleableType W'] {C : Type} [SampleableType C] {AD AD' : Type}
+variable {W' : Type} [SampleableType W'] {C : Type} [SampleableType C] {AD AD' Kt : Type}
+  [SampleableType Kt]
 
 /-- The AEAD `D` with its associated data read through `ρ`. -/
-def aeadComapAD (D : AEADDef W' C AD) (ρ : AD' → AD) : AEADDef W' C AD' where
+def aeadComapAD (D : AEADDef W' C AD Kt) (ρ : AD' → AD) : AEADDef W' C AD' Kt where
   encrypt k pt ad := D.encrypt k pt (ρ ad)
   decrypt k ct ad := D.decrypt k ct (ρ ad)
 
@@ -742,10 +749,10 @@ def aeadAdvMapAD (ρ : AD' → AD) (A : AEAD_CCA_Adversary W' C AD') : AEAD_CCA_
 def aeadLogMapAD (ρ : AD' → AD) (L : List ((W' × AD') × C)) : List ((W' × AD) × C) :=
   L.map fun e => ((e.1.1, ρ e.1.2), e.2)
 
-omit [SampleableType C] in
+omit [SampleableType Kt] [SampleableType C] in
 /-- The real oracles of the relabelled AEAD are the real oracles of `D` at relabelled
 queries. -/
-theorem aeadRealOracle_comapAD (D : AEADDef W' C AD) (ρ : AD' → AD) (k : W') (u : Unit)
+theorem aeadRealOracle_comapAD (D : AEADDef W' C AD Kt) (ρ : AD' → AD) (k : Kt) (u : Unit)
     (q : AEAD_CCA_Query W' C AD') :
     aeadRealOracle (aeadComapAD D ρ) k u q =
       (aeadRealOracle D k u (aeadQueryMapAD ρ q)).map fun x => (id x.1, x.2) := by
@@ -789,7 +796,7 @@ theorem aeadIdealOracle_mapAD [DecidableEq AD] [DecidableEq AD']
 /-- **The advantage of an AEAD with relabelled associated data.** For an injective `ρ`, the
 advantage of `A` against `aeadComapAD D ρ` is the advantage against `D` of `aeadAdvMapAD ρ A`. -/
 theorem AEAD_CCA_Advantage_comapAD [DecidableEq AD] [DecidableEq AD']
-    (D : AEADDef W' C AD) (ρ : AD' → AD) (hρ : Function.Injective ρ)
+    (D : AEADDef W' C AD Kt) (ρ : AD' → AD) (hρ : Function.Injective ρ)
     (A : AEAD_CCA_Adversary W' C AD') :
     AEAD_CCA_Advantage (aeadComapAD D ρ) A = AEAD_CCA_Advantage D (aeadAdvMapAD ρ A) := by
   unfold AEAD_CCA_Advantage AEAD_CCA_Game_Real AEAD_CCA_Game_Ideal aeadAdvMapAD

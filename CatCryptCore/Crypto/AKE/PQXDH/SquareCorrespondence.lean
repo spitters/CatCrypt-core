@@ -29,7 +29,10 @@ session key of `initiate` is the encoding of `H` at `aliceInp` and the encapsula
 the key of `respond` the encoding of `H` at `bobInp` and the decapsulated secret.
 
 The equations are stated with the one-time prekey (`use_opk = true`), as for X3DH
-(`CatCryptCore.Crypto.AKE.X3DH.SquareCorrespondence`).
+(`CatCryptCore.Crypto.AKE.X3DH.SquareCorrespondence`). As there, the field `dh_pub` at the
+scalar `0` excludes X25519 with the u-coordinate as `encW`. The field `kdf` makes `H`
+independent of the session context when `encK` is injective, whereas the key derivation of the
+square model separates the sessions by it.
 
 ## Main definitions
 

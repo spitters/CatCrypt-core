@@ -129,8 +129,8 @@ adversary, with no numeric bound assumed on it.
   $(g_1, g_1^{\alpha}, \dots, g_1^{\alpha^t})$. The adversary wins by producing a
   pair $(c, h)$ with $h = g_1^{\,1/(\alpha + c)}$, checked via the pairing
   equation $e(h, g_2^{\,\alpha + c}) = e(g_1, g_2)$. The $t$-SDH advantage is
-  this winning probability; it is the core hardness assumption for KZG
-  polynomial commitments.
+  this winning probability. The adversary of this game receives the powers in
+  $G_1$ and not $g_2^{\,\alpha}$, which the verification key of KZG publishes.
 \end{definition}
 
 \begin{definition}[$q$-SDH group]

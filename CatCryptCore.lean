@@ -7,6 +7,7 @@ Authors: CatCrypt Contributors
 module
 
 -- Lemmas for Mathlib (the upstream queue)
+public import CatCryptCore.ForMathlib.CommuteIdempotent
 public import CatCryptCore.ForMathlib.GeometricMean
 public import CatCryptCore.ForMathlib.LawvereMetric
 public import CatCryptCore.ForMathlib
@@ -55,9 +56,19 @@ public import CatCryptCore.ForMathlib.EmbeddingFinSucc
 public import CatCryptCore.ForMathlib.GaloisRing
 public import CatCryptCore.ForMathlib.GradeQuantale
 public import CatCryptCore.ForMathlib.LagrangeAtZero
+public import CatCryptCore.ForMathlib.ExpTaylorTail
 public import CatCryptCore.ForMathlib.LieTrotter
+public import CatCryptCore.ForMathlib.RayleighRitz
+public import CatCryptCore.ForMathlib.TotientBound
+public import CatCryptCore.ForMathlib.TsumSqrt
+public import CatCryptCore.ForMathlib.SolovayKitaev.GroupCommutator
+public import CatCryptCore.ForMathlib.SolovayKitaev.HTDense
+public import CatCryptCore.ForMathlib.SolovayKitaev.Recursion
+public import CatCryptCore.ForMathlib.SolovayKitaev.SU2
+public import CatCryptCore.ForMathlib.ZModTwoSpan
 public import CatCryptCore.ForMathlib.LinearMapMatrix
 public import CatCryptCore.ForMathlib.ListLength
+public import CatCryptCore.ForMathlib.TsumExchange
 public import CatCryptCore.ForMathlib.Matrix.ConeDuality
 public import CatCryptCore.ForMathlib.Matrix.EffectOverlap
 public import CatCryptCore.ForMathlib.Matrix.Hermitian
@@ -65,6 +76,7 @@ public import CatCryptCore.ForMathlib.Matrix.OverlapSum
 public import CatCryptCore.ForMathlib.Matrix.PolarDecomposition
 public import CatCryptCore.ForMathlib.Matrix.ProjectorRewinding
 public import CatCryptCore.ForMathlib.Matrix.Schmidt
+public import CatCryptCore.ForMathlib.Matrix.BlockDiagonalCharpoly
 public import CatCryptCore.ForMathlib.Matrix.SimultaneousDiag
 public import CatCryptCore.ForMathlib.Matrix.TraceDual
 public import CatCryptCore.ForMathlib.Matrix.TraceInequalities
@@ -86,6 +98,17 @@ public import CatCryptCore.ForMathlib.UInt8Bytes
 public import CatCryptCore.ForMathlib.ZModPow
 public import CatCryptCore.ForMathlib.ZModValCard
 public import CatCryptCore.ForMathlib.CategoryTheory.KleisliPMFMarkov
+public import CatCryptCore.ForMathlib.FejerKernel
+public import CatCryptCore.ForMathlib.Matrix.KroneckerReindex
+public import CatCryptCore.ForMathlib.Matrix.StarProjectionClosure
+public import CatCryptCore.ForMathlib.Matrix.TraceNorm
+public import CatCryptCore.ForMathlib.ShorReduction
+public import CatCryptCore.ForMathlib.Tactic.NoncommRingRel
+public import CatCryptCore.ForMathlib.Tactic.PositivityMatrix
+public import CatCryptCore.ForMathlib.Tactic.PositivityStar
+public import CatCryptCore.ForMathlib.Tactic.Spectral
+public import CatCryptCore.ForMathlib.Tactic.TraceNf
+public import CatCryptCore.ForMathlib.Tactic.TraceNfAttr
 
 -- Non-uniform sampling and the unbounded loop
 public import CatCryptCore.NonUniform
@@ -131,6 +154,8 @@ public import CatCryptCore.Refinement.RRelLoop
 public import CatCryptCore.Refinement.Programs
 public import CatCryptCore.Refinement.RRelWRP
 public import CatCryptCore.Refinement.RRelWRPXDijkstra
+public import CatCryptCore.Refinement.RRelWRPProb
+public import CatCryptCore.Refinement.RRelWRPUC
 public import CatCryptCore.XDijkstra.XDijkstraAll
 public import CatCryptCore.XDijkstra.XMvcgenControl
 public import CatCryptCore.XDijkstra.XMvcgenReg
@@ -351,11 +376,14 @@ public import CatCryptCore.Crypto.UCAdmClass.SPCompInstance
 public import CatCryptCore.Crypto.UCLevels
 public import CatCryptCore.Crypto.DummyAdversary
 public import CatCryptCore.Crypto.CompUCEquivalence
+public import CatCryptCore.Crypto.SpecializedSimulator
+public import CatCryptCore.Crypto.SpecializedSimulatorSPComp
 public import CatCryptCore.Crypto.MonadCostModel
 public import CatCryptCore.Crypto.QueryBoundedUC
 public import CatCryptCore.Crypto.SizeBoundedUC
 public import CatCryptCore.Crypto.CTAdmClass
 public import CatCryptCore.Crypto.ConcreteReductions
+public import CatCryptCore.Crypto.NegligibleBounds
 public import CatCryptCore.Crypto.UCMonad.RoundM
 public import CatCryptCore.Crypto.UCMonad.RoundMCompDist
 public import CatCryptCore.Crypto.UCAdmClass.SDistrInstance
@@ -455,6 +483,7 @@ public import CatCryptCore.Crypto.Assumptions.KDL
 -- Fujisaki–Okamoto transforms, FIPS 203 KEM, total variation
 public import CatCryptCore.Crypto.OracleSimulation
 public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Crypto.OracleQueryVecRun
 public import CatCryptCore.Crypto.OracleProfile
 public import CatCryptCore.Crypto.OracleSubst
 public import CatCryptCore.Crypto.OracleEval
@@ -532,6 +561,7 @@ public import CatCryptCore.Crypto.Libcrux.ConcreteInstances
 public import CatCryptCore.Crypto.Libcrux.GroupOps
 public import CatCryptCore.Crypto.Libcrux.Bridge_X25519
 public import CatCryptCore.Crypto.Libcrux.Bridge_HKDF
+public import CatCryptCore.Crypto.Libcrux.SignalKDFSpec
 public import CatCryptCore.Crypto.Libcrux.Bridge_MLKEM
 public import CatCryptCore.Crypto.EdDSA.Extraction.Eddsa_haxpipe
 public import CatCryptCore.Crypto.EdDSA.Bridge
@@ -558,6 +588,7 @@ public import CatCryptCore.Crypto.Messaging.SMCorruptPrekey
 public import CatCryptCore.Crypto.Messaging.SMPrekey
 public import CatCryptCore.Crypto.Messaging.SMScheme
 public import CatCryptCore.Crypto.Messaging.SMHdr
+public import CatCryptCore.Crypto.Messaging.SMHdrAdaptive
 public import CatCryptCore.Crypto.Messaging.SMAuth
 public import CatCryptCore.Crypto.Messaging.SMAuthTimed
 public import CatCryptCore.Crypto.Messaging.SMAuthRoot
@@ -588,9 +619,12 @@ public import CatCryptCore.Crypto.Signal.DoubleRatchet_UC
 public import CatCryptCore.Crypto.Signal.TripleRatchet
 public import CatCryptCore.Crypto.Signal.TripleRatchet_UC
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ChainKDF
+public import CatCryptCore.Crypto.Signal.DoubleRatchet.DeployedAEAD
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.Primitives
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.Extraction.Doubleratchet_haxpipe
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedCorrespondence
+public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedCorrespondencePassive
+public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedStore
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedScheme
 public import CatCryptCore.Crypto.Signal.SessionExtracted
 public import CatCryptCore.Crypto.Signal.EndToEnd
@@ -641,6 +675,7 @@ public import CatCryptCore.Crypto.OracleCache
 public import CatCryptCore.Crypto.OracleCacheLazyRF
 public import CatCryptCore.Crypto.LazyTableReindex
 public import CatCryptCore.Crypto.OracleLazyMulti
+public import CatCryptCore.Crypto.OracleFlagCount
 public import CatCryptCore.Crypto.OracleGameUpToBad
 public import CatCryptCore.Crypto.OracleAdversaryFree
 public import CatCryptCore.Crypto.OracleAdversaryFreeBridge
@@ -649,6 +684,13 @@ public import CatCryptCore.Crypto.KEM.FOTransformU
 public import CatCryptCore.Crypto.KEM.FOTransformTimed
 public import CatCryptCore.Crypto.KEM.FOTransform
 public import CatCryptCore.Crypto.KEM.FIPS203KEM
+public import CatCryptCore.Crypto.KEM.MlkemFo.Extraction.MlkemFo_haxpipe
+public import CatCryptCore.Crypto.KEM.MlkemFo.SurfaceDeps
+public import CatCryptCore.Crypto.Schnorr.Extraction.Schnorr_haxpipe
+public import CatCryptCore.Crypto.Schnorr.ROMGame
+public import CatCryptCore.Crypto.FiatShamirGeneric.SchnorrInstance
+public import CatCryptCore.Crypto.Schnorr.ROMReduction
+public import CatCryptCore.Crypto.Schnorr.SurfaceDeps
 public import CatCryptCore.Crypto.KEM.FIPS203Security
 public import CatCryptCore.Crypto.AKE.PQXDHSquareTimed
 public import CatCryptCore.Crypto.AKE.X3DHSquareGDHTimed
@@ -752,6 +794,10 @@ public import CatCryptCore.Crypto.KVAC.MacNHelpAGMAssembly
 public import CatCryptCore.Crypto.Messaging.SMIDAuth
 public import CatCryptCore.Crypto.Messaging.SMIDAuthFS
 public import CatCryptCore.Crypto.OracleAdversaryStateMap
+public import CatCryptCore.Crypto.AKE.PQXDHPassiveHopsTimed
+public import CatCryptCore.Crypto.AKE.PQXDHSquareKEMTimed
+public import CatCryptCore.Crypto.HybridArgumentTimed
+public import CatCryptCore.Crypto.KVAC.AlgMacSim
 
 -- Quantum foundations: instruments, channels, trace norm, tensor products
 public import CatCryptCore.Quantum.Instrument
@@ -761,6 +807,7 @@ public import CatCryptCore.Quantum.CPInstrument
 public import CatCryptCore.Quantum.SubInstrumentOrder
 public import CatCryptCore.Quantum.CPCompMonad
 public import CatCryptCore.Quantum.TraceNorm
+public import CatCryptCore.Quantum.TraceNormCharpoly
 public import CatCryptCore.Quantum.HelstromPriors
 public import CatCryptCore.Quantum.UnitaryChannel
 public import CatCryptCore.Quantum.CPMap
@@ -768,11 +815,16 @@ public import CatCryptCore.Quantum.DualMap
 public import CatCryptCore.Quantum.Measurement
 public import CatCryptCore.Quantum.TensorProduct
 public import CatCryptCore.Quantum.KroneckerPSD
+public import CatCryptCore.Quantum.KronNf
+public import CatCryptCore.Quantum.KronNfAttr
+public import CatCryptCore.Quantum.TensorProductPositivity
 public import CatCryptCore.Quantum.ChoiKraus
 public import CatCryptCore.Quantum.PartialTrace
+public import CatCryptCore.Quantum.PartialTraceKronecker
 public import CatCryptCore.Quantum.OpenSystem
 public import CatCryptCore.Quantum.PauliTwirl
 public import CatCryptCore.Quantum.QRealizes
+public import CatCryptCore.Quantum.QRealizesHistory
 public import CatCryptCore.Quantum.QRealizesInvariant
 public import CatCryptCore.Quantum.QRealizesMem
 public import CatCryptCore.Quantum.QRealizesMemReset
@@ -864,6 +916,7 @@ public import CatCryptCore.Quantum.QROM.RoundOracleDep
 public import CatCryptCore.Quantum.QROM.RoundOracleLocal
 public import CatCryptCore.Quantum.QROM.RoundsViaOracle
 public import CatCryptCore.Quantum.QROM.SaltedHashSign
+public import CatCryptCore.Quantum.QROM.SaltedPreimageGame
 public import CatCryptCore.Quantum.QROM.SigGame
 public import CatCryptCore.Quantum.QROM.SparseResampleGentle
 public import CatCryptCore.Quantum.QROM.SparseResample
@@ -873,6 +926,7 @@ public import CatCryptCore.Quantum.QROM.Rewinding
 public import CatCryptCore.Quantum.QROM.FiatShamirSigma
 public import CatCryptCore.Quantum.QROM.CompressedOracle
 public import CatCryptCore.Quantum.QROM.CompressedOracleLocal
+public import CatCryptCore.Quantum.QROM.CompressedSys
 public import CatCryptCore.Quantum.QROM.CPRun
 public import CatCryptCore.Quantum.QROM.KEMGuessReduction
 public import CatCryptCore.Quantum.QROM.KEMOwcpaReduction
@@ -898,6 +952,7 @@ public import CatCryptCore.Quantum.QROM.QuantumOWCPA
 public import CatCryptCore.Quantum.QROM.QAdvTreeKind
 public import CatCryptCore.Quantum.QROM.QAdvTreeKindFree
 public import CatCryptCore.Quantum.QROM.AdaptiveModel
+public import CatCryptCore.Quantum.QROM.AdaptiveReprogram
 public import CatCryptCore.Quantum.QROM.AdversariesTimed
 public import CatCryptCore.Quantum.QROM.QueryRoundAgreement
 public import CatCryptCore.Quantum.QROM.QueryRoundDeferred
@@ -1211,25 +1266,6 @@ public import CatCryptCore.Crypto.OT.GamesTimed
 public import CatCryptCore.Crypto.OTExtension.IKNPWake
 public import CatCryptCore.Crypto.OTExtension.IKNPWakeShape
 public import CatCryptCore.Crypto.OTExtension.IKNPPVW
-public import CatCryptCore.Quantum.KronNf
-public import CatCryptCore.Quantum.KronNfAttr
-public import CatCryptCore.Quantum.TensorProductPositivity
-public import CatCryptCore.Quantum.QROM.SaltedPreimageGame
-public import CatCryptCore.ForMathlib.ExpTaylorTail
-public import CatCryptCore.ForMathlib.RayleighRitz
-public import CatCryptCore.ForMathlib.TotientBound
-public import CatCryptCore.ForMathlib.SolovayKitaev.GroupCommutator
-public import CatCryptCore.ForMathlib.SolovayKitaev.HTDense
-public import CatCryptCore.ForMathlib.SolovayKitaev.Recursion
-public import CatCryptCore.ForMathlib.SolovayKitaev.SU2
-public import CatCryptCore.ForMathlib.ZModTwoSpan
-public import CatCryptCore.Crypto.KEM.MlkemFo.Extraction.MlkemFo_haxpipe
-public import CatCryptCore.Crypto.KEM.MlkemFo.SurfaceDeps
-public import CatCryptCore.Crypto.Schnorr.Extraction.Schnorr_haxpipe
-public import CatCryptCore.Crypto.Schnorr.ROMGame
-public import CatCryptCore.Crypto.FiatShamirGeneric.SchnorrInstance
-public import CatCryptCore.Crypto.Schnorr.ROMReduction
-public import CatCryptCore.Crypto.Schnorr.SurfaceDeps
 
 /-! # CatCrypt Core — umbrella
 

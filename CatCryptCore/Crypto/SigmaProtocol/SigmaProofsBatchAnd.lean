@@ -524,7 +524,7 @@ theorem card_powerSum_roots_le (m : ℕ) (d : ℕ → gp.Scalar) (hd : ∃ j < m
   set P : Polynomial gp.Scalar := ∑ j ∈ Finset.range m, Polynomial.C (d j) * Polynomial.X ^ j
   have hP : P ≠ 0 := by
     intro h
-    have := congrArg (fun q => Polynomial.coeff q j0) h
+    have := congrArg (fun q : Polynomial gp.Scalar => q.coeff j0) h
     simp [P, hj0] at this
     exact hd0 this
   have hdeg : P.natDegree ≤ m - 1 := by

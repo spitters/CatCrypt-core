@@ -44,14 +44,14 @@ open scoped ENNReal
 section RootRed
 
 variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [DecidableEq W] [DecidableEq Ct]
+  [SampleableType Ct] [DecidableEq W] [DecidableEq Ct] {Kt : Type} [SampleableType Kt]
 
 /-- The simulator of the root hop with the root step at the opening of the epoch `k` asked to
 the `prf` oracle of the PRF-PRNG game, and the challenge and corruption gates of the challenge
-epoch `t`. -/
-noncomputable def smRootImplAt (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS t k : ℕ) (s : SMSt Sc Msg RK Sa) (q : SMQuery W) :
+epoch `t`, for the AEAD `D` whose associated data have the type `AD`. -/
+noncomputable def smRootImplAt {AD : Type} (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
+    (ΔFS ΔPCS t k : ℕ) (s : SMSt Sc Msg RK Sa) (q : SMQuery W AD) :
     OracleAdv (PPQuery RK Key) (RK × Sa) (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :=
   match q with
   | .ratchet p => smRootRatchet C R k s p
@@ -65,7 +65,7 @@ game is answered by `smRootImplAt` and logged, and by a rejection when the epoch
 safe epochs; a delivery is answered from the log and by a decryption under a key of the
 receiving chain, and the flag of a forgery is raised. -/
 noncomputable def smAuthRootStep (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (σ : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) :
     SMAuthQuery W Ct → OracleAdv (PPQuery RK Key) (RK × Sa)
       (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W × ((SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool))
@@ -81,7 +81,7 @@ noncomputable def smAuthRootStep (C : CKADef Sc Msg Key) [CKACoins C Rand]
 while the epoch `k` is safe, a rejection otherwise. Its state is the state of the truncated
 hybrid `smAuthHopOracle`. -/
 noncomputable def smAuthRootImpl (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (σ : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) (d : SMAuthQuery W Ct) :
     OracleAdv (PPQuery RK Key) (RK × Sa)
       (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W × ((SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool)) :=
@@ -93,8 +93,8 @@ challenge epoch `t` of the authenticity adversary from `tStar`, the CKA initiali
 `initP` and a uniform root key, runs the adversary against the simulator `smAuthRootImpl` and
 outputs the flag of a forgery. -/
 noncomputable def smAuthRootTree (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fintype RK]
-    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS k : ℕ) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
+    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct W Kt) (ΔFS ΔPCS k : ℕ) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
     (play : ℕ → Msg → OracleAdv (SMAuthQuery W Ct) (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W) Bool) :
     OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
   .rand tStar fun t => .rand initP fun i => .rand (PMF.uniformFintype RK) fun rk =>
@@ -104,8 +104,9 @@ noncomputable def smAuthRootTree (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fint
 /-- **The PRF-PRNG reduction of the forgery event at the epoch `k`**: the tree `smAuthRootTree`
 at the challenge-epoch distribution and the interaction of `A`. -/
 noncomputable def smAuthRootRed (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fintype RK]
-    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS k : ℕ) (initP : PMF (Msg × Sc × Sc)) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct W Kt) (ΔFS ΔPCS k : ℕ) (initP : PMF (Msg × Sc × Sc))
+    (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
   smAuthRootTree C R G D ΔFS ΔPCS k initP A.tStar A.play
 
@@ -123,12 +124,13 @@ end RootRed
 section RootSim
 
 variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [DecidableEq W] [DecidableEq Ct]
+  [SampleableType Ct] [DecidableEq W] [DecidableEq Ct] {Kt : Type} [SampleableType Kt]
 
+omit [SampleableType Kt] in
 /-- A query of the corruption game in the simulator of the root hop, from a safe state, is the
 query of `smRootImplAt`, logged, with the rejection of the transitions into an unsafe state. -/
 theorem smAuthRootImpl_simOracle (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) {U : Type} (O' : U → PPQuery RK Key → PMF ((RK × Sa) × U))
     (σ : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) (u : U) (q : SMQuery W)
     (hs : σ.1.2.safe ΔFS ΔPCS k = true) :
@@ -146,14 +148,14 @@ theorem smAuthRootImpl_simOracle (C : CKADef Sc Msg Key) [CKACoins C Rand]
   · simp [h, smAuthCut, PMF.pure_bind]
   · simp [h, smAuthCut, PMF.pure_bind]
 
-omit [DecidableEq W] [DecidableEq Ct] in
+omit [SampleableType Kt] [DecidableEq W] [DecidableEq Ct] in
 /-- Away from the opening of the epoch `k`, the simulator `smRootImplAt` asks no query and
 answers as the oracle `smOracleOfAt` with any root step at the epoch `k`. -/
-theorem smRootImplAt_step_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+theorem smRootImplAt_step_noncrit {AD : Type} (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (ΔFS ΔPCS t k : ℕ) (root : RK → Key → PMF (RK × Sa)) {U : Type}
     (O' : U → PPQuery RK Key → PMF ((RK × Sa) × U)) (s : SMSt Sc Msg RK Sa) (u : U)
-    (q : SMQuery W) (hc : smCrit k s q = false) :
+    (q : SMQuery W AD) (hc : smCrit k s q = false) :
     OracleAdv.simOracle (smRootImplAt C R G D ΔFS ΔPCS t k) O' (s, u) q =
       (smOracleOfAt C R G D ΔFS ΔPCS t k false root s q).map fun y => (y.1, (y.2, u)) := by
   cases q with
@@ -165,14 +167,14 @@ theorem smRootImplAt_step_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 variable [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq Key]
 
-omit [DecidableEq W] [DecidableEq Ct] in
+omit [SampleableType Kt] [DecidableEq W] [DecidableEq Ct] in
 /-- **The simulator of the root step at the epoch `k` against the real PRF-PRNG game.** With the
 hidden input `key`, each call of `smOracleOfAt` with the root step `fixedKeyRoot R key` at the
 epoch `k`, with the PRF-PRNG state attached, is the call of `smRootImplAt` against the real
 PRF-PRNG oracle. -/
-theorem smRootImplAt_step_real (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS t k : ℕ) (rk' : RK) (key : Key) (s : SMSt Sc Msg RK Sa) (q : SMQuery W) :
+theorem smRootImplAt_step_real {AD : Type} (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
+    (ΔFS ΔPCS t k : ℕ) (rk' : RK) (key : Key) (s : SMSt Sc Msg RK Sa) (q : SMQuery W AD) :
     (smOracleOfAt C R G D ΔFS ΔPCS t k false (fixedKeyRoot R key) s q).map
         (Prod.map id fun s => (s, (⟨rk', key, [], []⟩ : PPSt RK Key (RK × Sa)))) =
       OracleAdv.simOracle (smRootImplAt C R G D ΔFS ΔPCS t k)
@@ -184,15 +186,15 @@ theorem smRootImplAt_step_real (C : CKADef Sc Msg Key) [CKACoins C Rand]
   | chall p m => exact smRoot_step_real C R G D ΔFS ΔPCS t false rk' key s (.chall p m)
   | corrupt p => exact smRoot_step_real C R G D ΔFS ΔPCS t false rk' key s (.corrupt p)
 
-omit [DecidableEq W] [DecidableEq Ct] in
+omit [SampleableType Kt] [DecidableEq W] [DecidableEq Ct] in
 /-- **The simulator of the root step at the epoch `k` against the ideal PRF-PRNG game.** From a
 state whose table of the `prf` oracle is empty unless the epoch `k` has been opened, each call of
 `smRootImplAt` against the ideal PRF-PRNG oracle, with the PRF-PRNG state dropped, is the call
 of `smOracleOfAt` with a uniform root output at the epoch `k`. -/
-theorem smRootImplAt_step_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+theorem smRootImplAt_step_ideal {AD : Type} (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (ΔFS ΔPCS t k : ℕ) (s : SMSt Sc Msg RK Sa) (u : PPSt RK Key (RK × Sa))
-    (hu : u.tR = [] ∨ smOpened k s) (q : SMQuery W) :
+    (hu : u.tR = [] ∨ smOpened k s) (q : SMQuery W AD) :
     (OracleAdv.simOracle (smRootImplAt C R G D ΔFS ΔPCS t k)
         (ppOracle (rootFn R) true true) (s, u) q).map (Prod.map id Prod.fst) =
       smOracleOfAt C R G D ΔFS ΔPCS t k false unifRoot s q := by
@@ -222,14 +224,15 @@ end RootSim
 section HopOpen
 
 variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [DecidableEq W] [DecidableEq Ct]
+  [SampleableType Ct] [DecidableEq W] [DecidableEq Ct] {Kt : Type} [SampleableType Kt]
 
-omit [DecidableEq W] [DecidableEq Ct] in
-/-- Every call of `smOracleOfAt` keeps the epoch `k` opened. -/
-theorem smOracleOfAt_opened (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+omit [SampleableType Kt] [DecidableEq W] [DecidableEq Ct] in
+/-- Every call of `smOracleOfAt` keeps the epoch `k` opened, for the AEAD `D` whose associated
+data have the type `AD`. -/
+theorem smOracleOfAt_opened {AD : Type} (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (ΔFS ΔPCS t k : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa))
-    (s : SMSt Sc Msg RK Sa) (q : SMQuery W) (hs : smOpened k s) (x)
+    (s : SMSt Sc Msg RK Sa) (q : SMQuery W AD) (hs : smOpened k s) (x)
     (hx : x ∈ (smOracleOfAt C R G D ΔFS ΔPCS t k ideal root s q).support) :
     smOpened k x.2 := by
   have hm : ∀ P, s.ck.t P ≤ x.2.ck.t P := by
@@ -243,11 +246,12 @@ theorem smOracleOfAt_opened (C : CKADef Sc Msg Key) [CKACoins C Rand]
   · exact Or.inl (h.trans (hm .A))
   · exact Or.inr (h.trans (hm .B))
 
+omit [SampleableType Kt] in
 /-- The secure-messaging states reached by a call of the truncated hybrid: the state of the
 call, at a delivery or from an unsafe state, or a state reached by `smOracleOfAt` at a query of
 the corruption game from a safe state. -/
 theorem smAuthHopOracle_support (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (root : RK → Key → PMF (RK × Sa))
     (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) (d : SMAuthQuery W Ct) (x)
     (hx : x ∈ (smAuthHopOracle C R G D ΔFS ΔPCS t k root s d).support) :
@@ -275,9 +279,10 @@ theorem smAuthHopOracle_support (C : CKADef Sc Msg Key) [CKACoins C Rand]
     subst hz
     exact Or.inl ⟨rfl, fun _ _ => by simpa using h⟩
 
+omit [SampleableType Kt] in
 /-- Every call of the truncated hybrid keeps the epoch `k` opened. -/
 theorem smAuthHopOracle_opened (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (root : RK → Key → PMF (RK × Sa))
     (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) (d : SMAuthQuery W Ct)
     (hs : smOpened k s.1.1) (x)
@@ -286,10 +291,11 @@ theorem smAuthHopOracle_opened (C : CKADef Sc Msg Key) [CKACoins C Rand]
   · rw [h]; exact hs
   · rw [h]; exact smOracleOfAt_opened C R G D ΔFS ΔPCS t k false root s.1.1 q hs y hy
 
+omit [SampleableType Kt] in
 /-- The opening of the epoch `k` in the truncated hybrid leads to a state with the epoch `k`
 opened. -/
 theorem smAuthHopOracle_opened_of_crit (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (root : RK → Key → PMF (RK × Sa))
     (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) (d : SMAuthQuery W Ct)
     (hc : smAuthRootCrit ΔFS ΔPCS k s d = true) (x)
@@ -308,10 +314,11 @@ theorem smAuthHopOracle_opened_of_crit (C : CKADef Sc Msg Key) [CKACoins C Rand]
       exact smOracleOf_opened_of_crit C R G D ΔFS ΔPCS k false root s.1.1 (.ratchet p) hc.2 y hy
     | _ => simp [smCrit] at hc
 
+omit [SampleableType Kt] in
 /-- Away from the opening of the epoch `k`, the truncated hybrid does not depend on the root
 step at the epoch `k`. -/
 theorem smAuthHopOracle_root_congr (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (root root' : RK → Key → PMF (RK × Sa))
     (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) (d : SMAuthQuery W Ct)
     (hc : smAuthRootCrit ΔFS ΔPCS k s d = false) :
@@ -338,12 +345,13 @@ end HopOpen
 section HopSim
 
 variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [DecidableEq W] [DecidableEq Ct]
+  [SampleableType Ct] [DecidableEq W] [DecidableEq Ct] {Kt : Type} [SampleableType Kt]
 
+omit [SampleableType Kt] in
 /-- Away from the opening of the epoch `k`, the simulator of the root hop asks no query and
 answers as the truncated hybrid with any root step at the epoch `k`. -/
 theorem smAuthRoot_step_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (root : RK → Key → PMF (RK × Sa)) {U : Type}
     (O' : U → PPQuery RK Key → PMF ((RK × Sa) × U))
     (σ : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) (u : U) (d : SMAuthQuery W Ct)
@@ -365,12 +373,13 @@ theorem smAuthRoot_step_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 variable [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq Key]
 
+omit [SampleableType Kt] in
 /-- **The simulator of the root hop against the real PRF-PRNG game.** With the hidden input
 `key`, each call of the truncated hybrid with the root step `fixedKeyRoot R key` at the epoch
 `k`, with the PRF-PRNG state attached, is the call of `smAuthRootImpl` against the real
 PRF-PRNG oracle. -/
 theorem smAuthRoot_step_real (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (rk' : RK) (key : Key) (σ : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool)
     (d : SMAuthQuery W Ct) :
     (smAuthHopOracle C R G D ΔFS ΔPCS t k (fixedKeyRoot R key) σ d).map
@@ -389,12 +398,13 @@ theorem smAuthRoot_step_real (C : CKADef Sc Msg Key) [CKACoins C Rand]
         hs, PMF.pure_map, smAuthCut]
   · simp [OracleAdv.simOracle, smAuthRootImpl, smAuthHopOracle, hs, PMF.pure_map, smAuthCut]
 
+omit [SampleableType Kt] in
 /-- **The simulator of the root hop against the ideal PRF-PRNG game.** From a state whose table
 of the `prf` oracle is empty unless the epoch `k` has been opened, each call of
 `smAuthRootImpl` against the ideal PRF-PRNG oracle, with the PRF-PRNG state dropped, is the call
 of the truncated hybrid with a uniform root output at the epoch `k`. -/
 theorem smAuthRoot_step_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (σ : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool)
     (u : PPSt RK Key (RK × Sa)) (hu : u.tR = [] ∨ smOpened k σ.1.1) (d : SMAuthQuery W Ct) :
     (OracleAdv.simOracle (smAuthRootImpl C R G D ΔFS ΔPCS t k)
@@ -413,11 +423,12 @@ theorem smAuthRoot_step_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
         hs, PMF.pure_map, smAuthCut]
   · simp [OracleAdv.simOracle, smAuthRootImpl, smAuthHopOracle, hs, PMF.pure_map, smAuthCut]
 
+omit [SampleableType Kt] in
 /-- The simulator of the root hop against the ideal PRF-PRNG game keeps the invariant of
 `smAuthRoot_step_ideal`: the table of the `prf` oracle is empty unless the epoch `k` has been
 opened. -/
 theorem smAuthRoot_inv_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (σ : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool)
     (u : PPSt RK Key (RK × Sa)) (hu : u.tR = [] ∨ smOpened k σ.1.1) (d : SMAuthQuery W Ct) :
     ∀ y ∈ (OracleAdv.simOracle (smAuthRootImpl C R G D ΔFS ΔPCS t k)
@@ -445,14 +456,14 @@ section RootHop
 
 variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [DecidableEq W] [DecidableEq Ct] [Fintype RK] [Nonempty RK] [Fintype Key]
-  [Nonempty Key]
+  [Nonempty Key] {Kt : Type} [SampleableType Kt]
 
-omit [Fintype RK] [Nonempty RK] in
+omit [SampleableType Kt] [Fintype RK] [Nonempty RK] in
 /-- **Eager sampling of the key of the root step at the epoch `k`.** The run of the truncated
 hybrid with the root KDF on a uniform key at the epoch `k` is the run with the key drawn in
 advance. -/
 theorem smAuthHop_run_eager (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) {α : Type}
     (A : OracleAdv (SMAuthQuery W Ct) (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W) α)
     (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) :
@@ -490,12 +501,12 @@ theorem smAuthHop_run_eager (C : CKADef Sc Msg Key) [CKACoins C Rand]
     | sm q => simp [smAuthRootCrit, smCrit_of_opened k s.1.1 hs q]
     | deliver p j ad c => rfl
 
-omit [Fintype Key] [Nonempty Key] in
+omit [SampleableType Kt] [Fintype Key] [Nonempty Key] in
 /-- Running the PRF-PRNG reduction of the forgery event against an oracle is running the
 adversary against the composed oracle from the drawn initial state, with the flag of a forgery
 as output. -/
 theorem smAuthRootRed_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS k : ℕ) (initP : PMF (Msg × Sc × Sc)) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa))
     {U : Type} (O' : U → PPQuery RK Key → PMF ((RK × Sa) × U)) (u : U) :
     (OracleAdv.run O' (smAuthRootRed C R G D ΔFS ΔPCS k initP A) u).map Prod.fst =
@@ -511,12 +522,13 @@ theorem smAuthRootRed_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 variable [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq Key]
 
-omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq Key] in
+omit [SampleableType Kt] [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] [DecidableEq RK]
+  [DecidableEq Key] in
 /-- The truncated hybrid as the lift of a distribution: the challenge epoch, the CKA
 initialisation, the root key and the run. -/
 theorem smAuthHopGame_eq_liftPMF (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS k : ℕ) (root : RK → Key → PMF (RK × Sa))
     (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     smAuthHopGame C R G D ΔFS ΔPCS k root A =
@@ -525,11 +537,12 @@ theorem smAuthHopGame_eq_liftPMF (C : CKADef Sc Msg Key) [CKACoins C Rand]
           ((smInit i rk, SMAuthAux.init), false)).map fun x => x.2.2) := by
   simp only [smAuthHopGame, hinit, sample_eq_liftPMF, liftPMF_bind_liftPMF]
 
+omit [SampleableType Kt] in
 /-- **The real side of the root hop.** The real PRF-PRNG game of `smAuthRootRed` is the
 truncated hybrid with the root KDF on a uniform key at the epoch `k`. -/
 theorem smAuthRoot_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS k : ℕ) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     pp_game (rootFn R) false false (smAuthRootRed C R G D ΔFS ΔPCS k initP A) =
       smAuthHopGame C R G D ΔFS ΔPCS k (unifKeyRoot R) A := by
@@ -560,11 +573,12 @@ theorem smAuthRoot_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     rw [smAuthHop_run_eager, PMF.map_bind]
   simp only [h2, PMF.bind_comm (PMF.uniformFintype Key)]
 
+omit [SampleableType Kt] in
 /-- **The ideal side of the root hop.** The ideal PRF-PRNG game of `smAuthRootRed` is the
 truncated hybrid with a uniform root output at the epoch `k`. -/
 theorem smAuthRoot_ideal_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS k : ℕ) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     pp_game (rootFn R) true true (smAuthRootRed C R G D ΔFS ΔPCS k initP A) =
       smAuthHopGame C R G D ΔFS ΔPCS k unifRoot A := by
@@ -596,10 +610,11 @@ theorem smAuthRoot_ideal_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
 with a uniform root output at the opening of the epoch `k`, whose receiving chain of the epoch
 `k` starts from a uniform state. The FS-AEAD integrity hop starts from it. -/
 noncomputable def smAuthRootIdealGame (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS k : ℕ) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) : SPComp Bool :=
   smAuthHopGame C R G D ΔFS ΔPCS k unifRoot A
 
+omit [SampleableType Kt] in
 /-- **The root hop of the forgery event at the epoch `k`.** For an initialisation that is the
 lift of `initP`, the probability of a forgery at the epoch `k` in the truncated hybrid with the
 root KDF on a uniform key at the epoch `k` is at most the PRF-PRNG advantage of `R` at the
@@ -607,7 +622,7 @@ reduction `smAuthRootRed C R G D ΔFS ΔPCS k initP A` plus the probability of a
 `smAuthRootIdealGame`. -/
 theorem smAuthHopGame_le_root (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS k : ℕ) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     prTrue (smAuthHopGame C R G D ΔFS ΔPCS k (unifKeyRoot R) A) Heap.empty ≤
       PRFPRNG_Advantage R (smAuthRootRed C R G D ΔFS ΔPCS k initP A) +
@@ -617,6 +632,7 @@ theorem smAuthHopGame_le_root (C : CKADef Sc Msg Key) [CKACoins C Rand]
   unfold PRFPRNG_Advantage Advantage
   exact le_tsub_add.trans (add_le_add le_sup_left le_rfl)
 
+omit [SampleableType Kt] in
 /-- **The CKA and root hops of the forgery event at the epoch `k`.** For a CKA correct along `J`
 with a sound explicit-randomness sending algorithm, an initialisation that is the lift of
 `initP` and initial states related by `J`, the probability of a forgery at the epoch `k` in the
@@ -628,7 +644,7 @@ theorem acdAuthSM_truncGame_le_root (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS k : ℕ)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) (ΔFS ΔPCS k : ℕ)
     (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     prTrue (smAuthTruncGame (acdAuthSM C R G D) ΔFS ΔPCS k A) Heap.empty ≤
       CKA_Corrupt_Advantage C ΔFS ΔPCS (smAuthCKARed R G D ΔFS ΔPCS k A) +

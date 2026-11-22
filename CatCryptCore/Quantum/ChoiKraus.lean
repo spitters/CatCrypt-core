@@ -107,9 +107,9 @@ theorem eq_kraus_of_choi_eq {r : Type*} [Fintype r]
   rw [linearMap_expand Φ ρ i j, Finset.sum_matrix_entry]
   have hc : ∀ a b, Φ (matUnit a b) i j = ∑ x, star (B x (a, i)) * B x (b, j) := by
     intro a b
-    rw [← choi_apply, hB, mul_apply]
+    rw [← choi_apply, hB, Matrix.mul_apply]
     rfl
-  simp_rw [hc, mul_apply, conjTranspose_apply, krausOfFactor, of_apply, star_star,
+  simp_rw [hc, Matrix.mul_apply, conjTranspose_apply, krausOfFactor, of_apply, star_star,
     Finset.sum_mul, Finset.mul_sum]
   rw [Finset.sum_comm]
   conv_rhs => rw [Finset.sum_comm]

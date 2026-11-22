@@ -10,16 +10,20 @@ public import CatCryptCore.Crypto.UCDeferred
 public import CatCryptCore.Crypto.UCLoopSplit
 public import CatCryptCore.Crypto.UCRoundHybrid
 import CatCryptCore.Tactics.DeriveTimed
+import CatCryptCore.Tactics.DeriveReduction
+import CatCryptCore.Tactics.TimeCertTry
 
 /-!
-# The Signal stack realizes an ideal secure channel
+# The Signal stack realizes the transcript functionality `F_SC`
 
 The Signal stack runs X3DH and keys the double ratchet with the session key of X3DH
-(`SignalStack`). This module proves that the stack realizes an ideal secure-channel
-functionality behind a simulator, in the sense of Canetti and Krawczyk (Eurocrypt 2002, `F_SC`
-from `F_KE`). The secure-messaging step uses that `F_AKE` delivers to a completed, unexposed
-session a key that it samples and that no event reveals, and the adversary key to an exposed
-session; the bound has no real-or-random term of the key.
+(`SignalStack`). This module proves that the stack realizes behind a simulator the functionality
+`F_SC`, composed from a key exchange as the secure channel of Canetti and Krawczyk (Eurocrypt
+2002) is. `F_SC` has no event for sending or receiving: each `getKey` gives the party a whole
+transcript of a fixed list of messages, and the partners share no channel. The secure-messaging
+step uses that `F_AKE` delivers to a completed, unexposed session a key that it samples and that
+no event reveals, and the adversary key to an exposed session; the bound has no real-or-random
+term of the key.
 
 **The ideal functionality.** `F_SC realV idealV` has the state and the adversary port of
 `F_AKE (SPComp.sample K) true` (notices, adaptive corruption, `newKey`, `newKeyUnlinked`), except
@@ -65,13 +69,15 @@ secure-messaging game `sm_real` uses a root key once, and the views of two runs 
 are not bounded by `SM_Advantage`: a root KDF that is a secure PRG on a uniform seed may give
 correlated outputs on two seeds `(rk, I)`, `(rk, I')` that share `rk`. The bound therefore
 contains, per key `i`, the probability `prBad (hyb i) (reuse i) Z` that the key `i` is read twice
-in the world `hyb i`; it is `0` for environments that read each session key at most once.
+in the world `hyb i`; it is `0` for environments that read each session key at most once. The
+partners of a completed, unexposed session share the index of their key, so an environment that
+always makes both of them read it makes this probability `1`, and the bound is then at least `1`.
 
 ## Main definitions
 
 * `chanOut`, `chanHon`: the honest port of a channel over the state of `F_AKE`.
 * `FR`: `F_AKE` followed by the ratchet layer, as one functionality.
-* `F_SC`, `scView`: the ideal secure channel.
+* `F_SC`, `scView`: the functionality that answers each `getKey` with a view.
 * `WSt`, `world`, `hyb`, `chalWorld`: the hybrid worlds; `WInv` their invariant.
 * `hopRed`: the reduction of a step of the hybrid argument.
 * `scBound`, `signalBound`: the bounds.
@@ -113,6 +119,18 @@ point and the datum and whose second stage guesses from the challenge view.
   advantage of `hopRedK` per key.
 * `stack_ideal_stepMap_ofK`, `stack_realizes_FSCK_of`: **KE-then-channel composition with a
   datum**, from the realization of the stack's real part through the key layer.
+
+**Impersonation.** The stack is generic in an impersonation predicate `imp : Rec K → Bool`, the
+predicate of `F_AKEImpK`: `impersonate` compromises a fresh session without a key whose record
+satisfies `imp`, and the session then shows the real view under the adversary key, as an exposed
+session does. `FRImp`, `F_SCImpK`, `F_SCImp`, `stNextImp`, `wNextImp`, `worldImp`, `hybImp`,
+`hopRedImp` and `scBoundImp` carry the predicate; the objects above are their instances at the
+predicate that holds nowhere.
+
+* `wInv_nextImp`, `hyb_stepImp`, `FRImp_realizes_F_SCImpK`: the invariant and the hybrid
+  argument under `imp`.
+* `stack_ideal_stepMap_ofImp`, `stack_realizes_FSCImp_of`: **KE-then-channel composition with a
+  datum and an impersonation predicate**.
 
 ## References
 
@@ -211,18 +229,24 @@ theorem dat_ph [Inhabited Ks] (sp : KeySplit K Ks D) (k : K) : sp.dat (sp.ph k) 
 
 end KeySplit
 
-/-! ## The real stack over `F_AKE` and the ideal secure channel -/
+/-! ## The real stack over `F_AKE` and the view functionality -/
 
 section Func
 
 variable {K V Ks D : Type} [Fintype K] [Nonempty K] [Inhabited K]
 
-/-- **`F_AKEK fresh` followed by the ratchet layer**, as one functionality: `F_AKEK fresh` with
-unlinked delivery, whose honest port answers `getKey` at a session with the key `k` by the view
-`realV k` of the ratchet keyed by `k`. -/
+/-- **`F_AKEImpK fresh imp` followed by the ratchet layer**, as one functionality:
+`F_AKEImpK fresh imp` with unlinked delivery, whose honest port answers `getKey` at a session with
+the key `k` by the view `realV k` of the ratchet keyed by `k`. -/
+noncomputable def FRImp (imp : Rec K → Bool) (fresh : K → SPComp K) (realV : K → SPComp V) :
+    Sys (St K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
+  Sys.ofPorts (chanHon fun _ k => realV k) (advSysImp imp true fresh)
+
+/-- **`F_AKEK fresh` followed by the ratchet layer**, as one functionality: `FRImp` with the
+impersonation predicate that holds nowhere. -/
 noncomputable def FRK (fresh : K → SPComp K) (realV : K → SPComp V) :
     Sys (St K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
-  Sys.ofPorts (chanHon fun _ k => realV k) (advSysK true true fresh)
+  FRImp (fun _ => false) fresh realV
 
 /-- **`F_AKE` followed by the ratchet layer**, as one functionality: `F_AKE` with uniform keys
 and unlinked delivery, whose honest port answers `getKey` at a session with the key `k` by the
@@ -245,19 +269,36 @@ noncomputable def scView (realV : K → SPComp V) (idealV : SPComp V) (r : Rec K
     SPComp V :=
   scViewK (KeySplit.trivial K) realV (fun _ => idealV) r k
 
-/-- **The ideal secure channel with a datum `F_SCK`**. The ports and the state of `F_AKE`: the
+/-- **The view functionality with a datum and an impersonation predicate `F_SCImpK`**. The
+ports and the state of `F_AKE`: the
 adversary port schedules sessions, corrupts parties and delivers keys exactly as in `F_AKE`
 with unlinked delivery, except that a session that completes without exposure stores the
 placeholder `sp.ph p` of the proposal `p` (the default secret part and the datum of `p`); the
 honest port opens sessions and, on `getKey`, outputs the secure-messaging view of the session:
 the ideal view `idealV d` at the datum `d` of the session for a completed session, and the real
-view `realV k` under the adversary key `k` for an exposed session. -/
+view `realV k` under the adversary key `k` for an exposed session. The adversary port is that
+of `F_AKEImpK` with the impersonation predicate `imp`: `impersonate` compromises a fresh session
+without a key whose record satisfies `imp`, and the session then shows the real view under the
+adversary key. -/
+noncomputable def F_SCImpK [Inhabited Ks] (imp : Rec K → Bool) (sp : KeySplit K Ks D)
+    (realV : K → SPComp V) (idealV : D → SPComp V) : Sys (St K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
+  Sys.ofPorts (chanHon (scViewK sp realV idealV))
+    (advSysImp imp true fun p => SPComp.pure (sp.ph p))
+
+/-- **The view functionality with a datum `F_SCK`**: `F_SCImpK` with the impersonation
+predicate that holds nowhere. -/
 noncomputable def F_SCK [Inhabited Ks] (sp : KeySplit K Ks D) (realV : K → SPComp V)
     (idealV : D → SPComp V) : Sys (St K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
-  Sys.ofPorts (chanHon (scViewK sp realV idealV))
-    (advSysK true true fun p => SPComp.pure (sp.ph p))
+  F_SCImpK (fun _ => false) sp realV idealV
 
-/-- **The ideal secure channel `F_SC`** (Canetti–Krawczyk, `F_SC` from `F_KE`). The ports and
+/-- **The view functionality with an impersonation predicate `F_SCImp`**: `F_SCImpK` at the
+split without a datum; a completed session shows the ideal view `idealV`. -/
+noncomputable def F_SCImp (imp : Rec K → Bool) (realV : K → SPComp V) (idealV : SPComp V) :
+    Sys (St K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
+  F_SCImpK imp (KeySplit.trivial K) realV (fun _ => idealV)
+
+/-- **The view functionality `F_SC`**, after the secure channel of Canetti–Krawczyk, without
+events for sending or receiving. The ports and
 the state of `F_AKE`: the adversary port schedules sessions, corrupts parties and delivers keys
 exactly as in `F_AKE` with unlinked delivery, except that a session that completes without
 exposure stores no key (the placeholder `default`); the honest port opens sessions and, on
@@ -312,18 +353,25 @@ def propOf : HEv ⊕ AEv K → K
   | .inr (.newKeyUnlinked _ _ k) => k
   | _ => default
 
-/-- The state of the functionality after an event, with the stand-in `sp.ph k` of the proposal
-`k` for the sessions that complete without exposure. -/
-def stNextK {Ks D : Type} [Inhabited Ks] (sp : KeySplit K Ks D) (t : St K) :
-    HEv ⊕ AEv K → St K
+/-- The state of the functionality after an event under the impersonation predicate `imp`, with
+the stand-in `sp.ph k` of the proposal `k` for the sessions that complete without exposure. -/
+def stNextImp {Ks D : Type} [Inhabited Ks] (imp : Rec K → Bool) (sp : KeySplit K Ks D)
+    (t : St K) : HEv ⊕ AEv K → St K
   | .inl (.newSession sid pid peer role) => addSession t (sid, pid) peer role
   | .inl (.getKey _ _) => t
   | .inr .idle => t
   | .inr .poll => (pollStep t).1
   | .inr (.corrupt pid) => corruptStep t pid
-  | .inr (.impersonate _ _) => t
+  | .inr (.impersonate sid pid) => impStepOf imp t (sid, pid)
   | .inr (.newKey sid pid k) => newKeyStep t (sid, pid) k (sp.ph k)
   | .inr (.newKeyUnlinked sid pid k) => newKeyFreshStep t (sid, pid) k (sp.ph k)
+
+/-- The state of the functionality after an event, with the stand-in `sp.ph k` of the proposal
+`k` for the sessions that complete without exposure: `stNextImp` with the impersonation
+predicate that holds nowhere. -/
+def stNextK {Ks D : Type} [Inhabited Ks] (sp : KeySplit K Ks D) (t : St K) :
+    HEv ⊕ AEv K → St K :=
+  stNextImp (fun _ => false) sp t
 
 /-- The state of the functionality after an event, with the key `default` for the sessions
 that complete without exposure. -/
@@ -363,15 +411,22 @@ def rdNext (w : WSt K) : HEv ⊕ AEv K → ℕ → ℕ
     | none => w.rd
   | _ => w.rd
 
-/-- The state after an event at the split `sp`, with the drawn key `kf` stored at the index
-`w.steps` when the event delivers a key. -/
-def wNextK {Ks D : Type} [Inhabited Ks] (sp : KeySplit K Ks D) (w : WSt K) (e : HEv ⊕ AEv K)
-    (kf : K) : WSt K where
-  st := stNextK sp w.st e
+/-- The state after an event at the split `sp` under the impersonation predicate `imp`, with the
+drawn key `kf` stored at the index `w.steps` when the event delivers a key. -/
+def wNextImp {Ks D : Type} [Inhabited Ks] (imp : Rec K → Bool) (sp : KeySplit K Ks D)
+    (w : WSt K) (e : HEv ⊕ AEv K) (kf : K) : WSt K where
+  st := stNextImp imp sp w.st e
   ix := ixNext w e
   steps := w.steps + (if isIdle e then 0 else 1)
   rd := rdNext w e
   kv := if isNewKey e then Function.update w.kv w.steps kf else w.kv
+
+/-- The state after an event at the split `sp`, with the drawn key `kf` stored at the index
+`w.steps` when the event delivers a key: `wNextImp` with the impersonation predicate that holds
+nowhere. -/
+def wNextK {Ks D : Type} [Inhabited Ks] (sp : KeySplit K Ks D) (w : WSt K) (e : HEv ⊕ AEv K)
+    (kf : K) : WSt K :=
+  wNextImp (fun _ => false) sp w e kf
 
 /-- The state after an event, with the drawn key `kf` stored at the index `w.steps` when the
 event delivers a key. -/
@@ -415,15 +470,23 @@ noncomputable def wOutK (realV : K → SPComp V) (idealD : D → SPComp V) (i : 
   | .inr .poll => SPComp.pure (.inr (.notice (pollStep w.st).2))
   | .inr _ => SPComp.pure (.inr .ack)
 
-/-- **The hybrid world `i` at the split `sp`** with the fresh-key kernel `fr`, the creation
-kernel `cre` of the key `i` and the reads `rd1`, `rd2` of the key `i`: the draw, the next state
-and the output. -/
-noncomputable def worldK (fr : K → SPComp K) (realV : K → SPComp V) (idealD : D → SPComp V)
-    (i : ℕ) (cre : K → SPComp K) (rd1 rd2 : K → SPComp V) :
+/-- **The hybrid world `i` at the split `sp` under the impersonation predicate `imp`** with the
+fresh-key kernel `fr`, the creation kernel `cre` of the key `i` and the reads `rd1`, `rd2` of the
+key `i`: the draw, the next state and the output. -/
+noncomputable def worldImp (imp : Rec K → Bool) (fr : K → SPComp K) (realV : K → SPComp V)
+    (idealD : D → SPComp V) (i : ℕ) (cre : K → SPComp K) (rd1 rd2 : K → SPComp V) :
     Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) where
   init := WSt.init
   step w e := SPComp.bind (wDrawK fr i cre w e) fun kf =>
-    SPComp.map (fun o => (wNextK sp w e kf, o)) (wOutK sp realV idealD i rd1 rd2 w e)
+    SPComp.map (fun o => (wNextImp imp sp w e kf, o)) (wOutK sp realV idealD i rd1 rd2 w e)
+
+/-- **The hybrid world `i` at the split `sp`** with the fresh-key kernel `fr`, the creation
+kernel `cre` of the key `i` and the reads `rd1`, `rd2` of the key `i`: `worldImp` with the
+impersonation predicate that holds nowhere. -/
+noncomputable abbrev worldK (fr : K → SPComp K) (realV : K → SPComp V) (idealD : D → SPComp V)
+    (i : ℕ) (cre : K → SPComp K) (rd1 rd2 : K → SPComp V) :
+    Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
+  worldImp sp (fun _ => false) fr realV idealD i cre rd1 rd2
 
 end Gen
 
@@ -634,12 +697,47 @@ theorem wInvPK_deliver {t t' : St K} {ix ix' : Inst → Option ℕ} {kv kv' : �
       refine ⟨j, ?_, by rw [hk, hkv j hlt]⟩
       rw [hix y, ite_eq_right (fun h => hy ⟨h.1, h.2.2⟩), hj]
 
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- Impersonation keeps the invariant at the split `sp`: it changes only a fresh session without
+a key, which has no index and is not completed. -/
+theorem wInvPK_impStep {t : St K} {ix : Inst → Option ℕ} {kv : ℕ → K} {n : ℕ}
+    (h : WInvPK sp t ix kv n) (x : Inst) : WInvPK sp (impStep t x) ix kv n := by
+  unfold impStep
+  rcases hx : t.recs x with _ | r
+  · exact h
+  · dsimp only
+    split_ifs with hf
+    · obtain ⟨h1, h2⟩ := h
+      refine ⟨fun y j hj => ?_, fun y r' hr' hc => ?_⟩
+      · obtain ⟨hlt, r'', hr'', hc''⟩ := h1 y j hj
+        refine ⟨hlt, r'', ?_, hc''⟩
+        by_cases hy : y = x
+        · subst hy; rw [hx] at hr''; cases hr''; simp [hf.1] at hc''
+        · simpa [setRec, hy] using hr''
+      · by_cases hy : y = x
+        · subst hy; simp only [setRec, Function.update_self, Option.some.injEq] at hr'
+          subst hr'; simp at hc
+        · exact h2 y r' (by simpa [setRec, hy] using hr') hc
+    · exact h
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- Impersonation under a predicate keeps the invariant at the split `sp`. -/
+theorem wInvPK_impStepOf {t : St K} {ix : Inst → Option ℕ} {kv : ℕ → K} {n : ℕ}
+    (h : WInvPK sp t ix kv n) (imp : Rec K → Bool) (x : Inst) :
+    WInvPK sp (impStepOf imp t x) ix kv n := by
+  unfold impStepOf
+  split
+  · split
+    · exact wInvPK_impStep sp h x
+    · exact h
+  · exact h
+
 omit [Fintype K] [Nonempty K] in
-/-- **The invariant at the split `sp` is preserved** by every event and every drawn key whose
-stand-in is the stand-in of the proposal. -/
-theorem wInv_nextK {w : WSt K} (hw : WInvK sp w) (e : HEv ⊕ AEv K) (kf : K)
-    (hkf : isNewKey e = true → sp.ph kf = sp.ph (propOf e)) :
-    WInvK sp (wNextK sp w e kf) := by
+/-- **The invariant at the split `sp` is preserved** under the impersonation predicate `imp` by
+every event and every drawn key whose stand-in is the stand-in of the proposal. -/
+theorem wInv_nextImp (imp : Rec K → Bool) {w : WSt K} (hw : WInvK sp w) (e : HEv ⊕ AEv K)
+    (kf : K) (hkf : isNewKey e = true → sp.ph kf = sp.ph (propOf e)) :
+    WInvK sp (wNextImp imp sp w e kf) := by
   have hmono : ∀ {t : St K} {ix : Inst → Option ℕ} {kv' : ℕ → K} {n m : ℕ},
       WInvPK sp t ix w.kv n → (∀ j, j < n → kv' j = w.kv j) → n ≤ m → WInvPK sp t ix kv' m :=
     fun h hk hnm => ⟨fun y j hj => ⟨by have := (h.1 y j hj).1; omega, (h.1 y j hj).2⟩,
@@ -650,7 +748,7 @@ theorem wInv_nextK {w : WSt K} (hw : WInvK sp w) (e : HEv ⊕ AEv K) (kf : K)
   rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) |
     (_ | _ | pid | ⟨sid, pid⟩ | ⟨sid, pid, k⟩ | ⟨sid, pid, k⟩)
   · refine ⟨fun y j hj => ?_, fun y r hr hc => ?_⟩
-    · simp only [wNextK, ixNext, stNextK] at hj ⊢
+    · simp only [wNextImp, ixNext, stNextImp] at hj ⊢
       obtain ⟨hlt, r, hr, hc⟩ := h1 y j hj
       refine ⟨by simp [isIdle]; omega, r, ?_, hc⟩
       rw [addSession_recs]
@@ -658,7 +756,7 @@ theorem wInv_nextK {w : WSt K} (hw : WInvK sp w) (e : HEv ⊕ AEv K) (kf : K)
       · exact hr
       · subst hy; simp [hr] at ha
       · exact hr
-    · simp only [wNextK, ixNext, stNextK, isNewKey, Bool.false_eq_true, ite_false] at hr hc ⊢
+    · simp only [wNextImp, ixNext, stNextImp, isNewKey, Bool.false_eq_true, ite_false] at hr hc ⊢
       rw [addSession_recs] at hr
       split_ifs at hr with ha hy
       · exact h2 y r hr hc
@@ -670,7 +768,8 @@ theorem wInv_nextK {w : WSt K} (hw : WInvK sp w) (e : HEv ⊕ AEv K) (kf : K)
       unfold WInvPK; rw [pollStep_recs]; exact ⟨h1, h2⟩
     exact hmono h' (fun _ _ => rfl) (Nat.le_add_right _ _)
   · exact hmono (t := corruptStep w.st pid) ⟨h1, h2⟩ (fun _ _ => rfl) (Nat.le_add_right _ _)
-  · exact hmono ⟨h1, h2⟩ (fun _ _ => rfl) (Nat.le_add_right _ _)
+  · exact hmono (t := impStepOf imp w.st (sid, pid)) (wInvPK_impStepOf sp ⟨h1, h2⟩ imp _)
+      (fun _ _ => rfl) (Nat.le_add_right _ _)
   · change WInvPK sp (newKeyStep w.st (sid, pid) k (sp.ph k))
       (newKeyIx w.st w.ix w.steps (sid, pid)) (Function.update w.kv w.steps kf) (w.steps + 1)
     have hkv : ∀ j, j < w.steps → Function.update w.kv w.steps kf j = w.kv j :=
@@ -730,6 +829,14 @@ theorem wInv_nextK {w : WSt K} (hw : WInvK sp w) (e : HEv ⊕ AEv K) (kf : K)
         · simp [hy]
       · rw [ite_eq_right hc, ite_eq_right (fun h => hc ⟨h.1, h.2.1⟩)]
 
+omit [Fintype K] [Nonempty K] in
+/-- **The invariant at the split `sp` is preserved** by every event and every drawn key whose
+stand-in is the stand-in of the proposal. -/
+theorem wInv_nextK {w : WSt K} (hw : WInvK sp w) (e : HEv ⊕ AEv K) (kf : K)
+    (hkf : isNewKey e = true → sp.ph kf = sp.ph (propOf e)) :
+    WInvK sp (wNextK sp w e kf) :=
+  wInv_nextImp sp _ hw e kf hkf
+
 end Gen
 
 omit [Fintype K] [Nonempty K] in
@@ -745,14 +852,14 @@ end World
 section StepsK
 
 variable {K V Ks D : Type} [Inhabited K] [Inhabited Ks] (sp : KeySplit K Ks D)
-  (fr : K → SPComp K) (realV : K → SPComp V) (idealD : D → SPComp V)
+  {imp : Rec K → Bool} (fr : K → SPComp K) (realV : K → SPComp V) (idealD : D → SPComp V)
 
 /-- The outcomes of a step of a hybrid world at a split: the next state at a possible draw. -/
 theorem world_outcomeK {i : ℕ} {cre : K → SPComp K} {rd1 rd2 : K → SPComp V} {w : WSt K}
     {e : HEv ⊕ AEv K} {q : WSt K × (HOut V ⊕ AOut)}
-    (hq : IsOutcome ((worldK sp fr realV idealD i cre rd1 rd2).step w e) q) :
-    ∃ kf, IsOutcome (wDrawK fr i cre w e) kf ∧ q.1 = wNextK sp w e kf := by
-  simp only [worldK] at hq
+    (hq : IsOutcome ((worldImp sp imp fr realV idealD i cre rd1 rd2).step w e) q) :
+    ∃ kf, IsOutcome (wDrawK fr i cre w e) kf ∧ q.1 = wNextImp imp sp w e kf := by
+  simp only [worldImp] at hq
   obtain ⟨kf, hkf, hq'⟩ := isOutcome_bind hq
   obtain ⟨o, _, rfl⟩ := isOutcome_map_iff.mp hq'
   exact ⟨kf, hkf, rfl⟩
@@ -776,14 +883,15 @@ theorem world_invK {i : ℕ} {cre : K → SPComp K} {rd1 rd2 : K → SPComp V} {
     (hfr : ∀ p kf, IsOutcome (fr p) kf → sp.ph kf = sp.ph p)
     (hcre : ∀ p kf, IsOutcome (cre p) kf → sp.ph kf = sp.ph p)
     {e : HEv ⊕ AEv K} {q : WSt K × (HOut V ⊕ AOut)} (hw : WInvK sp w)
-    (hq : IsOutcome ((worldK sp fr realV idealD i cre rd1 rd2).step w e) q) : WInvK sp q.1 := by
+    (hq : IsOutcome ((worldImp sp imp fr realV idealD i cre rd1 rd2).step w e) q) :
+    WInvK sp q.1 := by
   obtain ⟨kf, hkf, h⟩ := world_outcomeK sp fr realV idealD hq
-  rw [h]; exact wInv_nextK sp hw e kf (wDrawK_ph sp fr hfr hcre hkf)
+  rw [h]; exact wInv_nextImp sp imp hw e kf (wDrawK_ph sp fr hfr hcre hkf)
 
 /-- The number of activations after a step of a hybrid world at a split. -/
 theorem world_stepsK {i : ℕ} {cre : K → SPComp K} {rd1 rd2 : K → SPComp V} {w : WSt K}
     {e : HEv ⊕ AEv K} {q : WSt K × (HOut V ⊕ AOut)}
-    (hq : IsOutcome ((worldK sp fr realV idealD i cre rd1 rd2).step w e) q) :
+    (hq : IsOutcome ((worldImp sp imp fr realV idealD i cre rd1 rd2).step w e) q) :
     q.1.steps = w.steps + (if isIdle e then 0 else 1) := by
   obtain ⟨kf, _, h⟩ := world_outcomeK sp fr realV idealD hq
   rw [h]; rfl
@@ -791,16 +899,17 @@ theorem world_stepsK {i : ℕ} {cre : K → SPComp K} {rd1 rd2 : K → SPComp V}
 /-- The read counts after a step of a hybrid world at a split. -/
 theorem world_rdK {i : ℕ} {cre : K → SPComp K} {rd1 rd2 : K → SPComp V} {w : WSt K}
     {e : HEv ⊕ AEv K} {q : WSt K × (HOut V ⊕ AOut)}
-    (hq : IsOutcome ((worldK sp fr realV idealD i cre rd1 rd2).step w e) q) :
+    (hq : IsOutcome ((worldImp sp imp fr realV idealD i cre rd1 rd2).step w e) q) :
     q.1.rd = rdNext w e := by
   obtain ⟨kf, _, h⟩ := world_outcomeK sp fr realV idealD hq
   rw [h]; rfl
 
 /-- A hybrid world at a split is idle at the idle event of the adversary. -/
 theorem world_idleAtK (i : ℕ) (cre : K → SPComp K) (rd1 rd2 : K → SPComp V) :
-    MultiHybrid.IdleAt (worldK sp fr realV idealD i cre rd1 rd2) (.inr .idle) (.inr .ack) := by
+    MultiHybrid.IdleAt (worldImp sp imp fr realV idealD i cre rd1 rd2) (.inr .idle)
+      (.inr .ack) := by
   intro w
-  simp only [worldK, wDrawK, isNewKey, wOutK, SPComp.pure_bind, SPComp.map, Bool.false_eq_true,
+  simp only [worldImp, wDrawK, isNewKey, wOutK, SPComp.pure_bind, SPComp.map, Bool.false_eq_true,
     ite_false]
   rfl
 
@@ -842,8 +951,8 @@ theorem world_noFailK {i : ℕ} {cre : K → SPComp K} {rd1 rd2 : K → SPComp V
     (hfr : ∀ p, SPComp.NoFail (fr p)) (hc : ∀ p, SPComp.NoFail (cre p))
     (h1 : ∀ k, SPComp.NoFail (rd1 k)) (h2 : ∀ k, SPComp.NoFail (rd2 k))
     (w : WSt K) (e : HEv ⊕ AEv K) :
-    SPComp.NoFail ((worldK sp fr realV idealD i cre rd1 rd2).step w e) := by
-  simp only [worldK]
+    SPComp.NoFail ((worldImp sp imp fr realV idealD i cre rd1 rd2).step w e) := by
+  simp only [worldImp]
   refine Assumptions.SPComp.bind_noFail ?_ fun kf =>
     map_noFail _ (wOut_noFailK sp realV idealD hR hI h1 h2 w e)
   unfold wDrawK
@@ -861,26 +970,26 @@ theorem run_world_createK (i : ℕ) {α : Type} {c : SPComp α} (hc : SPComp.IsP
     (hcre : ∀ p, cre p = SPComp.map (fun a => g a p) c) (rd1 rd2 : K → SPComp V) {ζ : Type}
     (bad : WSt K → Bool) (Z : Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) :
     SPComp.bind c (fun a =>
-        run (worldK sp fr realV idealD i (fun p => SPComp.pure (g a p)) rd1 rd2) bad Z) =
-      run (worldK sp fr realV idealD i cre rd1 rd2) bad Z := by
+        run (worldImp sp imp fr realV idealD i (fun p => SPComp.pure (g a p)) rd1 rd2) bad Z) =
+      run (worldImp sp imp fr realV idealD i cre rd1 rd2) bad Z := by
   refine run_deferred c hc hcn
-    (fun a => worldK sp fr realV idealD i (fun p => SPComp.pure (g a p)) rd1 rd2)
-    (worldK sp fr realV idealD i cre rd1 rd2) (fun _ => True) (fun w => i < w.steps)
+    (fun a => worldImp sp imp fr realV idealD i (fun p => SPComp.pure (g a p)) rd1 rd2)
+    (worldImp sp imp fr realV idealD i cre rd1 rd2) (fun _ => True) (fun w => i < w.steps)
     (fun w e => w.steps = i ∧ isNewKey e = true) (fun _ => rfl) trivial
-    (by simp [worldK, WSt.init]) (fun _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ => trivial)
+    (by simp [worldImp, WSt.init]) (fun _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ => trivial)
     ?_ ?_ ?_ ?_ ?_ bad Z
   · intro k w e _ hp
-    simp only [worldK, wDrawK, show w.steps ≠ i by omega, ite_false]
+    simp only [worldImp, wDrawK, show w.steps ≠ i by omega, ite_false]
   · intro w e q _ hp hq
     have := world_stepsK sp fr realV idealD hq
     omega
   · intro k w e _ hp hu
-    simp only [worldK, wDrawK]
+    simp only [worldImp, wDrawK]
     by_cases hn : isNewKey e = true
     · simp only [hn, ite_true, show w.steps ≠ i from fun h => hu ⟨h, hn⟩, ite_false]
     · simp only [hn, Bool.false_eq_true, ite_false]
   · intro w e _ _ hu
-    simp only [worldK, wDrawK, hu.1, hu.2, ite_true, hcre, SPComp.map, SPComp.bind_assoc,
+    simp only [worldImp, wDrawK, hu.1, hu.2, ite_true, hcre, SPComp.map, SPComp.bind_assoc,
       SPComp.pure_bind]
   · intro k w e q _ hp hu hq
     have := world_stepsK sp fr realV idealD hq
@@ -997,7 +1106,7 @@ def IxLt (w : WSt K) : Prop := ∀ x j, w.ix x = some j → j < w.steps
 omit [Inhabited K] in
 /-- The next state keeps the indices below the number of activations. -/
 theorem ixLt_next {w : WSt K} (h : IxLt w) (e : HEv ⊕ AEv K) (kf : K) :
-    IxLt (wNextK sp w e kf) := by
+    IxLt (wNextImp imp sp w e kf) := by
   intro x j hj
   rcases ixNext_some hj with ⟨y, hy⟩ | ⟨rfl, hn⟩
   · have := h y j hy
@@ -1017,12 +1126,12 @@ theorem run_world_readK (i : ℕ) (cre : K → SPComp K) {α : Type} {c : SPComp
     (rd1' : α → K → SPComp V) (rd2 : K → SPComp V)
     (hcre : ∀ p kf, IsOutcome (cre p) kf → rd1 kf = SPComp.bind c fun a => rd1' a kf)
     {ζ : Type} (bad : WSt K → Bool) (Z : Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) :
-    SPComp.bind c (fun a => run (worldK sp fr realV idealD i cre (rd1' a) rd2) bad Z) =
-      run (worldK sp fr realV idealD i cre rd1 rd2) bad Z := by
+    SPComp.bind c (fun a => run (worldImp sp imp fr realV idealD i cre (rd1' a) rd2) bad Z) =
+      run (worldImp sp imp fr realV idealD i cre rd1 rd2) bad Z := by
   have hinv : ∀ (r1 : K → SPComp V) (w : WSt K) (e : HEv ⊕ AEv K)
       (q : WSt K × (HOut V ⊕ AOut)),
       (IxLt w ∧ ∀ x, w.ix x = some i → rd1 (w.kv i) = SPComp.bind c fun a => rd1' a (w.kv i)) →
-      IsOutcome ((worldK sp fr realV idealD i cre r1 rd2).step w e) q →
+      IsOutcome ((worldImp sp imp fr realV idealD i cre r1 rd2).step w e) q →
       IxLt q.1 ∧
         ∀ x, q.1.ix x = some i → rd1 (q.1.kv i) = SPComp.bind c fun a => rd1' a (q.1.kv i) := by
     intro r1 w e q ⟨hw, hr⟩ hq
@@ -1031,39 +1140,39 @@ theorem run_world_readK (i : ℕ) (cre : K → SPComp K) {α : Type} {c : SPComp
     rw [hq1] at hx ⊢
     rcases ixNext_some hx with ⟨y', hy'⟩ | ⟨hi, hn⟩
     · have hlt := hw y' i hy'
-      have : (wNextK sp w e kf).kv i = w.kv i := by
-        simp only [wNextK]
+      have : (wNextImp imp sp w e kf).kv i = w.kv i := by
+        simp only [wNextImp]
         split_ifs
         · rw [Function.update_of_ne (by omega)]
         · rfl
       rw [this]; exact hr y' hy'
     · have hd : wDrawK fr i cre w e = cre (propOf e) := by simp [wDrawK, hn, ← hi]
       rw [hd] at hkf
-      have : (wNextK sp w e kf).kv i = kf := by simp [wNextK, hn, hi]
+      have : (wNextImp imp sp w e kf).kv i = kf := by simp [wNextImp, hn, hi]
       rw [this]; exact hcre _ kf hkf
-  refine run_deferred c hc hcn (fun a => worldK sp fr realV idealD i cre (rd1' a) rd2)
-    (worldK sp fr realV idealD i cre rd1 rd2)
+  refine run_deferred c hc hcn (fun a => worldImp sp imp fr realV idealD i cre (rd1' a) rd2)
+    (worldImp sp imp fr realV idealD i cre rd1 rd2)
     (fun w => IxLt w ∧ ∀ x, w.ix x = some i → rd1 (w.kv i) = SPComp.bind c fun a => rd1' a (w.kv i))
     (fun w => 1 ≤ w.rd i)
     (fun w e => ∃ sid pid, e = .inl (.getKey sid pid) ∧ w.ix (sid, pid) = some i)
-    (fun _ => rfl) ⟨fun x j hx => by simp [worldK, WSt.init] at hx,
-      fun x hx => by simp [worldK, WSt.init] at hx⟩
-    (by simp [worldK, WSt.init]) (hinv rd1) (fun a => hinv _) ?_ ?_ ?_ ?_ ?_ bad Z
+    (fun _ => rfl) ⟨fun x j hx => by simp [worldImp, WSt.init] at hx,
+      fun x hx => by simp [worldImp, WSt.init] at hx⟩
+    (by simp [worldImp, WSt.init]) (hinv rd1) (fun a => hinv _) ?_ ?_ ?_ ?_ ?_ bad Z
   · intro v w e _ hp
-    simp only [worldK]
+    simp only [worldImp]
     rw [wOut_congrK sp realV idealD e (fun _ _ j _ _ => readOut_postK sp realV idealD _ rd1 rd2
       (show w.rd i ≠ 0 by omega) j)]
   · intro w e q _ hp hq
     rw [world_rdK sp fr realV idealD hq]
     exact le_trans hp (rdNext_ge w e i)
   · intro v w e _ hp hu
-    simp only [worldK]
+    simp only [worldImp]
     congr 1; funext kf; congr 1
     refine wOut_congrK sp realV idealD e (fun sid pid j he hj => ?_)
     have hji : j ≠ i := fun h => hu ⟨sid, pid, he, h ▸ hj⟩
     exact readOut_neK sp realV idealD hji _ _ _ _ w
   · rintro w e ⟨_, hr⟩ hp ⟨sid, pid, rfl, hx⟩
-    simp only [worldK, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOutK]
+    simp only [worldImp, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOutK]
     unfold chanOut wViewK
     rw [hx]
     rcases hr' : w.st.recs (sid, pid) with _ | r
@@ -1095,18 +1204,19 @@ the split, then the second stage of the world whose first read of the key `i` re
 theorem run_world_read_atK (i : ℕ) (cre : K → SPComp K) (rd1 rd2 : K → SPComp V)
     (hrd1 : ∀ k, SPComp.IsPure (rd1 k) ∧ SPComp.NoFail (rd1 k)) {ζ : Type}
     (bad : WSt K → Bool) (Z : Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) :
-    run (worldK sp fr realV idealD i cre rd1 rd2) bad Z =
-      SPComp.bind (loopTo (worldK sp fr realV idealD i cre rd1 rd2) bad Z
+    run (worldImp sp imp fr realV idealD i cre rd1 rd2) bad Z =
+      SPComp.bind (loopTo (worldImp sp imp fr realV idealD i cre rd1 rd2) bad Z
           (fun w e => useK i w e = true) Z.rounds (Z.init, WSt.init, bad WSt.init)) fun s =>
         SPComp.bind (rd1 (s.2.1.2.1.kv i)) fun v =>
-          loopRest (worldK sp fr realV idealD i cre (fun _ => SPComp.pure v) rd2) bad Z s := by
+          loopRest (worldImp sp imp fr realV idealD i cre (fun _ => SPComp.pure v) rd2)
+            bad Z s := by
   refine run_deferred_at (fun w => rd1 (w.kv i)) (fun _ => (hrd1 _).1) (fun _ => (hrd1 _).2)
-    (fun v => worldK sp fr realV idealD i cre (fun _ => SPComp.pure v) rd2)
-    (worldK sp fr realV idealD i cre rd1 rd2) (fun _ => True) (fun w => 1 ≤ w.rd i)
+    (fun v => worldImp sp imp fr realV idealD i cre (fun _ => SPComp.pure v) rd2)
+    (worldImp sp imp fr realV idealD i cre rd1 rd2) (fun _ => True) (fun w => 1 ≤ w.rd i)
     (fun w e => useK i w e = true) trivial (fun _ _ _ _ _ => trivial)
     (fun _ _ _ _ _ _ => trivial) ?_ ?_ ?_ ?_ bad Z
   · intro v w e _ hp
-    simp only [worldK]
+    simp only [worldImp]
     rw [wOut_congrK sp realV idealD e (fun _ _ j _ _ => readOut_postK sp realV idealD _ rd1 rd2
       (show w.rd i ≠ 0 by omega) j)]
   · intro w e q _ hp hq
@@ -1114,7 +1224,7 @@ theorem run_world_read_atK (i : ℕ) (cre : K → SPComp K) (rd1 rd2 : K → SPC
     exact le_trans hp (rdNext_ge w e i)
   · intro w e _ hp hu
     obtain ⟨sid, pid, rfl, hx⟩ := useK_iff.mp hu
-    simp only [worldK, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOutK]
+    simp only [worldImp, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOutK]
     unfold chanOut wViewK
     rw [hx]
     rcases hr' : w.st.recs (sid, pid) with _ | r
@@ -1149,14 +1259,14 @@ omit [Inhabited K] in
 activation creates the key `i`. -/
 theorem relExcept_nextK {i : ℕ} {a b : WSt K} (h : relExcept i a b) (e : HEv ⊕ AEv K)
     {kf kf' : K} (hk : a.steps ≠ i → kf = kf') :
-    relExcept i (wNextK sp a e kf) (wNextK sp b e kf') := by
+    relExcept i (wNextImp imp sp a e kf) (wNextImp imp sp b e kf') := by
   obtain ⟨hst, hix, hs, hrd, hkv⟩ := h
   refine ⟨?_, ?_, ?_, ?_, fun j hj => ?_⟩
-  · simp only [wNextK, hst]
-  · rcases e with _ | (_ | _ | _ | _ | _ | _) <;> simp [wNextK, ixNext, hst, hix, hs]
-  · simp only [wNextK, hs]
-  · rcases e with (_ | ⟨sid, pid⟩) | _ <;> simp [wNextK, rdNext, hix, hrd]
-  · simp only [wNextK]
+  · simp only [wNextImp, hst]
+  · rcases e with _ | (_ | _ | _ | _ | _ | _) <;> simp [wNextImp, ixNext, hst, hix, hs]
+  · simp only [wNextImp, hs]
+  · rcases e with (_ | ⟨sid, pid⟩) | _ <;> simp [wNextImp, rdNext, hix, hrd]
+  · simp only [wNextImp]
     split_ifs
     · by_cases hjs : j = a.steps
       · subst hjs
@@ -1176,21 +1286,21 @@ activation creates the key `i`, and are related by `κ` when it does. -/
 theorem relK_next {κ : K → K → Prop} {i : ℕ} {a b : WSt K} (h : relK κ i a b)
     (e : HEv ⊕ AEv K) {kf kf' : K} (hk : a.steps ≠ i → kf = kf')
     (hκ : a.steps = i → isNewKey e = true → κ kf kf') :
-    relK κ i (wNextK sp a e kf) (wNextK sp b e kf') := by
+    relK κ i (wNextImp imp sp a e kf) (wNextImp imp sp b e kf') := by
   refine ⟨relExcept_nextK sp h.1 e hk, fun ⟨x, hx⟩ => ?_⟩
   have hs := h.1.2.2.1
   by_cases hc : a.steps = i ∧ isNewKey e = true
   · have hb : b.steps = i := hs ▸ hc.1
-    simp only [wNextK, hc.2, ite_true]
+    simp only [wNextImp, hc.2, ite_true]
     rw [← hc.1, Function.update_self, hs, Function.update_self]
     exact hκ hc.1 hc.2
-  · have ha : (wNextK sp a e kf).kv i = a.kv i := by
-      simp only [wNextK]
+  · have ha : (wNextImp imp sp a e kf).kv i = a.kv i := by
+      simp only [wNextImp]
       split_ifs with hn
       · exact Function.update_of_ne (fun h => hc ⟨h.symm, hn⟩) _ _
       · rfl
-    have hb : (wNextK sp b e kf').kv i = b.kv i := by
-      simp only [wNextK]
+    have hb : (wNextImp imp sp b e kf').kv i = b.kv i := by
+      simp only [wNextImp]
       split_ifs with hn
       · exact Function.update_of_ne (fun h => hc ⟨hs.trans h.symm, hn⟩) _ _
       · rfl
@@ -1211,16 +1321,17 @@ theorem world_upto_reuseK (i : ℕ) (κ : K → K → Prop) {creA creB : K → S
     (hcA : ∀ p, SPComp.NoFail (creA p)) (hcB : ∀ p, SPComp.NoFail (creB p))
     (h1 : ∀ k, SPComp.NoFail (rd1 k)) (h1' : ∀ k, SPComp.NoFail (rd1' k))
     (hA : ∀ k, SPComp.NoFail (rdA k)) (hB : ∀ k, SPComp.NoFail (rdB k)) :
-    Realizes (worldK sp fr realV idealD i creA rd1 rdA) (worldK sp fr realV idealD i creB rd1' rdB)
-      (fun _ Z => prBad (worldK sp fr realV idealD i creA rd1 rdA) (reuse i) Z) := by
+    Realizes (worldImp sp imp fr realV idealD i creA rd1 rdA)
+      (worldImp sp imp fr realV idealD i creB rd1' rdB)
+      (fun _ Z => prBad (worldImp sp imp fr realV idealD i creA rd1 rdA) (reuse i) Z) := by
   refine realizes_upto_bad_rel _ _ (relK κ i) (reuse i)
-    ⟨⟨rfl, rfl, rfl, rfl, fun _ _ => rfl⟩, fun ⟨x, hx⟩ => by simp [worldK, WSt.init] at hx⟩
+    ⟨⟨rfl, rfl, rfl, rfl, fun _ _ => rfl⟩, fun ⟨x, hx⟩ => by simp [worldImp, WSt.init] at hx⟩
     (world_noFailK sp fr realV idealD hR hI hfr hcA h1 hA)
     (world_noFailK sp fr realV idealD hR hI hfr hcB h1' hB)
     fun a b e hab hbad => ?_
   have hmap : ∀ {α β : Type} (f : α → β) (c : SPComp α),
       SPComp.map f c = SPComp.bind c fun x => SPComp.pure (f x) := fun _ _ => rfl
-  simp only [worldK, hmap]
+  simp only [worldImp, hmap]
   -- the draws
   have hdraw : rHoare eqPre (wDrawK fr i creA a e) (wDrawK fr i creB b e)
       (fun kf h kf' h' => h = h' ∧ (a.steps ≠ i → kf = kf') ∧
@@ -1243,7 +1354,7 @@ theorem world_upto_reuseK (i : ℕ) (κ : K → K → Prop) {creA creB : K → S
   refine rHoare_bind hdraw fun kf kf' => ?_
   refine rHoare_eqPre_and_of (P := (a.steps ≠ i → kf = kf') ∧
     (a.steps = i → isNewKey e = true → κ kf kf')) fun hk => ?_
-  have hnext := relK_next sp hab e hk.1 hk.2
+  have hnext := relK_next sp (imp := imp) hab e hk.1 hk.2
   by_cases hbr : ∃ sid pid, e = .inl (.getKey sid pid) ∧ a.ix (sid, pid) = some i ∧
       a.rd i ≠ 0
   · -- a second read: the run is bad
@@ -1252,7 +1363,7 @@ theorem world_upto_reuseK (i : ℕ) (κ : K → K → Prop) {creA creB : K → S
       (wOut_noFailK sp realV idealD hR hI h1' hB b _)) fun o o' => rHoare_ret fun _ _ _ => ?_
     left
     have hle : 1 ≤ a.rd i := Nat.one_le_iff_ne_zero.mpr hr
-    simp [reuse, wNextK, rdNext, hx]
+    simp [reuse, wNextImp, rdNext, hx]
     omega
   · have hout : wOutK sp realV idealD i rd1 rdA a e = wOutK sp realV idealD i rd1' rdB b e := by
       refine wOut_congr₂K sp realV idealD hab.1.1 hab.1.2.1 e fun sid pid j he hj => ?_
@@ -1268,7 +1379,7 @@ theorem world_upto_reuseK (i : ℕ) (κ : K → K → Prop) {creA creB : K → S
     obtain ⟨rfl, rfl⟩ := hh
     exact Or.inr ⟨rfl, hnext, rfl⟩
 
-/-! ## The last hybrid world and the ideal secure channel, at a split -/
+/-! ## The last hybrid world and the view functionality, at a split -/
 
 /-- The output of `F_SCK` at an event. -/
 noncomputable def scOutK (t : St K) : HEv ⊕ AEv K → SPComp (HOut V ⊕ AOut)
@@ -1278,15 +1389,23 @@ noncomputable def scOutK (t : St K) : HEv ⊕ AEv K → SPComp (HOut V ⊕ AOut)
   | .inr _ => SPComp.pure (.inr .ack)
 
 omit [Inhabited K] in
+/-- The steps of `F_SCImpK imp`: the next state of the functionality under `imp` with the
+stand-in keys and the output `scOutK`. -/
+theorem F_SCImpK_step (imp : Rec K → Bool) (t : St K) (e : HEv ⊕ AEv K) :
+    (F_SCImpK imp sp realV idealD).step t e =
+      SPComp.map (fun o => (stNextImp imp sp t e, o)) (scOutK sp realV idealD t e) := by
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) |
+    (_ | _ | pid | ⟨sid, pid⟩ | ⟨sid, pid, k⟩ | ⟨sid, pid, k⟩) <;>
+    simp [F_SCImpK, chanHon, advSysImp, stNextImp, scOutK, SPComp.map, SPComp.bind_assoc,
+      SPComp.pure_bind]
+
+omit [Inhabited K] in
 /-- The steps of `F_SCK`: the next state of the functionality with the stand-in keys and the
 output `scOutK`. -/
 theorem F_SCK_step (t : St K) (e : HEv ⊕ AEv K) :
     (F_SCK sp realV idealD).step t e =
-      SPComp.map (fun o => (stNextK sp t e, o)) (scOutK sp realV idealD t e) := by
-  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) |
-    (_ | _ | pid | ⟨sid, pid⟩ | ⟨sid, pid, k⟩ | ⟨sid, pid, k⟩) <;>
-    simp [F_SCK, chanHon, advSysK, advSysImp, stNextK, scOutK, SPComp.map, SPComp.bind_assoc,
-      SPComp.pure_bind]
+      SPComp.map (fun o => (stNextK sp t e, o)) (scOutK sp realV idealD t e) :=
+  F_SCImpK_step sp realV idealD _ t e
 
 omit [Inhabited K] [Inhabited Ks] in
 /-- Two view functions that agree at the record and the key of the session give the same
@@ -1339,7 +1458,7 @@ theorem wDrawK_pureNF {i : ℕ} {cre : K → SPComp K}
   · exact hfr _
   · exact CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _
 
-/-- **The last hybrid world at a split is the ideal secure channel `F_SCK` up to `n`
+/-- **The last hybrid world at a split is the view functionality `F_SCK` up to `n`
 activations.** For a fresh-key kernel that neither touches the heap nor fails and keeps the
 stand-in of the proposal, the hybrid world `n` with real reads realizes `F_SCK` with bound the
 probability that the run exceeds `n` non-idle activations. -/
@@ -1347,14 +1466,14 @@ theorem world_endK (n : ℕ) (hR : ∀ k, SPComp.NoFail (realV k))
     (hI : ∀ d, SPComp.NoFail (idealD d))
     (hfr : ∀ p, SPComp.IsPure (fr p) ∧ SPComp.NoFail (fr p))
     (hfrp : ∀ p kf, IsOutcome (fr p) kf → sp.ph kf = sp.ph p) :
-    Realizes (worldK sp fr realV idealD n fr realV realV) (F_SCK sp realV idealD)
-      (fun _ Z => prBad (worldK sp fr realV idealD n fr realV realV)
+    Realizes (worldImp sp imp fr realV idealD n fr realV realV) (F_SCImpK imp sp realV idealD)
+      (fun _ Z => prBad (worldImp sp imp fr realV idealD n fr realV realV)
         (fun w => decide (n < w.steps)) Z) := by
   refine realizes_upto_bad_rel _ _ (fun w t => w.st = t ∧ WInvK sp w)
     (fun w => decide (n < w.steps)) ⟨rfl, wInv_initK sp⟩
     (world_noFailK sp fr realV idealD hR hI (fun p => (hfr p).2) (fun p => (hfr p).2) hR hR)
     (fun t e => by
-      rw [F_SCK_step]
+      rw [F_SCImpK_step]
       refine map_noFail _ ?_
       rcases e with (_ | ⟨sid, pid⟩) | (_ | _ | _ | _ | _ | _)
       all_goals try exact SPComp.pure_noFail _
@@ -1371,9 +1490,9 @@ theorem world_endK (n : ℕ) (hR : ∀ k, SPComp.NoFail (realV k))
   obtain ⟨rfl, hw⟩ := hwt
   have hn : w.steps ≤ n := by simpa using hbad
   have hd := wDrawK_pureNF fr hfr hfr (i := n) w e
-  rw [F_SCK_step, ← wOut_eq_scOutK sp realV idealD hw hn e,
+  rw [F_SCImpK_step, ← wOut_eq_scOutK sp realV idealD hw hn e,
     ← bind_const_of_isPure hd.1 hd.2 (SPComp.map _ _)]
-  simp only [worldK]
+  simp only [worldImp]
   -- the draw, with its outcomes
   have hdraw : rHoare eqPre (wDrawK fr n fr w e) (wDrawK fr n fr w e)
       (fun kf h kf' h' => (kf = kf' ∧ h = h') ∧ IsOutcome (wDrawK fr n fr w e) kf) := by
@@ -1388,16 +1507,16 @@ theorem world_endK (n : ℕ) (hR : ∀ k, SPComp.NoFail (realV k))
   refine rHoare_bind (rHoare_conseq (fun _ _ hh => hh.1) (fun _ _ _ _ h => h) (rHoare_refl _))
     fun o o' => rHoare_ret fun _ _ hh => ?_
   obtain ⟨rfl, rfl⟩ := hh
-  exact Or.inr ⟨rfl, ⟨rfl, wInv_nextK sp hw e kf (wDrawK_ph sp fr hfrp hfrp hkf)⟩, rfl⟩
+  exact Or.inr ⟨rfl, ⟨rfl, wInv_nextImp sp imp hw e kf (wDrawK_ph sp fr hfrp hfrp hkf)⟩, rfl⟩
 
 /-- **The counter of the last hybrid world at a split.** In a run of at most `n` activations,
 the hybrid world never exceeds `n` non-idle activations. -/
 theorem world_end_prBadK (n : ℕ) {cre : K → SPComp K} {rd1 rd2 : K → SPComp V} {ζ : Type}
     (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) (hZ : Z.input.rounds ≤ n) :
-    prBad (worldK sp fr realV idealD n cre rd1 rd2) (fun w => decide (n < w.steps)) Z = 0 :=
+    prBad (worldImp sp imp fr realV idealD n cre rd1 rd2) (fun w => decide (n < w.steps)) Z = 0 :=
   prBad_counter_eq_zero _ WSt.steps n (fun w e q hq => by
     rw [world_stepsK sp fr realV idealD hq]; split_ifs <;> omega) Z
-    (by simpa [worldK, WSt.init] using hZ)
+    (by simpa [worldImp, WSt.init] using hZ)
 
 /-! ## The first hybrid world and the real stack, at a split -/
 
@@ -1482,19 +1601,20 @@ omit [Inhabited K] in
 /-- **Filling commutes with `newKey`**, at a split. -/
 theorem fill_newKeyK {w : WSt K} (hw : WInvK sp w) (sid : SessionId) (pid : PartyId)
     (k kf : K) :
-    fill (wNextK sp w (.inr (.newKey sid pid k)) kf) = newKeyStep (fill w) (sid, pid) k kf := by
+    fill (wNextImp imp sp w (.inr (.newKey sid pid k)) kf) =
+      newKeyStep (fill w) (sid, pid) k kf := by
   have hkv : ∀ y j, w.ix y = some j →
-      (wNextK sp w (.inr (.newKey sid pid k)) kf).kv j = w.kv j := fun y j hj => by
+      (wNextImp imp sp w (.inr (.newKey sid pid k)) kf).kv j = w.kv j := fun y j hj => by
     have := (hw.1 y j hj).1
-    simp only [wNextK, isNewKey, ite_true]
+    simp only [wNextImp, isNewKey, ite_true]
     rw [Function.update_of_ne (by omega)]
-  have hixw : (wNextK sp w (.inr (.newKey sid pid k)) kf).ix =
+  have hixw : (wNextImp imp sp w (.inr (.newKey sid pid k)) kf).ix =
       newKeyIx w.st w.ix w.steps (sid, pid) := rfl
   obtain ⟨hc1, hn1, hu1⟩ := newKeyStep_fields (fill w) (sid, pid) k kf
   obtain ⟨hc2, hn2, hu2⟩ := newKeyStep_fields w.st (sid, pid) k (sp.ph k)
   refine St.ext' ?_ (by rw [hc1]; exact hc2) (by rw [hn1]; exact hn2) (by rw [hu1]; exact hu2)
   funext y
-  change Option.map (fillRec (wNextK sp w (.inr (.newKey sid pid k)) kf) y)
+  change Option.map (fillRec (wNextImp imp sp w (.inr (.newKey sid pid k)) kf) y)
       ((newKeyStep w.st (sid, pid) k (sp.ph k)).recs y) =
     (newKeyStep (fill w) (sid, pid) k kf).recs y
   rcases hx : w.st.recs (sid, pid) with _ | r
@@ -1517,7 +1637,7 @@ theorem fill_newKeyK {w : WSt K} (hw : WInvK sp w) (sid : SessionId) (pid : Part
         congr 1
         by_cases hex : Exposed w.st (sid, pid) r
         · have hex' : Exposed (fill w) (sid, pid) r := hex
-          have hi' : (wNextK sp w (.inr (.newKey sid pid k)) kf).ix (sid, pid) = none := by
+          have hi' : (wNextImp imp sp w (.inr (.newKey sid pid k)) kf).ix (sid, pid) = none := by
             rw [hixw]; simp [newKeyIx, hx, hex, hix]
           rw [fillRec_none hi']
           simp [newKeyVal, hex, hex']
@@ -1528,27 +1648,28 @@ theorem fill_newKeyK {w : WSt K} (hw : WInvK sp w) (sid : SessionId) (pid : Part
           unfold newKeyVal
           rw [ite_eq_right hex, ite_eq_right hex', hpf]
           rcases hp : w.st.recs (sid, r.peer) with _ | p
-          · have hi' : (wNextK sp w (.inr (.newKey sid pid k)) kf).ix (sid, pid) =
+          · have hi' : (wNextImp imp sp w (.inr (.newKey sid pid k)) kf).ix (sid, pid) =
                 some w.steps := by
               rw [hixw]; simp [newKeyIx, hx, hk, hex, hp]
             rw [fillRec_some hi']
-            simp [wNextK, isNewKey]
+            simp [wNextImp, isNewKey]
           · simp only [Option.map_some]
             by_cases hpp : Partner (sid, pid) r p
             · obtain ⟨jp, hjp, _⟩ := hw.2 _ p hp hpp.2.2
               have hlt := (hw.1 _ jp hjp).1
-              have hi' : (wNextK sp w (.inr (.newKey sid pid k)) kf).ix (sid, pid) = some jp := by
+              have hi' : (wNextImp imp sp w (.inr (.newKey sid pid k)) kf).ix (sid, pid) =
+                  some jp := by
                 rw [hixw]; simp [newKeyIx, hx, hk, hex, hp, hpp, hjp]
               rw [fillRec_some hi', ite_eq_left hpp,
                 ite_eq_left ((fillRec_partner w _ _ r p).mpr hpp),
                 fillRec_some hjp, hkv _ jp hjp]
               simp
-            · have hi' : (wNextK sp w (.inr (.newKey sid pid k)) kf).ix (sid, pid) =
+            · have hi' : (wNextImp imp sp w (.inr (.newKey sid pid k)) kf).ix (sid, pid) =
                   some w.steps := by
                 rw [hixw]; simp [newKeyIx, hx, hk, hex, hp, hpp]
               rw [fillRec_some hi', ite_eq_right hpp,
                 ite_eq_right (fun h => hpp ((fillRec_partner w _ _ r p).mp h))]
-              simp [wNextK, isNewKey]
+              simp [wNextImp, isNewKey]
       · simp only [hy, and_false, ite_false]
         change Option.map _ (w.st.recs y) = Option.map (fillRec w y) (w.st.recs y)
         congr 1; funext r'
@@ -1575,20 +1696,20 @@ omit [Inhabited K] in
 /-- **Filling commutes with `newKeyUnlinked`**, at a split. -/
 theorem fill_newKeyFreshK {w : WSt K} (hw : WInvK sp w) (sid : SessionId) (pid : PartyId)
     (k kf : K) :
-    fill (wNextK sp w (.inr (.newKeyUnlinked sid pid k)) kf) =
+    fill (wNextImp imp sp w (.inr (.newKeyUnlinked sid pid k)) kf) =
       newKeyFreshStep (fill w) (sid, pid) k kf := by
   have hkv : ∀ y j, w.ix y = some j →
-      (wNextK sp w (.inr (.newKeyUnlinked sid pid k)) kf).kv j = w.kv j := fun y j hj => by
+      (wNextImp imp sp w (.inr (.newKeyUnlinked sid pid k)) kf).kv j = w.kv j := fun y j hj => by
     have := (hw.1 y j hj).1
-    simp only [wNextK, isNewKey, ite_true]
+    simp only [wNextImp, isNewKey, ite_true]
     rw [Function.update_of_ne (by omega)]
-  have hixw : (wNextK sp w (.inr (.newKeyUnlinked sid pid k)) kf).ix =
+  have hixw : (wNextImp imp sp w (.inr (.newKeyUnlinked sid pid k)) kf).ix =
       newKeyFreshIx w.st w.ix w.steps (sid, pid) := rfl
   obtain ⟨hc1, hn1, hu1⟩ := newKeyFreshStep_fields (fill w) (sid, pid) k kf
   obtain ⟨hc2, hn2, hu2⟩ := newKeyFreshStep_fields w.st (sid, pid) k (sp.ph k)
   refine St.ext' ?_ (by rw [hc1]; exact hc2) (by rw [hn1]; exact hn2) (by rw [hu1]; exact hu2)
   funext y
-  change Option.map (fillRec (wNextK sp w (.inr (.newKeyUnlinked sid pid k)) kf) y)
+  change Option.map (fillRec (wNextImp imp sp w (.inr (.newKeyUnlinked sid pid k)) kf) y)
       ((newKeyFreshStep w.st (sid, pid) k (sp.ph k)).recs y) =
     (newKeyFreshStep (fill w) (sid, pid) k kf).recs y
   rcases hx : w.st.recs (sid, pid) with _ | r
@@ -1614,17 +1735,17 @@ theorem fill_newKeyFreshK {w : WSt K} (hw : WInvK sp w) (sid : SessionId) (pid :
         congr 1
         by_cases hex : Exposed w.st (sid, pid) r
         · have hex' : Exposed (fill w) (sid, pid) r := hex
-          have hi' : (wNextK sp w (.inr (.newKeyUnlinked sid pid k)) kf).ix (sid, pid) =
+          have hi' : (wNextImp imp sp w (.inr (.newKeyUnlinked sid pid k)) kf).ix (sid, pid) =
               none := by
             rw [hixw]; simp [newKeyFreshIx, hx, hex, hix]
           rw [fillRec_none hi']
           simp [hex, hex']
         · have hex' : ¬ Exposed (fill w) (sid, pid) r := hex
-          have hi' : (wNextK sp w (.inr (.newKeyUnlinked sid pid k)) kf).ix (sid, pid) =
+          have hi' : (wNextImp imp sp w (.inr (.newKeyUnlinked sid pid k)) kf).ix (sid, pid) =
               some w.steps := by
             rw [hixw]; simp [newKeyFreshIx, hx, hk, hex]
           rw [fillRec_some hi']
-          simp [hex, hex', wNextK, isNewKey]
+          simp [hex, hex', wNextImp, isNewKey]
       · simp only [hy, and_false, ite_false]
         change Option.map _ (w.st.recs y) = Option.map (fillRec w y) (w.st.recs y)
         congr 1; funext r'
@@ -1652,7 +1773,7 @@ omit [Inhabited K] in
 /-- Filling commutes with `addSession`, at a split. -/
 theorem fill_addSessionK {w : WSt K} (hw : WInvK sp w) (sid : SessionId) (pid peer : PartyId)
     (role : Role) (kf : K) :
-    fill (wNextK sp w (.inl (.newSession sid pid peer role)) kf) =
+    fill (wNextImp imp sp w (.inl (.newSession sid pid peer role)) kf) =
       addSession (fill w) (sid, pid) peer role := by
   have hS : ((fill w).recs (sid, pid)).isSome = (w.st.recs (sid, pid)).isSome := by
     simp [fill]
@@ -1661,10 +1782,11 @@ theorem fill_addSessionK {w : WSt K} (hw : WInvK sp w) (sid : SessionId) (pid pe
     have e1 : addSession w.st (sid, pid) peer role = w.st := by simp [addSession, h]
     have e2 : addSession (fill w) (sid, pid) peer role = fill w := by simp [addSession, h']
     rw [e2]
-    refine St.ext' ?_ (by simp [fill, wNextK, stNextK, e1]) (by simp [fill, wNextK, stNextK, e1])
-      (by simp [fill, wNextK, stNextK, e1])
+    refine St.ext' ?_ (by simp [fill, wNextImp, stNextImp, e1])
+      (by simp [fill, wNextImp, stNextImp, e1])
+      (by simp [fill, wNextImp, stNextImp, e1])
     funext y
-    change Option.map (fillRec (wNextK sp w (.inl (.newSession sid pid peer role)) kf) y)
+    change Option.map (fillRec (wNextImp imp sp w (.inl (.newSession sid pid peer role)) kf) y)
       ((addSession w.st (sid, pid) peer role).recs y) = Option.map (fillRec w y) (w.st.recs y)
     rw [e1]
     rfl
@@ -1673,9 +1795,9 @@ theorem fill_addSessionK {w : WSt K} (hw : WInvK sp w) (sid : SessionId) (pid pe
       rcases hj : w.ix (sid, pid) with _ | j
       · rfl
       · obtain ⟨_, r, hr, _⟩ := hw.1 _ j hj; simp [hr] at h
-    refine St.ext' ?_ (by simp [fill, wNextK, stNextK, addSession, h])
-      (by simp [fill, wNextK, stNextK, addSession, h])
-      (by simp [fill, wNextK, stNextK, addSession, h])
+    refine St.ext' ?_ (by simp [fill, wNextImp, stNextImp, addSession, h])
+      (by simp [fill, wNextImp, stNextImp, addSession, h])
+      (by simp [fill, wNextImp, stNextImp, addSession, h])
     funext y
     change Option.map (fillRec w y) ((addSession w.st (sid, pid) peer role).recs y) =
       (addSession (fill w) (sid, pid) peer role).recs y
@@ -1684,6 +1806,50 @@ theorem fill_addSessionK {w : WSt K} (hw : WInvK sp w) (sid : SessionId) (pid pe
     by_cases hy : y = (sid, pid)
     · subst hy; simp [fillRec_none hix]
     · simp only [hy, ite_false]; rfl
+
+omit [Inhabited K] in
+/-- Filling the keys commutes with impersonation under a predicate. -/
+theorem fill_impersonateK {w : WSt K} (hw : WInvK sp w) (sid : SessionId) (pid : PartyId)
+    (kf : K) :
+    fill (wNextImp imp sp w (.inr (.impersonate sid pid)) kf) =
+      impStepOf imp (fill w) (sid, pid) := by
+  change ({ impStepOf imp w.st (sid, pid) with recs := fun y =>
+      ((impStepOf imp w.st (sid, pid)).recs y).map (fillRec w y) } : St K) = _
+  have hfx : (fill w).recs (sid, pid) = (w.st.recs (sid, pid)).map (fillRec w (sid, pid)) := rfl
+  have hfix : ∀ r, w.st.recs (sid, pid) = some r → r.status = .fresh → w.ix (sid, pid) = none :=
+    fun r hx hs => by
+      rcases hj : w.ix (sid, pid) with _ | j
+      · rfl
+      · obtain ⟨_, r', hr', hc⟩ := hw.1 _ j hj
+        rw [hx] at hr'; cases hr'; simp [hs] at hc
+  unfold impStepOf
+  rw [hfx]
+  rcases hx : w.st.recs (sid, pid) with _ | r
+  · rfl
+  · have hst : (fillRec w (sid, pid) r).status = r.status := by
+      unfold fillRec; split <;> rfl
+    have hfill : (fill w).recs (sid, pid) = some (fillRec w (sid, pid) r) := by rw [hfx, hx]; rfl
+    by_cases hs : r.status = .fresh
+    · have hfr : fillRec w (sid, pid) r = r := fillRec_none (hfix r hx hs) r
+      simp only [Option.map_some, hfr]
+      split_ifs with hi
+      · unfold impStep
+        rw [hx, hfill, hfr]
+        dsimp only
+        split_ifs with hk
+        · refine St.ext' ?_ rfl rfl rfl
+          funext y
+          by_cases hy : y = (sid, pid)
+          · subst hy
+            simp [setRec, fillRec_none (hfix r hx hs)]
+          · simp [setRec, hy, fill]
+        · rfl
+      · rfl
+    · have h1 : impStep w.st (sid, pid) = w.st := by unfold impStep; simp [hx, hs]
+      have h2 : impStep (fill w) (sid, pid) = fill w := by
+        unfold impStep; simp [hfill, hst, hs]
+      simp only [Option.map_some, h1, h2]
+      split_ifs <;> rfl
 
 omit [Inhabited K] in
 /-- The step of `poll`. -/
@@ -1717,12 +1883,12 @@ theorem chanOut_fillK {w : WSt K} (hw : WInvK sp w) (x : Inst) :
       simp only [wViewK, hj, readOutK]
       split_ifs <;> first | omega | (subst_vars; rfl)
 
-/-- **The first hybrid world at a split is the real stack over `F_AKEK fr`**: filling the keys
-of the indices is a step map on the invariant, for a fresh-key kernel that keeps the stand-in
-of the proposal. -/
+/-- **The first hybrid world at a split is the real stack over `F_AKEImpK fr imp`**: filling the
+keys of the indices is a step map on the invariant, for a fresh-key kernel that keeps the
+stand-in of the proposal. -/
 theorem world_zero_stepMapK (hfrp : ∀ p kf, IsOutcome (fr p) kf → sp.ph kf = sp.ph p) :
-    Sys.StepMapOn (worldK sp fr realV idealD 0 fr realV realV) (FRK fr realV) (WInvK sp)
-      fill where
+    Sys.StepMapOn (worldImp sp imp fr realV idealD 0 fr realV realV) (FRImp imp fr realV)
+      (WInvK sp) fill where
   init_inv := wInv_initK sp
   init_map := by
     refine St.ext' ?_ rfl rfl rfl
@@ -1731,23 +1897,23 @@ theorem world_zero_stepMapK (hfrp : ∀ p kf, IsOutcome (fr p) kf → sp.ph kf =
   step w e hw := by
     rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) |
       (_ | _ | pid | ⟨sid, pid⟩ | ⟨sid, pid, k⟩ | ⟨sid, pid, k⟩)
-    · simp only [worldK, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
+    · simp only [worldImp, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
         wOutK, SPComp.map]
       rw [fill_addSessionK sp hw]
-      simp [FRK, chanHon, SPComp.map]
-    · simp only [worldK, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
+      simp [FRImp, chanHon, SPComp.map]
+    · simp only [worldImp, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
         wOutK]
       rw [chanOut_fillK sp realV idealD hw]
-      simp only [FRK, Sys.ofPorts_step_inl, chanHon, SPComp.map, SPComp.bind_assoc,
+      simp only [FRImp, Sys.ofPorts_step_inl, chanHon, SPComp.map, SPComp.bind_assoc,
         SPComp.pure_bind]
       rfl
-    · simp only [worldK, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
+    · simp only [worldImp, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
         wOutK, SPComp.map]
-      simp only [FRK, Sys.ofPorts_step_inr, advSysK, advSysImp, SPComp.map, SPComp.pure_bind]
+      simp only [FRImp, Sys.ofPorts_step_inr, advSysImp, SPComp.map, SPComp.pure_bind]
       rfl
-    · simp only [worldK, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
+    · simp only [worldImp, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
         wOutK, SPComp.map]
-      simp only [FRK, Sys.ofPorts_step_inr, advSysK, advSysImp, SPComp.map, SPComp.pure_bind]
+      simp only [FRImp, Sys.ofPorts_step_inr, advSysImp, SPComp.map, SPComp.pure_bind]
       congr 2
       · refine St.ext' ?_
           (by change (pollStep w.st).1.corrupt = _; rw [pollStep_eq, pollStep_eq]; rfl)
@@ -1757,22 +1923,21 @@ theorem world_zero_stepMapK (hfrp : ∀ p kf, IsOutcome (fr p) kf → sp.ph kf =
         change Option.map _ ((pollStep w.st).1.recs y) = (pollStep (fill w)).1.recs y
         rw [pollStep_recs, pollStep_recs]; rfl
       · rw [pollStep_eq, pollStep_eq]; rfl
-    · simp only [worldK, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
+    · simp only [worldImp, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
         wOutK, SPComp.map]
-      simp only [FRK, Sys.ofPorts_step_inr, advSysK, advSysImp, SPComp.map, SPComp.pure_bind]
+      simp only [FRImp, Sys.ofPorts_step_inr, advSysImp, SPComp.map, SPComp.pure_bind]
       rfl
-    · simp only [worldK, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
+    · simp only [worldImp, wDrawK, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind,
         wOutK, SPComp.map]
-      simp only [FRK, Sys.ofPorts_step_inr, advSysK, advSysImp, Bool.not_true, impStepOf_false,
-        SPComp.map, SPComp.pure_bind]
-      rfl
-    · simp only [worldK, wDrawK, isNewKey, ite_true, ite_self, wOutK, SPComp.map,
+      simp only [FRImp, Sys.ofPorts_step_inr, advSysImp, SPComp.map, SPComp.pure_bind]
+      rw [fill_impersonateK sp hw]
+    · simp only [worldImp, wDrawK, isNewKey, ite_true, ite_self, wOutK, SPComp.map,
         SPComp.bind_assoc, SPComp.pure_bind, propOf]
-      simp only [FRK, Sys.ofPorts_step_inr, advSysK, advSysImp, SPComp.map, SPComp.bind_assoc,
+      simp only [FRImp, Sys.ofPorts_step_inr, advSysImp, SPComp.map, SPComp.bind_assoc,
         SPComp.pure_bind, fill_newKeyK sp hw]
-    · simp only [worldK, wDrawK, isNewKey, ite_true, ite_self, wOutK, SPComp.map,
+    · simp only [worldImp, wDrawK, isNewKey, ite_true, ite_self, wOutK, SPComp.map,
         SPComp.bind_assoc, SPComp.pure_bind, propOf]
-      simp only [FRK, Sys.ofPorts_step_inr, advSysK, advSysImp, SPComp.map, SPComp.bind_assoc,
+      simp only [FRImp, Sys.ofPorts_step_inr, advSysImp, SPComp.map, SPComp.bind_assoc,
         SPComp.pure_bind, fill_newKeyFreshK sp hw, ite_true]
 
 omit [Inhabited K] [Inhabited Ks] in
@@ -1791,9 +1956,9 @@ theorem readOut_succK (i : ℕ) (w : WSt K) (j : ℕ) :
 /-- The hybrid world `i` at a split whose reads of the key `i` are ideal is the hybrid world
 `i + 1`. -/
 theorem chalWorld_idealK (i : ℕ) :
-    worldK sp fr realV idealD i fr (fun k => idealD (sp.dat k)) (fun k => idealD (sp.dat k)) =
-      worldK sp fr realV idealD (i + 1) fr realV realV := by
-  simp only [worldK]
+    worldImp sp imp fr realV idealD i fr (fun k => idealD (sp.dat k)) (fun k => idealD (sp.dat k)) =
+      worldImp sp imp fr realV idealD (i + 1) fr realV realV := by
+  simp only [worldImp]
   congr 1
   funext w e
   have hd : wDrawK fr i fr w e = wDrawK fr (i + 1) fr w e := by
@@ -1828,48 +1993,52 @@ noncomputable def CDAdv.advantage {σ D V : Type} (real ideal : D → SPComp V)
 section HybK
 
 variable {K V Ks D : Type} [Inhabited K] [Fintype Ks] [Nonempty Ks] [Inhabited Ks]
-  (sp : KeySplit K Ks D) (realV : K → SPComp V) (idealD : D → SPComp V)
+  (sp : KeySplit K Ks D) (imp : Rec K → Bool) (realV : K → SPComp V) (idealD : D → SPComp V)
 
-/-- The hybrid world `i` at the split `sp`: the keys below `i` read ideally at their datum, the
-keys from `i` on read really, every key drawn by the kernel `sp.fresh`. -/
-noncomputable abbrev hybK (i : ℕ) : Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
-  worldK sp sp.fresh realV idealD i sp.fresh realV realV
+/-- The hybrid world `i` at the split `sp` under the impersonation predicate `imp`: the keys
+below `i` read ideally at their datum, the keys from `i` on read really, every key drawn by the
+kernel `sp.fresh`. -/
+noncomputable abbrev hybImp (i : ℕ) : Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
+  worldImp sp imp sp.fresh realV idealD i sp.fresh realV realV
 
-/-- The world of the second stage of the reduction of the step `i`: the first read of the key
-`i` returns the challenge `v`, its later reads are ideal. -/
-noncomputable abbrev chalWorldK (i : ℕ) (v : V) : Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
-  worldK sp sp.fresh realV idealD i sp.fresh (fun _ => SPComp.pure v)
+/-- The world of the second stage of the reduction of the step `i` under the impersonation
+predicate `imp`: the first read of the key `i` returns the challenge `v`, its later reads are
+ideal. -/
+noncomputable abbrev chalWorldImp (i : ℕ) (v : V) :
+    Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
+  worldImp sp imp sp.fresh realV idealD i sp.fresh (fun _ => SPComp.pure v)
     (fun k => idealD (sp.dat k))
 
 /-- **The two-stage reduction of the step `i`.** The first stage runs the environment `Z` from
 its heap against the hybrid world `i + 1` up to the first `getKey` of the key `i`, and outputs
 the split point and the datum of the key `i`. The second stage continues the run from the split
 point against the world whose first read of the key `i` returns the challenge view, and applies
-the distinguisher of `Z`. -/
-noncomputable def hopRedK (i : ℕ) {ζ : Type}
+the distinguisher of `Z`. The worlds are those under the impersonation predicate `imp`. -/
+noncomputable def hopRedImp (i : ℕ) {ζ : Type}
     (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) :
     CDAdv (ℕ × (ζ × WSt K × Bool) × Option (HEv ⊕ AEv K)) D V where
   pre _ := SPComp.map (fun s => (s, sp.dat (s.2.1.2.1.kv i)))
-    (loopTo (hybK sp realV idealD (i + 1)) (fun _ => false) Z.input
+    (loopTo (hybImp sp imp realV idealD (i + 1)) (fun _ => false) Z.input
       (fun w e => useK i w e = true) Z.input.rounds (Z.input.init, WSt.init, false)) Z.heap
-  guess s v := SPComp.bind (loopRest (chalWorldK sp realV idealD i v) (fun _ => false) Z.input s)
-    fun c => Z.dist c.1
+  guess s v :=
+    SPComp.bind (loopRest (chalWorldImp sp imp realV idealD i v) (fun _ => false) Z.input s)
+      fun c => Z.dist c.1
 
 /-- The game of the two-stage reduction from the empty heap is the two-stage run from the heap of
 the environment. -/
-theorem hopRedK_game (i : ℕ) {ζ : Type} (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ)
+theorem hopRedImp_game (i : ℕ) {ζ : Type} (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ)
     (ch : D → SPComp V) :
-    prTrue ((hopRedK sp realV idealD i Z).game ch) Heap.empty =
-      prTrue (SPComp.bind (loopTo (hybK sp realV idealD (i + 1)) (fun _ => false) Z.input
+    prTrue ((hopRedImp sp imp realV idealD i Z).game ch) Heap.empty =
+      prTrue (SPComp.bind (loopTo (hybImp sp imp realV idealD (i + 1)) (fun _ => false) Z.input
           (fun w e => useK i w e = true) Z.input.rounds (Z.input.init, WSt.init, false))
         fun s => SPComp.bind (ch (sp.dat (s.2.1.2.1.kv i))) fun v =>
-          SPComp.bind (loopRest (chalWorldK sp realV idealD i v) (fun _ => false) Z.input s)
+          SPComp.bind (loopRest (chalWorldImp sp imp realV idealD i v) (fun _ => false) Z.input s)
             fun c => Z.dist c.1) Z.heap := by
-  have h : prTrue ((hopRedK sp realV idealD i Z).game ch) Heap.empty =
+  have h : prTrue ((hopRedImp sp imp realV idealD i Z).game ch) Heap.empty =
       prTrue (SPComp.bind (SPComp.map (fun s => (s, sp.dat (s.2.1.2.1.kv i)))
-        (loopTo (hybK sp realV idealD (i + 1)) (fun _ => false) Z.input
+        (loopTo (hybImp sp imp realV idealD (i + 1)) (fun _ => false) Z.input
           (fun w e => useK i w e = true) Z.input.rounds (Z.input.init, WSt.init, false)))
-        fun p => SPComp.bind (ch p.2) ((hopRedK sp realV idealD i Z).guess p.1)) Z.heap := rfl
+        fun p => SPComp.bind (ch p.2) ((hopRedImp sp imp realV idealD i Z).guess p.1)) Z.heap := rfl
   rw [h]
   simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
   rfl
@@ -1891,28 +2060,30 @@ theorem KeySplit.ph_of_fresh (p kf : K)
 neither touch the heap nor fail, the distance between the hybrid worlds `i` and `i + 1` at the
 environment `Z` is at most the chosen-datum advantage of the two-stage reduction `hopRedK i Z`
 between the real view at a uniform secret part (`sp.real realV`) and the ideal view `idealD`,
-plus the probability that the key `i` is read twice in the world `i`. -/
-theorem hyb_stepK (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
+plus the probability that the key `i` is read twice in the world `i`. The worlds are those
+under the impersonation predicate `imp`. -/
+theorem hyb_stepImp (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
     (hI : ∀ d, SPComp.IsPure (idealD d) ∧ SPComp.NoFail (idealD d)) (i : ℕ) {ζ : Type}
     (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) :
-    Env.gap (view (hybK sp realV idealD i)) (view (hybK sp realV idealD (i + 1))) Z ≤
-      (hopRedK sp realV idealD i Z).advantage (sp.real realV) idealD +
-        prBad (hybK sp realV idealD i) (reuse i) Z := by
+    Env.gap (view (hybImp sp imp realV idealD i)) (view (hybImp sp imp realV idealD (i + 1))) Z ≤
+      (hopRedImp sp imp realV idealD i Z).advantage (sp.real realV) idealD +
+        prBad (hybImp sp imp realV idealD i) (reuse i) Z := by
   have hs := CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_sample Ks
   have hF := KeySplit.fresh_pureNF sp
   have hRK : ∀ d, SPComp.IsPure (sp.real realV d) ∧ SPComp.NoFail (sp.real realV d) :=
     fun d => CatCrypt.Crypto.PAKE.CPaceSquare.PureNF.bind hs fun s => hR _
   set rdI : K → SPComp V := fun k => idealD (sp.dat k) with hrdI
-  set L := worldK sp sp.fresh realV idealD i sp.fresh (fun k => sp.real realV (sp.dat k)) rdI
+  set L := worldImp sp imp sp.fresh realV idealD i sp.fresh (fun k => sp.real realV (sp.dat k)) rdI
   set Hs : Ks → Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) := fun s =>
-    worldK sp sp.fresh realV idealD i (fun p => SPComp.pure (sp.key s (sp.dat p))) realV realV
+    worldImp sp imp sp.fresh realV idealD i (fun p => SPComp.pure (sp.key s (sp.dat p))) realV realV
   set Ls : Ks → Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) := fun s =>
-    worldK sp sp.fresh realV idealD i sp.fresh (fun k => realV (sp.key s (sp.dat k))) rdI
+    worldImp sp imp sp.fresh realV idealD i sp.fresh (fun k => realV (sp.key s (sp.dat k))) rdI
   -- the key `i` drawn before the run, in the world `i` and in the lazy world `L`
   have hH : ∀ bad : WSt K → Bool, SPComp.bind (SPComp.sample Ks)
-      (fun s => run (Hs s) bad Z.input) = run (hybK sp realV idealD i) bad Z.input := fun bad =>
-    run_world_createK sp sp.fresh realV idealD i hs.1 hs.2 (fun s p => sp.key s (sp.dat p))
-      (fun _ => rfl) realV realV bad Z.input
+      (fun s => run (Hs s) bad Z.input) = run (hybImp sp imp realV idealD i) bad Z.input :=
+    fun bad =>
+      run_world_createK sp sp.fresh realV idealD i hs.1 hs.2 (fun s p => sp.key s (sp.dat p))
+        (fun _ => rfl) realV realV bad Z.input
   have hL : SPComp.bind (SPComp.sample Ks) (fun s => run (Ls s) (fun _ => false) Z.input) =
       run L (fun _ => false) Z.input :=
     run_world_readK sp sp.fresh realV idealD i sp.fresh hs.1 hs.2
@@ -1927,9 +2098,10 @@ theorem hyb_stepK (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV 
       (fun a b h => by rw [h]) (fun k => (hR k).2) (fun d => (hI d).2) (fun p => (hF p).2)
       (fun _ => SPComp.pure_noFail _) (fun p => (hF p).2) (fun k => (hR k).2)
       (fun k => (hR _).2) (fun k => (hR k).2) (fun k => (hI _).2)
-  have h1 : absDiff (prTrue (SPComp.bind (view (hybK sp realV idealD i) Z.input) Z.dist) Z.heap)
+  have h1 : absDiff
+      (prTrue (SPComp.bind (view (hybImp sp imp realV idealD i) Z.input) Z.dist) Z.heap)
       (prTrue (SPComp.bind (view L Z.input) Z.dist) Z.heap) ≤
-      prBad (hybK sp realV idealD i) (reuse i) Z := by
+      prBad (hybImp sp imp realV idealD i) (reuse i) Z := by
     have h := absDiff_prTrue_bind_le_bind (SPComp.sample Ks)
       (fun s => SPComp.bind (view (Hs s) Z.input) Z.dist)
       (fun s => SPComp.bind (view (Ls s) Z.input) Z.dist)
@@ -1939,77 +2111,145 @@ theorem hyb_stepK (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV 
     simp only [prBad, view, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, ← hH, ← hL]
     exact h
   -- the split at the first read of the key `i`
-  have hI1 : hybK sp realV idealD (i + 1) =
-      worldK sp sp.fresh realV idealD i sp.fresh rdI rdI :=
+  have hI1 : hybImp sp imp realV idealD (i + 1) =
+      worldImp sp imp sp.fresh realV idealD i sp.fresh rdI rdI :=
     (chalWorld_idealK sp sp.fresh realV idealD i).symm
   have hcongr : loopTo L (fun _ => false) Z.input (fun w e => useK i w e = true)
         Z.input.rounds (Z.input.init, WSt.init, false) =
-      loopTo (hybK sp realV idealD (i + 1)) (fun _ => false) Z.input
+      loopTo (hybImp sp imp realV idealD (i + 1)) (fun _ => false) Z.input
         (fun w e => useK i w e = true) Z.input.rounds (Z.input.init, WSt.init, false) := by
     rw [hI1]
     refine loopTo_congr _ L (fun _ => false) Z.input _ (fun _ => True)
       (fun _ _ _ _ _ => trivial) (fun t e _ hu => ?_) _ _ trivial
-    simp only [L, worldK]
+    simp only [L, worldImp]
     rw [wOut_congrK sp realV idealD e fun sid pid j he hj => readOut_neK sp realV idealD
       (fun hji : j = i => hu (useK_iff.mpr ⟨sid, pid, he, by rw [← hji]; exact hj⟩))
       _ _ _ _ t]
-  have hsL := run_world_read_atK sp sp.fresh realV idealD i sp.fresh
+  have hsL := run_world_read_atK sp (imp := imp) sp.fresh realV idealD i sp.fresh
     (fun k => sp.real realV (sp.dat k)) rdI (fun k => hRK _) (fun _ => false) Z.input
-  have hsI := run_world_read_atK sp sp.fresh realV idealD i sp.fresh rdI rdI
+  have hsI := run_world_read_atK sp (imp := imp) sp.fresh realV idealD i sp.fresh rdI rdI
     (fun k => hI _) (fun _ => false) Z.input
   have hreal : prTrue (SPComp.bind (view L Z.input) Z.dist) Z.heap =
-      prTrue ((hopRedK sp realV idealD i Z).game (sp.real realV)) Heap.empty := by
-    rw [hopRedK_game, ← hcongr]
+      prTrue ((hopRedImp sp imp realV idealD i Z).game (sp.real realV)) Heap.empty := by
+    rw [hopRedImp_game, ← hcongr]
     simp only [view]
     rw [show run L (fun _ => false) Z.input = _ from hsL]
     simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
     rfl
-  have hideal : prTrue (SPComp.bind (view (hybK sp realV idealD (i + 1)) Z.input) Z.dist)
-      Z.heap = prTrue ((hopRedK sp realV idealD i Z).game idealD) Heap.empty := by
-    rw [hopRedK_game, hI1]
+  have hideal : prTrue (SPComp.bind (view (hybImp sp imp realV idealD (i + 1)) Z.input) Z.dist)
+      Z.heap = prTrue ((hopRedImp sp imp realV idealD i Z).game idealD) Heap.empty := by
+    rw [hopRedImp_game, hI1]
     simp only [view, hsI, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
     rfl
   rw [hreal] at h1
   unfold Env.gap
   refine le_trans (absDiff_triangle _
-    (prTrue ((hopRedK sp realV idealD i Z).game (sp.real realV)) Heap.empty) _) ?_
+    (prTrue ((hopRedImp sp imp realV idealD i Z).game (sp.real realV)) Heap.empty) _) ?_
   rw [hideal, add_comm]
   exact add_le_add le_rfl h1
 
 /-- The bound of the hybrid argument at a split at an environment `Z` of the functionality:
 over the keys `i` below the number of activations of `Z`, the chosen-datum advantage of the
-two-stage reduction `hopRedK i Z`, plus the probability that the key `i` is read twice. -/
-noncomputable def scBoundK {ζ : Type} (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) :
+two-stage reduction `hopRedImp i Z`, plus the probability that the key `i` is read twice; the
+worlds are those under the impersonation predicate `imp`. -/
+noncomputable def scBoundImp {ζ : Type} (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) :
     ℝ≥0∞ :=
   ∑ i ∈ Finset.range Z.input.rounds,
-    ((hopRedK sp realV idealD i Z).advantage (sp.real realV) idealD +
-      prBad (hybK sp realV idealD i) (reuse i) Z)
+    ((hopRedImp sp imp realV idealD i Z).advantage (sp.real realV) idealD +
+      prBad (hybImp sp imp realV idealD i) (reuse i) Z)
 
-/-- **`F_AKEK sp.fresh` followed by the ratchet realizes the ideal secure channel with a datum
-`F_SCK`.** For views `realV k` and `idealD d` that neither touch the heap nor fail,
-`FRK sp.fresh realV` realizes `F_SCK sp realV idealD` with the bound `scBoundK`: a hybrid
-argument over the keys that the run creates (one per activation), each step bounded by
-`hyb_stepK`. -/
-theorem FRK_realizes_F_SCK (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
+/-- **`F_AKEImpK sp.fresh imp` followed by the ratchet realizes the view functionality with a
+datum and the impersonation predicate `imp`.** For views `realV k` and `idealD d` that neither
+touch the heap nor fail, `FRImp imp sp.fresh realV` realizes `F_SCImpK imp sp realV idealD`
+with the bound `scBoundImp`: a hybrid argument over the keys that the run creates (one per
+activation), each step bounded by `hyb_stepImp`. -/
+theorem FRImp_realizes_F_SCImpK
+    (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
     (hI : ∀ d, SPComp.IsPure (idealD d) ∧ SPComp.NoFail (idealD d)) :
-    Realizes (FRK sp.fresh realV) (F_SCK sp realV idealD)
-      (fun _ Z => scBoundK sp realV idealD Z) := by
+    Realizes (FRImp imp sp.fresh realV) (F_SCImpK imp sp realV idealD)
+      (fun _ Z => scBoundImp sp imp realV idealD Z) := by
   have hfrp : ∀ p kf, IsOutcome (sp.fresh p) kf → sp.ph kf = sp.ph p := sp.ph_of_fresh
-  have h0 : Realizes (FRK sp.fresh realV) (hybK sp realV idealD 0) (fun _ _ => 0) :=
+  have h0 : Realizes (FRImp imp sp.fresh realV) (hybImp sp imp realV idealD 0)
+      (fun _ _ => 0) :=
     realizes_symm (world_zero_stepMapK sp sp.fresh realV idealD hfrp).realizes
-  have hH := Realizes.hybrid_rounds (hybK sp realV idealD) (F_SCK sp realV idealD)
-    (fun i _ Z => (hopRedK sp realV idealD i Z).advantage (sp.real realV) idealD +
-      prBad (hybK sp realV idealD i) (reuse i) Z)
-    (fun _ _ => 0) (fun i _ Z => hyb_stepK sp realV idealD hR hI i Z) fun _ Z => by
-      have h := world_endK sp sp.fresh realV idealD Z.input.rounds (fun k => (hR k).2)
-        (fun d => (hI d).2) (KeySplit.fresh_pureNF sp) hfrp _ Z
+  have hH := Realizes.hybrid_rounds (hybImp sp imp realV idealD) (F_SCImpK imp sp realV idealD)
+    (fun i _ Z => (hopRedImp sp imp realV idealD i Z).advantage (sp.real realV) idealD +
+      prBad (hybImp sp imp realV idealD i) (reuse i) Z)
+    (fun _ _ => 0) (fun i _ Z => hyb_stepImp sp imp realV idealD hR hI i Z) fun _ Z => by
+      have h := world_endK sp (imp := imp) sp.fresh realV idealD Z.input.rounds
+        (fun k => (hR k).2) (fun d => (hI d).2) (KeySplit.fresh_pureNF sp) hfrp _ Z
       dsimp only at h
       rwa [world_end_prBadK sp sp.fresh realV idealD _ Z le_rfl] at h
   intro ζ Z
   have := (h0.trans hH) ζ Z
-  simpa [scBoundK] using this
+  simpa [scBoundImp] using this
 
 end HybK
+
+section HybKInst
+
+variable {K V Ks D : Type} [Inhabited K] [Fintype Ks] [Nonempty Ks] [Inhabited Ks]
+  (sp : KeySplit K Ks D) (realV : K → SPComp V) (idealD : D → SPComp V)
+
+/-- The hybrid world `i` at the split `sp`: the keys below `i` read ideally at their datum, the
+keys from `i` on read really, every key drawn by the kernel `sp.fresh`; `hybImp` with the
+impersonation predicate that holds nowhere. -/
+noncomputable abbrev hybK (i : ℕ) : Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
+  hybImp sp (fun _ => false) realV idealD i
+
+/-- The world of the second stage of the reduction of the step `i`: `chalWorldImp` with the
+impersonation predicate that holds nowhere. -/
+noncomputable abbrev chalWorldK (i : ℕ) (v : V) : Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
+  chalWorldImp sp (fun _ => false) realV idealD i v
+
+/-- **The two-stage reduction of the step `i`**: `hopRedImp` with the impersonation predicate
+that holds nowhere. -/
+noncomputable def hopRedK (i : ℕ) {ζ : Type}
+    (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) :
+    CDAdv (ℕ × (ζ × WSt K × Bool) × Option (HEv ⊕ AEv K)) D V :=
+  hopRedImp sp (fun _ => false) realV idealD i Z
+
+/-- The game of the two-stage reduction from the empty heap is the two-stage run from the heap of
+the environment. -/
+theorem hopRedK_game (i : ℕ) {ζ : Type} (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ)
+    (ch : D → SPComp V) :
+    prTrue ((hopRedK sp realV idealD i Z).game ch) Heap.empty =
+      prTrue (SPComp.bind (loopTo (hybK sp realV idealD (i + 1)) (fun _ => false) Z.input
+          (fun w e => useK i w e = true) Z.input.rounds (Z.input.init, WSt.init, false))
+        fun s => SPComp.bind (ch (sp.dat (s.2.1.2.1.kv i))) fun v =>
+          SPComp.bind (loopRest (chalWorldK sp realV idealD i v) (fun _ => false) Z.input s)
+            fun c => Z.dist c.1) Z.heap :=
+  hopRedImp_game sp _ realV idealD i Z ch
+
+/-- **One step of the hybrid argument at a split**: `hyb_stepImp` with the impersonation
+predicate that holds nowhere. -/
+theorem hyb_stepK (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
+    (hI : ∀ d, SPComp.IsPure (idealD d) ∧ SPComp.NoFail (idealD d)) (i : ℕ) {ζ : Type}
+    (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) :
+    Env.gap (view (hybK sp realV idealD i)) (view (hybK sp realV idealD (i + 1))) Z ≤
+      (hopRedK sp realV idealD i Z).advantage (sp.real realV) idealD +
+        prBad (hybK sp realV idealD i) (reuse i) Z :=
+  hyb_stepImp sp _ realV idealD hR hI i Z
+
+/-- The bound of the hybrid argument at a split at an environment `Z` of the functionality:
+over the keys `i` below the number of activations of `Z`, the chosen-datum advantage of the
+two-stage reduction `hopRedK i Z`, plus the probability that the key `i` is read twice;
+`scBoundImp` with the impersonation predicate that holds nowhere. -/
+noncomputable def scBoundK {ζ : Type} (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) :
+    ℝ≥0∞ :=
+  scBoundImp sp (fun _ => false) realV idealD Z
+
+/-- **`F_AKEK sp.fresh` followed by the ratchet realizes the view functionality with a datum
+`F_SCK`.** For views `realV k` and `idealD d` that neither touch the heap nor fail,
+`FRK sp.fresh realV` realizes `F_SCK sp realV idealD` with the bound `scBoundK`:
+`FRImp_realizes_F_SCImpK` with the impersonation predicate that holds nowhere. -/
+theorem FRK_realizes_F_SCK (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
+    (hI : ∀ d, SPComp.IsPure (idealD d) ∧ SPComp.NoFail (idealD d)) :
+    Realizes (FRK sp.fresh realV) (F_SCK sp realV idealD)
+      (fun _ Z => scBoundK sp realV idealD Z) :=
+  FRImp_realizes_F_SCImpK sp _ realV idealD hR hI
+
+end HybKInst
 
 /-! ## Steps of the hybrid worlds -/
 
@@ -2155,7 +2395,7 @@ theorem world_upto_reuse (i : ℕ) (k : K) {rd1 rdA rdB : K → SPComp V}
   rw [← SPComp.bind_pure (SPComp.sample K)]
   exact rHoare_sample_r fun _ => rHoare_ret fun _ _ hh => ⟨hh, trivial⟩
 
-/-! ## The last hybrid world and the ideal secure channel -/
+/-! ## The last hybrid world and the view functionality -/
 
 /-- The output of `F_SC` at an event. -/
 noncomputable def scOut (t : St K) : HEv ⊕ AEv K → SPComp (HOut V ⊕ AOut) :=
@@ -2185,7 +2425,7 @@ theorem wDraw_pureNF {i : ℕ} {cre : SPComp K} (hc : SPComp.IsPure cre ∧ SPCo
     SPComp.IsPure (wDraw i cre w e) ∧ SPComp.NoFail (wDraw i cre w e) :=
   wDrawK_pureNF _ (fun _ => CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_sample K) (fun _ => hc) w e
 
-/-- **The last hybrid world is the ideal secure channel up to `n` activations.** The hybrid
+/-- **The last hybrid world is the view functionality up to `n` activations.** The hybrid
 world `n` with real reads realizes `F_SC` with bound the probability that the run exceeds `n`
 non-idle activations. -/
 theorem world_end (n : ℕ) (hR : ∀ k, SPComp.NoFail (realV k)) (hI : SPComp.NoFail idealV) :
@@ -2351,7 +2591,7 @@ theorem hyb_step (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k
     fun v => SPComp.bind (view (chalWorld realV idealV i v) Z.input) Z.dist) Z.heap) _) ?_
   exact (add_le_add hupto (le_of_eq h4)).trans (le_of_eq (add_comm _ _))
 
-/-! ## The secure channel over `F_AKE` -/
+/-! ## The view functionality over `F_AKE` -/
 
 /-- The bound of the hybrid argument at an environment `Z` of the functionality: over the
 keys `i` below the number of activations of `Z`, the advantage of the reduction `hopRed i Z`
@@ -2363,7 +2603,7 @@ noncomputable def scBound {ζ : Type} (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V
     (AdvantageA (SPComp.bind (SPComp.sample K) realV) idealV (hopRed realV idealV i Z) +
       prBad (hyb realV idealV i) (reuse i) Z)
 
-/-- **`F_AKE` followed by the ratchet realizes the ideal secure channel.** For views `realV k`
+/-- **`F_AKE` followed by the ratchet realizes the view functionality.** For views `realV k`
 and `idealV` that neither touch the heap nor fail, `FR realV` realizes `F_SC realV idealV`
 with the bound `scBound`: a hybrid argument over the keys that the run creates (one per
 activation), each step bounded by `hyb_step`. -/
@@ -2561,16 +2801,16 @@ theorem chanOut_pureNF {f : Rec K → K → SPComp V}
     · exact CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _
   · exact CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _
 
-/-- **A forwarding simulator over `F_AKEK fresh` followed by the key layer is its wrapper over
-the real stack `FRK fresh`** (composition plumbing): the cascade of `π` running with
-`F_AKEK fresh` and the key layer and `simSCOver π F` running with `FRK fresh realV` have the
-same steps, up to the unit state of the layer. -/
-theorem stack_ideal_stepMap_ofK (fresh : K → SPComp K)
+/-- **A forwarding simulator over `F_AKEImpK fresh imp` followed by the key layer is its wrapper
+over the real stack `FRImp imp fresh`** (composition plumbing): the cascade of `π` running with
+`F_AKEImpK fresh imp` and the key layer and `simSCOver π F` running with `FRImp imp fresh realV`
+have the same steps, up to the unit state of the layer. -/
+theorem stack_ideal_stepMap_ofImp (imp : Rec K → Bool) (fresh : K → SPComp K)
     (π : MultiHybrid σ (HEv ⊕ AE) (HOut K ⊕ R) (FEv K) (FOut K)) (F : FwdData σ R)
     (hF : IsFwd π F) (realV : K → SPComp V)
     (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k)) :
-    Sys.StepMapOn ((simSCOver (V := V) π F).withSub (FRK fresh realV))
-      ((π.withSub (F_AKEK fresh true)).seq (keyLayer realV))
+    Sys.StepMapOn ((simSCOver (V := V) π F).withSub (FRImp imp fresh realV))
+      ((π.withSub (F_AKEImpK fresh imp true)).seq (keyLayer realV))
       (fun _ => True) (fun p => (p, ())) where
   init_inv := trivial
   init_map := rfl
@@ -2585,28 +2825,40 @@ theorem stack_ideal_stepMap_ofK (fresh : K → SPComp K)
     rcases r with ⟨s', (ev | (h | ro))⟩
     · simp only [MultiHybrid.drive, decK, hF.finish_eq, SPComp.bind_assoc, SPComp.pure_bind]
       rcases ev with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | ev
-      · cases F.phase s' <;> simp [FRK, chanHon, F_AKEK, F_AKEImpK, honSys, honStep, keyLayer,
+      · cases F.phase s' <;> simp [FRImp, chanHon, F_AKEImpK, honSys, honStep, keyLayer,
           fwdOut, SPComp.map, SPComp.pure_bind]
       · have hc := chanOut_pureNF (fun _ k => hR k) t (sid, pid)
         cases F.phase s' with
         | none =>
-          simp only [FRK, F_AKEK, F_AKEImpK, Sys.ofPorts_step_inl, chanHon, honSys, honStep,
+          simp only [FRImp, F_AKEImpK, Sys.ofPorts_step_inl, chanHon, honSys, honStep,
             SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, fwdOut]
           have hk := keyLayer_key (R := R) realV t (sid, pid)
           simp only [SPComp.map] at hk
           rw [hk]
           simp only [SPComp.bind_assoc, SPComp.pure_bind]
         | some r =>
-          simp only [FRK, F_AKEK, F_AKEImpK, Sys.ofPorts_step_inl, chanHon, honSys, honStep,
+          simp only [FRImp, F_AKEImpK, Sys.ofPorts_step_inl, chanHon, honSys, honStep,
             SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, fwdOut, keyLayer]
           exact bind_const_of_isPure hc.1 hc.2 _
-      · simp only [FRK, F_AKEK, F_AKEImpK, advSysK, Bool.not_true, Sys.ofPorts_step_inr,
-          SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+      · simp only [FRImp, F_AKEImpK, Sys.ofPorts_step_inr, SPComp.map, SPComp.bind_assoc,
+          SPComp.pure_bind]
         congr 1; funext q
         rw [keyLayer_fwdOut_inr]
         simp only [SPComp.pure_bind]
     · exact (hn h rfl).elim
     · simp [MultiHybrid.drive, decK, keyLayer, SPComp.map, SPComp.pure_bind]
+
+/-- **A forwarding simulator over `F_AKEK fresh` followed by the key layer is its wrapper over
+the real stack `FRK fresh`** (composition plumbing): `stack_ideal_stepMap_ofImp` with the
+impersonation predicate that holds nowhere. -/
+theorem stack_ideal_stepMap_ofK (fresh : K → SPComp K)
+    (π : MultiHybrid σ (HEv ⊕ AE) (HOut K ⊕ R) (FEv K) (FOut K)) (F : FwdData σ R)
+    (hF : IsFwd π F) (realV : K → SPComp V)
+    (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k)) :
+    Sys.StepMapOn ((simSCOver (V := V) π F).withSub (FRK fresh realV))
+      ((π.withSub (F_AKEK fresh true)).seq (keyLayer realV))
+      (fun _ => True) (fun p => (p, ())) :=
+  stack_ideal_stepMap_ofImp _ fresh π F hF realV hR
 
 /-- **A forwarding simulator over `F_AKE` followed by the key layer is its wrapper over the real
 stack `FR`** (composition plumbing): the cascade of `π` running with `F_AKE` and the key layer
@@ -2765,7 +3017,7 @@ theorem stack_ideal_stepMap (realV : K → SPComp V)
 
 end Sim
 
-/-! ## The Signal stack realizes the ideal secure channel -/
+/-! ## The Signal stack realizes the view functionality -/
 
 section Stack
 
@@ -2773,17 +3025,31 @@ variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [No
   [Inhabited K] (G : DHGroup S W)
 
 omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `FRImp imp fresh` is idle at the idle event of the adversary. -/
+theorem FRImp_idleAt {V : Type} (imp : Rec K → Bool) (fresh : K → SPComp K)
+    (realV : K → SPComp V) :
+    MultiHybrid.IdleAt (FRImp imp fresh realV) (.inr .idle) (.inr .ack) := fun t => by
+  simp [FRImp, advSysImp, SPComp.map]
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
 /-- `FRK fresh` is idle at the idle event of the adversary. -/
 theorem FRK_idleAt {V : Type} (fresh : K → SPComp K) (realV : K → SPComp V) :
-    MultiHybrid.IdleAt (FRK fresh realV) (.inr .idle) (.inr .ack) := fun t => by
-  simp [FRK, advSysK, advSysImp, SPComp.map]
+    MultiHybrid.IdleAt (FRK fresh realV) (.inr .idle) (.inr .ack) :=
+  FRImp_idleAt _ fresh realV
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `F_SCImpK imp` is idle at the idle event of the adversary. -/
+theorem F_SCImpK_idleAt {V Ks D : Type} [Inhabited Ks] (imp : Rec K → Bool)
+    (sp : KeySplit K Ks D) (realV : K → SPComp V) (idealV : D → SPComp V) :
+    MultiHybrid.IdleAt (F_SCImpK imp sp realV idealV) (.inr .idle) (.inr .ack) := fun t => by
+  simp [F_SCImpK, advSysImp, SPComp.map]
 
 omit [Fintype K] [Nonempty K] [Inhabited K] in
 /-- `F_SCK` is idle at the idle event of the adversary. -/
 theorem F_SCK_idleAt {V Ks D : Type} [Inhabited Ks] (sp : KeySplit K Ks D)
     (realV : K → SPComp V) (idealV : D → SPComp V) :
-    MultiHybrid.IdleAt (F_SCK sp realV idealV) (.inr .idle) (.inr .ack) := fun t => by
-  simp [F_SCK, advSysK, advSysImp, SPComp.map]
+    MultiHybrid.IdleAt (F_SCK sp realV idealV) (.inr .idle) (.inr .ack) :=
+  F_SCImpK_idleAt _ sp realV idealV
 
 omit [Inhabited K] in
 /-- `FR` is idle at the idle event of the adversary. -/
@@ -2865,6 +3131,28 @@ theorem stack_realizes_FSC_of {τ σ AE R V : Type} (X : Sys τ (HEv ⊕ AE) (HO
   exact h
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] in
+/-- **The wrapper over `FRImp imp sp.fresh` realizes the wrapper over `F_SCImpK imp`**: for
+views that neither touch the heap nor fail, `simSCOver π F` over `FRImp imp sp.fresh realV`
+realizes `simSCOver π F` over `F_SCImpK imp sp realV idealV` with `scBoundImp` at the
+environment reduced through the wrapper. -/
+theorem simSCOver_realizesImp {σ AE R V Ks D : Type} [Fintype Ks] [Nonempty Ks] [Inhabited Ks]
+    (π : MultiHybrid σ (HEv ⊕ AE) (HOut K ⊕ R) (FEv K) (FOut K)) (F : FwdData σ R)
+    (imp : Rec K → Bool) (sp : KeySplit K Ks D) (realV : K → SPComp V) (idealV : D → SPComp V)
+    (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
+    (hI : ∀ d, SPComp.IsPure (idealV d) ∧ SPComp.NoFail (idealV d)) :
+    Realizes ((simSCOver (V := V) π F).withSub (FRImp imp sp.fresh realV))
+      ((simSCOver π F).withSub (F_SCImpK imp sp realV idealV))
+      (fun _ Z => scBoundImp sp imp realV idealV ((simSCOver π F).reduceEnv (.inr .idle) Z)) := by
+  intro ζ Z
+  have h := MultiHybrid.adv_withSub (simSCOver (V := V) π F) (.inr .idle) (.inr .ack)
+    (.inr .ack) (FRImp imp sp.fresh realV) (F_SCImpK imp sp realV idealV)
+    (FRImp_idleAt imp _ realV) (F_SCImpK_idleAt imp sp realV idealV) Z
+  unfold adv at h
+  change Env.gap _ _ Z ≤ _
+  rw [h]
+  exact FRImp_realizes_F_SCImpK sp imp realV idealV hR hI _ _
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] in
 /-- **The wrapper over `FRK sp.fresh` realizes the wrapper over `F_SCK`**: for views that
 neither touch the heap nor fail, `simSCOver π F` over `FRK sp.fresh realV` realizes
 `simSCOver π F` over `F_SCK sp realV idealV` with `scBoundK` at the environment reduced through
@@ -2876,15 +3164,51 @@ theorem simSCOver_realizesK {σ AE R V Ks D : Type} [Fintype Ks] [Nonempty Ks] [
     (hI : ∀ d, SPComp.IsPure (idealV d) ∧ SPComp.NoFail (idealV d)) :
     Realizes ((simSCOver (V := V) π F).withSub (FRK sp.fresh realV))
       ((simSCOver π F).withSub (F_SCK sp realV idealV))
-      (fun _ Z => scBoundK sp realV idealV ((simSCOver π F).reduceEnv (.inr .idle) Z)) := by
+      (fun _ Z => scBoundK sp realV idealV ((simSCOver π F).reduceEnv (.inr .idle) Z)) :=
+  simSCOver_realizesImp π F _ sp realV idealV hR hI
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] in
+/-- **KE-then-channel composition with a public datum and an impersonation predicate** (genuine
+UC). Let the key exchange `X` followed by the key layer realize, with the bound `ε`, the opaque
+forwarding simulator `π` over `F_AKEImpK sp.fresh imp` with unlinked delivery followed by the
+key layer, and let the views `realV k` and `idealV d` neither touch the heap nor fail.
+
+*Ideal functionality.* `F_SCImpK imp sp realV idealV`: the functionality whose completed
+sessions show the ideal view `idealV d` at the datum `d` of the session, and on which
+`impersonate` compromises a fresh session without a key whose record satisfies `imp`.
+
+*Real world.* `X` followed by the key layer `keyLayer realV`, which keys the view `realV` with
+the session key of every `getKey` answer of `X`.
+
+*Simulator.* `chanSim π F`: `π` with its decisions read over `F_SCImpK imp`, forwarding the
+answers of `F_SCImpK imp` on the honest port in the phases in which `π` forwards the answers of
+`F_AKEImpK sp.fresh imp` on that port.
+
+*Bound.* For every environment `Z`, `ε Z`, plus `scBoundImp sp imp realV idealV` at the
+environment reduced through the simulator: per key, the chosen-datum advantage of the two-stage
+reduction `hopRedImp` between `sp.real realV` and `idealV`, and the probability that the key is
+read twice. -/
+theorem stack_realizes_FSCImp_of {τ σ AE R V Ks D : Type} [Fintype Ks] [Nonempty Ks]
+    [Inhabited Ks] (X : Sys τ (HEv ⊕ AE) (HOut K ⊕ R))
+    (π : MultiHybrid σ (HEv ⊕ AE) (HOut K ⊕ R) (FEv K) (FOut K))
+    (hπ : π.Opaque ((keHonView (K := K)).sum (eqView (E := AE) (O := R))) subView)
+    (F : FwdData σ R) (hF : IsFwd π F) (imp : Rec K → Bool) (sp : KeySplit K Ks D)
+    (realV : K → SPComp V) (idealV : D → SPComp V)
+    (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
+    (hI : ∀ d, SPComp.IsPure (idealV d) ∧ SPComp.NoFail (idealV d))
+    {ε : (ζ : Type) → Env (Strat ζ (HEv ⊕ AE) (HOut V ⊕ R)) ζ → ℝ≥0∞}
+    (hXL : Realizes (X.seq (keyLayer realV))
+      (((Simulator.ofMultiHybrid π hπ).withSub (F_AKEImpK sp.fresh imp true)).seq
+        (keyLayer realV)) ε) :
+    RealizesSim (X.seq (keyLayer realV)) (F_SCImpK imp sp realV idealV) (chanSim π F)
+      (fun ζ Z => ε ζ Z +
+        scBoundImp sp imp realV idealV ((simSCOver π F).reduceEnv (.inr .idle) Z)) := by
+  have hB := realizes_symm (stack_ideal_stepMap_ofImp imp sp.fresh π F hF realV hR).realizes
+  have hC := simSCOver_realizesImp π F imp sp realV idealV hR hI
   intro ζ Z
-  have h := MultiHybrid.adv_withSub (simSCOver (V := V) π F) (.inr .idle) (.inr .ack)
-    (.inr .ack) (FRK sp.fresh realV) (F_SCK sp realV idealV) (FRK_idleAt _ realV)
-    (F_SCK_idleAt sp realV idealV) Z
-  unfold adv at h
-  change Env.gap _ _ Z ≤ _
-  rw [h]
-  exact FRK_realizes_F_SCK sp realV idealV hR hI _ _
+  have h := ((hXL.trans hB).trans hC) ζ Z
+  simp only [add_zero] at h
+  exact h
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] in
 /-- **KE-then-channel composition with a public datum** (genuine UC). Let the key exchange `X`
@@ -2892,7 +3216,7 @@ followed by the key layer realize, with the bound `ε`, the opaque forwarding si
 `F_AKEK sp.fresh` with unlinked delivery followed by the key layer, and let the views `realV k`
 and `idealV d` neither touch the heap nor fail.
 
-*Ideal functionality.* `F_SCK sp realV idealV`: the secure channel whose completed sessions show
+*Ideal functionality.* `F_SCK sp realV idealV`: the functionality whose completed sessions show
 the ideal view `idealV d` at the datum `d` of the session.
 
 *Real world.* `X` followed by the key layer `keyLayer realV`, which keys the view `realV` with
@@ -2921,13 +3245,8 @@ theorem stack_realizes_FSCK_of {τ σ AE R V Ks D : Type} [Fintype Ks] [Nonempty
       (((Simulator.ofMultiHybrid π hπ).withSub (F_AKEK sp.fresh true)).seq (keyLayer realV)) ε) :
     RealizesSim (X.seq (keyLayer realV)) (F_SCK sp realV idealV) (chanSim π F)
       (fun ζ Z => ε ζ Z +
-        scBoundK sp realV idealV ((simSCOver π F).reduceEnv (.inr .idle) Z)) := by
-  have hB := realizes_symm (stack_ideal_stepMap_ofK sp.fresh π F hF realV hR).realizes
-  have hC := simSCOver_realizesK π F sp realV idealV hR hI
-  intro ζ Z
-  have h := ((hXL.trans hB).trans hC) ζ Z
-  simp only [add_zero] at h
-  exact h
+        scBoundK sp realV idealV ((simSCOver π F).reduceEnv (.inr .idle) Z)) :=
+  stack_realizes_FSCImp_of X π hπ F hF _ sp realV idealV hR hI hXL
 
 variable {Sc Msg Key Sa M Ct : Type} [SampleableType M] [SampleableType Ct] [Fintype Key]
   [Nonempty Key] [Fintype Sa] [Nonempty Sa]
@@ -2963,10 +3282,11 @@ noncomputable def signalBound (P : Finset PartyId) (C : CKADef Sc Msg Key)
           ((simSC G).reduceEnv (.inr .idle) Z))
 
 omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
-/-- **The Signal stack realizes the ideal secure channel** (genuine UC).
+/-- **The Signal stack realizes the transcript functionality `F_SC`** (genuine UC).
 
 *Ideal functionality.* `F_SC (smRealAt C R Gp D msgs) (sm_ideal C msgs)`: the multi-session
-secure channel built from the authenticated key exchange `F_AKE` with unlinked delivery. Its
+transcript functionality, without events for sending or receiving, built from the authenticated
+key exchange `F_AKE` with unlinked delivery. Its
 adversary port is the adversary port of `F_AKE` (notices, adaptive corruption, `newKey`,
 `newKeyUnlinked`), except that a session that completes without exposure stores no key. Its
 honest port opens sessions and, on `getKey`, outputs the secure-messaging view of the session:
@@ -2990,8 +3310,9 @@ and every environment `Z`, the distance is at most `signalBound`: the gap Diffie
 of the X3DH square, and a sum over the keys of the run of the secure-messaging advantages of the
 explicit reductions `hopRed` and of the probability that a key is read twice. The last term is
 the reuse of one root key by two ratchet runs, which `SM_Advantage` does not cover; it is `0`
-for environments that read each session key (with its partner) at most once. No real-or-random
-term of the key appears. -/
+for environments that read each session key (with its partner) at most once, and `1` for an
+environment that always makes both partners of an unexposed session read their key, for which the
+bound is then at least `1`. No real-or-random term of the key appears. -/
 theorem signal_stack_realizes_FSC (P : Finset PartyId) {C : CKADef Sc Msg Key}
     (hC : CKAPureNF C) (R : PRGDef (K × Key) (K × Sa)) (Gp : PRGDef Sa (M × Sa))
     (D : AEADDef M Ct) (msgs : List (List (M × M))) :
@@ -3041,6 +3362,8 @@ theorem hopRed.compile_tree (i : ℕ) {ζ : Type}
   sysEnvTree_compile _ Z hn hs ho hd v
 
 derive_timed hopRed.tree
+
+time_cert_try derive_reduction hopRedImp
 
 /-- **Time of the reduction of the step `i`.** On the challenge `v`, for a costed strategy of
 `Z` and a costed step of the challenge world over the same interface, from initial states of

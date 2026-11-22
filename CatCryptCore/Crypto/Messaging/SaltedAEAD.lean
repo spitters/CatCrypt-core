@@ -18,13 +18,14 @@ ratchet (SPQR), and input key material `ec_mk`, the message key of the Double Ra
 construction of Dodis, Jost, Katsumata, Prest and Schmidt (*Triple Ratchet*, ePrint 2025/078)
 this is the step `K_aead ← KDF3(K^C_aead, K^Q_aead)` with a dual PRF `KDF3`.
 
-For an AEAD `D` and a function `F : W → S → W`, `saltedAEAD D F` is the AEAD whose key is the
-classical key `k` and whose associated data carry a salt `s`: it encrypts under `F k s`. In the
-multi-salt game the adversary chooses the salt of each query and the classical key is uniform
-and hidden. The bound uses that `F` is a PRF keyed by its first argument (the left half of a
-dual PRF). HKDF-Extract is HMAC keyed by the salt, so this is the PRF property of HMAC in its
-message input, which Backendal, Bellare, Günther and Scarlata analyse (*When messages are
-keys: is HMAC a dual-PRF?*, CRYPTO 2023; reference not confirmed by DOI).
+For an AEAD `D` with keys in `Kt` and a function `F : Kt → S → Kt`, `saltedAEAD D F` is the
+AEAD whose key is the classical key `k` and whose associated data carry a salt `s`: it
+encrypts under `F k s`. In the multi-salt game the adversary chooses the salt of each query
+and the classical key is uniform and hidden. The bound uses that `F` is a PRF keyed by its
+first argument (the left half of a dual PRF). HKDF-Extract is HMAC keyed by the salt, so
+this is the PRF property of HMAC in its message input, which Backendal, Bellare, Günther and
+Scarlata analyse (*When messages are keys: is HMAC a dual-PRF?*, CRYPTO 2023; reference not
+confirmed by DOI).
 
 The proof has two steps. Replacing `F k` by a random function of the salt costs the left
 dual-PRF advantage against `saltedPRFRed D A`; the keys of distinct salts are then independent
@@ -66,12 +67,13 @@ open CatCrypt.Crypto.Assumptions CatCrypt.Crypto.MultiKeyPRF CatCrypt.Crypto.Hyb
 open scoped ENNReal
 
 variable {W : Type} [SampleableType W] {C : Type} [SampleableType C] {AD S : Type}
+  {Kt : Type} [SampleableType Kt]
 
 /-! ## The construction -/
 
 /-- The AEAD under a derived key: the associated data `(s, ad)` carry the salt `s`, and the
 key `k` encrypts and decrypts as `D` under the key `F k s`. -/
-def saltedAEAD (D : AEADDef W C AD) (F : W → S → W) : AEADDef W C (S × AD) where
+def saltedAEAD (D : AEADDef W C AD Kt) (F : Kt → S → Kt) : AEADDef W C (S × AD) Kt where
   encrypt k pt sa := D.encrypt (F k sa.1) pt sa.2
   decrypt k ct sa := D.decrypt (F k sa.1) ct sa.2
 
@@ -86,20 +88,20 @@ def queryUnsalt : AEAD_CCA_Query W C (S × AD) → AEAD_CCA_Query W C AD
   | .inr (ct, sa) => .inr (ct, sa.2)
 
 /-- The answer of the real oracles of `D` under the key `k`. -/
-def aeadAnswer (D : AEADDef W C AD) (k : W) : AEAD_CCA_Query W C AD → AEAD_CCA_Answer W C
+def aeadAnswer (D : AEADDef W C AD Kt) (k : Kt) : AEAD_CCA_Query W C AD → AEAD_CCA_Answer W C
   | .inl (pt, ad) => .inl (D.encrypt k pt ad)
   | .inr (ct, ad) => .inr (D.decrypt k ct ad)
 
-omit [SampleableType C] in
+omit [SampleableType C] [SampleableType Kt] in
 /-- The real oracles of `D` under `k` answer with `aeadAnswer D k`. -/
-theorem aeadRealOracle_eq_pure (D : AEADDef W C AD) (k : W) (u : Unit)
+theorem aeadRealOracle_eq_pure (D : AEADDef W C AD Kt) (k : Kt) (u : Unit)
     (q : AEAD_CCA_Query W C AD) : aeadRealOracle D k u q = PMF.pure (aeadAnswer D k q, ()) := by
   rcases q with ⟨pt, ad⟩ | ⟨ct, ad⟩ <;> rfl
 
-omit [SampleableType C] in
+omit [SampleableType C] [SampleableType Kt] in
 /-- The answer of `saltedAEAD D F` under `k` is the answer of `D` under `F k s` at the salt
 `s` of the query. -/
-theorem aeadAnswer_saltedAEAD (D : AEADDef W C AD) (F : W → S → W) (k : W)
+theorem aeadAnswer_saltedAEAD (D : AEADDef W C AD Kt) (F : Kt → S → Kt) (k : Kt)
     (q : AEAD_CCA_Query W C (S × AD)) :
     aeadAnswer (saltedAEAD D F) k q = aeadAnswer D (F k (querySalt q)) (queryUnsalt q) := by
   rcases q with ⟨pt, s, ad⟩ | ⟨ct, s, ad⟩ <;> rfl
@@ -108,20 +110,20 @@ theorem aeadAnswer_saltedAEAD (D : AEADDef W C AD) (F : W → S → W) (k : W)
 
 /-- One query of `saltedPRFRed D`: query the salt to the PRF oracle and answer with the real
 oracles of `D` under the returned key. -/
-noncomputable def saltedKeyImpl (D : AEADDef W C AD) (_ : Unit)
-    (q : AEAD_CCA_Query W C (S × AD)) : OracleAdv S W (AEAD_CCA_Answer W C × Unit) :=
+noncomputable def saltedKeyImpl (D : AEADDef W C AD Kt) (_ : Unit)
+    (q : AEAD_CCA_Query W C (S × AD)) : OracleAdv S Kt (AEAD_CCA_Answer W C × Unit) :=
   .query (querySalt q) fun k => .ret (aeadAnswer D k (queryUnsalt q), ())
 
 /-- **Reduction** to the left dual-PRF game of `F`: run `A`, answering each query with the
 real oracles of `D` under the key that the PRF oracle returns at the salt of the query. -/
-noncomputable def saltedPRFRed (D : AEADDef W C AD) (A : AEAD_CCA_Adversary W C (S × AD)) :
-    OracleAdv S W Bool :=
+noncomputable def saltedPRFRed (D : AEADDef W C AD Kt) (A : AEAD_CCA_Adversary W C (S × AD)) :
+    OracleAdv S Kt Bool :=
   (OracleAdv.simulate (saltedKeyImpl D) A ()).bind fun x => .ret x.1
 
 omit [SampleableType C] in
 /-- The real game of `saltedAEAD D F` is the real PRF game of `F` against
 `saltedPRFRed D A`. -/
-theorem aeadReal_salted_eq_realGame (D : AEADDef W C AD) (F : W → S → W)
+theorem aeadReal_salted_eq_realGame (D : AEADDef W C AD Kt) (F : Kt → S → Kt)
     (A : AEAD_CCA_Adversary W C (S × AD)) :
     AEAD_CCA_Game_Real (saltedAEAD D F) A = realGame F (saltedPRFRed D A) := by
   unfold AEAD_CCA_Game_Real realGame saltedPRFRed
@@ -143,9 +145,9 @@ variable [DecidableEq S]
 of the authenticated-encryption game with the log of that rank; at rank `j` or more by the
 real oracles of `D` under the key of that rank, drawn uniformly when the rank is first
 queried. -/
-noncomputable def saltHybOracle [DecidableEq AD] (D : AEADDef W C AD) (j : ℕ)
-    (s : HybState S (W × AD) C W) (q : AEAD_CCA_Query W C (S × AD)) :
-    PMF (AEAD_CCA_Answer W C × HybState S (W × AD) C W) :=
+noncomputable def saltHybOracle [DecidableEq AD] (D : AEADDef W C AD Kt) (j : ℕ)
+    (s : HybState S (W × AD) C Kt) (q : AEAD_CCA_Query W C (S × AD)) :
+    PMF (AEAD_CCA_Answer W C × HybState S (W × AD) C Kt) :=
   if rank s.1 (querySalt q) < j then
     (aeadIdealOracle (s.2.1 (rank s.1 (querySalt q))) (queryUnsalt q)).map fun x =>
       (x.1, (addIdx s.1 (querySalt q), Function.update s.2.1 (rank s.1 (querySalt q)) x.2,
@@ -153,12 +155,12 @@ noncomputable def saltHybOracle [DecidableEq AD] (D : AEADDef W C AD) (j : ℕ)
   else
     match s.2.2 (rank s.1 (querySalt q)) with
     | some k => PMF.pure (aeadAnswer D k (queryUnsalt q), (addIdx s.1 (querySalt q), s.2.1, s.2.2))
-    | none => (PMF.uniformFintype W).map fun k =>
+    | none => (PMF.uniformFintype Kt).map fun k =>
         (aeadAnswer D k (queryUnsalt q), (addIdx s.1 (querySalt q), s.2.1,
           Function.update s.2.2 (rank s.1 (querySalt q)) (some k)))
 
 /-- The hybrid game `j`. -/
-noncomputable def saltHybGame [DecidableEq AD] (D : AEADDef W C AD)
+noncomputable def saltHybGame [DecidableEq AD] (D : AEADDef W C AD Kt)
     (A : AEAD_CCA_Adversary W C (S × AD)) (j : ℕ) : SPComp Bool :=
   liftPMF ((OracleAdv.run (saltHybOracle D j) A hybInit).map Prod.fst)
 
@@ -166,10 +168,10 @@ noncomputable def saltHybGame [DecidableEq AD] (D : AEADDef W C AD)
 ideal oracles with the log of that rank; at rank `j`, the query without its salt to the
 oracles of the reduction; above `j`, the real oracles of `D` under the key of that rank, drawn
 uniformly when the rank is first queried. -/
-noncomputable def saltHybImpl [DecidableEq AD] (D : AEADDef W C AD) (j : ℕ)
-    (s : HybState S (W × AD) C W) (q : AEAD_CCA_Query W C (S × AD)) :
+noncomputable def saltHybImpl [DecidableEq AD] (D : AEADDef W C AD Kt) (j : ℕ)
+    (s : HybState S (W × AD) C Kt) (q : AEAD_CCA_Query W C (S × AD)) :
     OracleAdv (AEAD_CCA_Query W C AD) (AEAD_CCA_Answer W C)
-      (AEAD_CCA_Answer W C × HybState S (W × AD) C W) :=
+      (AEAD_CCA_Answer W C × HybState S (W × AD) C Kt) :=
   if rank s.1 (querySalt q) < j then
     .rand (aeadIdealOracle (s.2.1 (rank s.1 (querySalt q))) (queryUnsalt q)) fun x =>
       .ret (x.1, (addIdx s.1 (querySalt q), Function.update s.2.1 (rank s.1 (querySalt q)) x.2,
@@ -179,13 +181,13 @@ noncomputable def saltHybImpl [DecidableEq AD] (D : AEADDef W C AD) (j : ℕ)
   else
     match s.2.2 (rank s.1 (querySalt q)) with
     | some k => .ret (aeadAnswer D k (queryUnsalt q), (addIdx s.1 (querySalt q), s.2.1, s.2.2))
-    | none => .rand (PMF.uniformFintype W) fun k =>
+    | none => .rand (PMF.uniformFintype Kt) fun k =>
         .ret (aeadAnswer D k (queryUnsalt q), (addIdx s.1 (querySalt q), s.2.1,
           Function.update s.2.2 (rank s.1 (querySalt q)) (some k)))
 
 /-- **Reduction** to the authenticated-encryption game of `D` at the salt of rank `j`: run
 `A`, answering each query by `saltHybImpl D j`. -/
-noncomputable def saltedAEADRed [DecidableEq AD] (D : AEADDef W C AD)
+noncomputable def saltedAEADRed [DecidableEq AD] (D : AEADDef W C AD Kt)
     (A : AEAD_CCA_Adversary W C (S × AD)) (j : ℕ) : AEAD_CCA_Adversary W C AD :=
   (OracleAdv.simulate (saltHybImpl D j) A hybInit).bind fun x => .ret x.1
 
@@ -195,8 +197,8 @@ variable [DecidableEq AD]
 
 /-- A call of the hybrid oracle at a rank other than `j` commutes with setting the key of
 rank `j`. -/
-theorem saltHybOracle_setKey (D : AEADDef W C AD) (j : ℕ) (v : Option W)
-    (s : HybState S (W × AD) C W) (q : AEAD_CCA_Query W C (S × AD))
+theorem saltHybOracle_setKey (D : AEADDef W C AD Kt) (j : ℕ) (v : Option Kt)
+    (s : HybState S (W × AD) C Kt) (q : AEAD_CCA_Query W C (S × AD))
     (hq : rank s.1 (querySalt q) ≠ j) :
     saltHybOracle D j (setKey j v s) q =
       (saltHybOracle D j s q).map (Prod.map id (setKey j v)) := by
@@ -217,15 +219,15 @@ theorem saltHybOracle_setKey (D : AEADDef W C AD) (j : ℕ) (v : Option W)
 
 /-- **Deferred key.** The key of rank `j` drawn before the run gives the output of the key
 drawn when the rank is first queried. -/
-theorem uniform_bind_run_saltHyb_setKey (D : AEADDef W C AD) (j : ℕ) {α : Type}
+theorem uniform_bind_run_saltHyb_setKey (D : AEADDef W C AD Kt) (j : ℕ) {α : Type}
     (A : OracleAdv (AEAD_CCA_Query W C (S × AD)) (AEAD_CCA_Answer W C) α)
-    (s : HybState S (W × AD) C W) :
-    (PMF.uniformFintype W).bind (fun k =>
+    (s : HybState S (W × AD) C Kt) :
+    (PMF.uniformFintype Kt).bind (fun k =>
         (OracleAdv.run (saltHybOracle D j) A (setKey j (some k) s)).map Prod.fst) =
       (OracleAdv.run (saltHybOracle D j) A (setKey j none s)).map Prod.fst := by
   have e : ∀ v w, setKey (N := S) (D := W × AD) (R := C) j v (setKey j w s) = setKey j v s :=
     fun v w => by simp only [setKey, Function.update_idem]
-  have h := OracleAdv.run_map_fst_eq_bind_run_set_of_trigger (PMF.uniformFintype W)
+  have h := OracleAdv.run_map_fst_eq_bind_run_set_of_trigger (PMF.uniformFintype Kt)
     (saltHybOracle D j) (fun k => setKey j (some k)) (fun t => t.2.2 j = none)
     (fun t q => rank t.1 (querySalt q) = j) (fun t q ht hr => ?_)
     (fun k t q _ hr => saltHybOracle_setKey D j _ t q hr)
@@ -242,8 +244,8 @@ theorem uniform_bind_run_saltHyb_setKey (D : AEADDef W C AD) (j : ℕ) {α : Typ
 
 /-- A query of `saltHybImpl D j` run against the real oracles of `D` under `k` is a call of
 the hybrid oracle `j` with `k` as the key of rank `j`. -/
-theorem simOracle_real_saltHybImpl (D : AEADDef W C AD) (j : ℕ) (k : W)
-    (s : HybState S (W × AD) C W) (q : AEAD_CCA_Query W C (S × AD)) :
+theorem simOracle_real_saltHybImpl (D : AEADDef W C AD Kt) (j : ℕ) (k : Kt)
+    (s : HybState S (W × AD) C Kt) (q : AEAD_CCA_Query W C (S × AD)) :
     (OracleAdv.simOracle (saltHybImpl D j) (aeadRealOracle D k) (s, ()) q).map
         (Prod.map id fun p => setKey j (some k) p.1) =
       saltHybOracle D j (setKey j (some k) s) q := by
@@ -262,8 +264,8 @@ theorem simOracle_real_saltHybImpl (D : AEADDef W C AD) (j : ℕ) (k : W)
 
 /-- A query of `saltHybImpl D j` run against the ideal oracles with log `t` is a call of the
 hybrid oracle `j + 1` with `t` as the log of rank `j`. -/
-theorem simOracle_ideal_saltHybImpl (D : AEADDef W C AD) (j : ℕ)
-    (s : HybState S (W × AD) C W) (t : List ((W × AD) × C))
+theorem simOracle_ideal_saltHybImpl (D : AEADDef W C AD Kt) (j : ℕ)
+    (s : HybState S (W × AD) C Kt) (t : List ((W × AD) × C))
     (q : AEAD_CCA_Query W C (S × AD)) :
     (OracleAdv.simOracle (saltHybImpl D j) aeadIdealOracle (s, t) q).map
         (Prod.map id fun p => (p.1.1, Function.update p.1.2.1 j p.2, p.1.2.2)) =
@@ -294,7 +296,7 @@ theorem simOracle_ideal_saltHybImpl (D : AEADDef W C AD) (j : ℕ)
       · simp [PMF.pure_map]
 
 /-- The real game of `D` against `saltedAEADRed D A j` is the hybrid `j`. -/
-theorem aeadReal_saltedAEADRed_eq (D : AEADDef W C AD) (A : AEAD_CCA_Adversary W C (S × AD))
+theorem aeadReal_saltedAEADRed_eq (D : AEADDef W C AD Kt) (A : AEAD_CCA_Adversary W C (S × AD))
     (j : ℕ) : AEAD_CCA_Game_Real D (saltedAEADRed D A j) = saltHybGame D A j := by
   unfold AEAD_CCA_Game_Real saltHybGame saltedAEADRed
   congr 1
@@ -305,13 +307,13 @@ theorem aeadReal_saltedAEADRed_eq (D : AEADDef W C AD) (A : AEAD_CCA_Adversary W
     Constructions.SIV.run_map_fst_eq_of_map_state _ _ (fun p => setKey j (some k) p.1)
       (fun p q => by obtain ⟨s, ⟨⟩⟩ := p; exact simOracle_real_saltHybImpl D j k s q) A
       (hybInit, ())
-  have hi : setKey j none (hybInit : HybState S (W × AD) C W) = hybInit := by
+  have hi : setKey j none (hybInit : HybState S (W × AD) C Kt) = hybInit := by
     simp [setKey, hybInit]
   simp only [h]
   rw [uniform_bind_run_saltHyb_setKey, hi]
 
 /-- The ideal game against `saltedAEADRed D A j` is the hybrid `j + 1`. -/
-theorem aeadIdeal_saltedAEADRed_eq (D : AEADDef W C AD) (A : AEAD_CCA_Adversary W C (S × AD))
+theorem aeadIdeal_saltedAEADRed_eq (D : AEADDef W C AD Kt) (A : AEAD_CCA_Adversary W C (S × AD))
     (j : ℕ) : AEAD_CCA_Game_Ideal (saltedAEADRed D A j) = saltHybGame D A (j + 1) := by
   unfold AEAD_CCA_Game_Ideal saltHybGame saltedAEADRed
   congr 1
@@ -323,7 +325,7 @@ theorem aeadIdeal_saltedAEADRed_eq (D : AEADDef W C AD) (A : AEAD_CCA_Adversary 
   simp [hybInit]
 
 /-- The random-function game against `saltedPRFRed D A` is the hybrid `0`. -/
-theorem rfGame_saltedPRFRed_eq (D : AEADDef W C AD) (A : AEAD_CCA_Adversary W C (S × AD))
+theorem rfGame_saltedPRFRed_eq (D : AEADDef W C AD Kt) (A : AEAD_CCA_Adversary W C (S × AD))
     (u : ℕ) (hA : A.IndexBound querySalt ∅ u) :
     rfGame (saltedPRFRed D A) = saltHybGame D A 0 := by
   unfold rfGame saltHybGame saltedPRFRed
@@ -337,7 +339,7 @@ theorem rfGame_saltedPRFRed_eq (D : AEADDef W C AD) (A : AEAD_CCA_Adversary W C 
     have hk := (h.extend (querySalt q)).apply
     dsimp only at hk
     rcases hl : List.lookup (querySalt q) tK with _ | k
-    · refine ⟨W, PMF.uniformFintype W, fun k => aeadAnswer D k (queryUnsalt q),
+    · refine ⟨Kt, PMF.uniformFintype Kt, fun k => aeadAnswer D k (queryUnsalt q),
         fun k => (addIdx s.1 (querySalt q), s.2.1,
           Function.update s.2.2 (rank s.1 (querySalt q)) (some k)),
         fun k => ((), (querySalt q, k) :: tK), ?_, ?_, fun k => ?_⟩
@@ -357,7 +359,7 @@ theorem rfGame_saltedPRFRed_eq (D : AEADDef W C AD) (A : AEAD_CCA_Adversary W C 
         fun _ => h.extend (querySalt q)⟩
       · simp [saltHybOracle, hk, hl, PMF.pure_map]
       · simp [saltedKeyImpl, OracleAdv.simOracle, rfOracle, hl, PMF.pure_map]
-  · convert rankRel_nil (N := S) (none : Option W) using 1 <;> rfl
+  · convert rankRel_nil (N := S) (none : Option Kt) using 1 <;> rfl
 
 /-! ## The ideal oracles of all salts -/
 
@@ -407,7 +409,7 @@ theorem aeadLogDecrypt_saltLog (ct : C) (n : S) (ad : AD) (T : List ((W × (S ×
 
 /-- The hybrid `u` of an adversary asking at most `u` salts is the ideal game of the salted
 AEAD. -/
-theorem saltHybGame_eq_ideal (D : AEADDef W C AD) (A : AEAD_CCA_Adversary W C (S × AD))
+theorem saltHybGame_eq_ideal (D : AEADDef W C AD Kt) (A : AEAD_CCA_Adversary W C (S × AD))
     (u : ℕ) (hA : A.IndexBound querySalt ∅ u) :
     saltHybGame D A u = AEAD_CCA_Game_Ideal A := by
   unfold AEAD_CCA_Game_Ideal saltHybGame
@@ -467,7 +469,7 @@ theorem saltHybGame_eq_ideal (D : AEADDef W C AD) (A : AEAD_CCA_Adversary W C (S
 of `saltedAEAD D F` that asks at no more than `u` distinct salts, the advantage is at most the
 left dual-PRF advantage of `F` against `saltedPRFRed D A` plus the sum over `j < u` of the
 authenticated-encryption advantages of `D` against `saltedAEADRed D A j`. -/
-theorem saltedAEAD_advantage_le (D : AEADDef W C AD) (F : W → S → W)
+theorem saltedAEAD_advantage_le (D : AEADDef W C AD Kt) (F : Kt → S → Kt)
     (A : AEAD_CCA_Adversary W C (S × AD)) (u : ℕ) (hA : A.IndexBound querySalt ∅ u) :
     AEAD_CCA_Advantage (saltedAEAD D F) A ≤
       DualPRF_Left_Advantage F (saltedPRFRed D A) +

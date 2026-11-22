@@ -35,7 +35,7 @@ party exactly in the windows that `ckaAllowCorr ΔFS ΔPCS t` opens, that is out
 `ΔFS` epochs of forward secrecy before and the `ΔPCS` epochs of post-compromise security after
 the challenge epoch.
 
-**The ideal functionality.** `F_SM M ini Sch t n ΔFS ΔPCS` is the secure channel `F_SC` of
+**The ideal functionality.** `F_SM M ini Sch t n ΔFS ΔPCS` is the functionality `F_SC` of
 `SignalStackUC` with the views of the sessions: for a session that completed without exposure,
 the ideal view `smIdealView` (ideal ciphertexts for the challenge messages of the honest
 epoch, the states that the corruption windows expose under a fresh key); for an exposed session,
@@ -54,7 +54,10 @@ between the real game (a uniform key, then the real view) and the ideal view, an
 that the key `i` is read twice. That advantage is the multi-challenge advantage of the adversary
 `smHopAdv Sch t (hopRed i Z)`, which runs the schedule and outputs the bit of `hopRed i Z` on the
 view (`advantageA_eq_multiAdvantage`), and the hybrid argument of `SMMultiChallenge` bounds it
-by the single-challenge corruption advantages of the reductions `smHopRed i j Z`.
+by the single-challenge corruption advantages of the reductions `smHopRed i j Z`. The probability
+that a key is read twice is `1` when the environment always makes both partners of an unexposed
+session read their key, and the bound is then at least `1`: the functionality has no event for
+sending or receiving, and each `getKey` runs the whole schedule on a session of its own.
 
 ## Main definitions
 
@@ -231,8 +234,8 @@ section Func
 variable {K Sst Pub Rand Wd Ct Leak V : Type} [Fintype Rand] [Nonempty Rand] [Fintype K]
   [Nonempty K] [Inhabited K]
 
-/-- **The ideal secure-messaging functionality `F_SM`** (Canetti–Jain–Swanberg–Varia), with the
-forward-secrecy window `ΔFS` and the post-compromise window `ΔPCS`: the secure channel `F_SC`
+/-- **The ideal transcript functionality `F_SM`** (after Canetti–Jain–Swanberg–Varia), with the
+forward-secrecy window `ΔFS` and the post-compromise window `ΔPCS`: the functionality `F_SC`
 whose session views are those of the schedule `Sch` over the scheme `M`. A session that
 completed without exposure has the ideal view: under a fresh key, the challenge messages of the
 honest epoch `t` have ideal ciphertexts, and a corruption leaks the state of the party only in
@@ -308,7 +311,7 @@ noncomputable def fsmBound (P : Finset PartyId) (M : SMScheme Sst Pub Rand Wd Ct
 
 /-- **The Signal stack realizes secure messaging with corruption** (genuine UC).
 
-*Ideal functionality.* `F_SM M ini Sch t n ΔFS ΔPCS`: the multi-session secure channel of
+*Ideal functionality.* `F_SM M ini Sch t n ΔFS ΔPCS`: the multi-session functionality over
 `F_AKE` with unlinked delivery whose completed sessions have the ideal view of the schedule
 `Sch` (ideal ciphertexts for the challenge messages of the honest epoch `t`, the states leaked
 in the corruption windows of `ΔFS` and `ΔPCS` under a fresh key), whose exposed sessions have

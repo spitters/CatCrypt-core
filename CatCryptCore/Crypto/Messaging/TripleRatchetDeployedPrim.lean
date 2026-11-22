@@ -104,7 +104,9 @@ advantage of the ACD construction with headers, the CKA and PRF-PRNG terms of
 `saltedAEADRed j` for `j < q`, and the two wrong-salt events of the sidecar. The reductions of
 the last three groups are applied to the FS-AEAD reduction `smcFSRed` of the relabelled
 reduction `(tripleRatchetDeployedRed … A).toSMAD dec`, through the AEAD reduction
-`fsCorrAEADRed` and the relabelling `aeadAdvMapAD (deployedAD E)`. -/
+`fsCorrAEADRed` and the relabelling `aeadAdvMapAD (deployedAD E)`. The injective packing
+`SidecarPack` into a finite word type forces a single salt and a single sidecar header, so the
+statement applies only to runs with a constant salt. -/
 theorem tripleRatchetDeployed_idAdvantage_le_prim [Fintype Key] [Nonempty Key] [Fintype Sa]
     [Nonempty Sa] [DecidableEq RK] [DecidableEq Key] [DecidableEq S] (C : CKADef Sc Msg Key)
     [CKACoins C Rand] (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)

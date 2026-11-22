@@ -376,8 +376,8 @@ the identity on objects and `DNLens.toBangLens` on morphisms. -/
 def toCokleisli : DNCat.{u, v} ⥤ Cokleisli bangComonad.{u, v} where
   obj P := .mk _ (LensCat.of P.toPFunctor)
   map f := .mk (DNLens.toBangLens f)
-  map_id P := Cokleisli.hom_ext _ (DNLens.toBangLens_id P.toPFunctor)
-  map_comp f g := Cokleisli.hom_ext _ (DNLens.toBangLens_comp g f)
+  map_id P := Cokleisli.hom_ext (DNLens.toBangLens_id P.toPFunctor)
+  map_comp f g := Cokleisli.hom_ext (DNLens.toBangLens_comp g f)
 
 /-- The functor from the co-Kleisli category of the exponential to the Diller–Nahm category:
 the identity on objects and `DNLens.ofBangLens` on morphisms. -/

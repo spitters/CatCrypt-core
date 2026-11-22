@@ -32,10 +32,10 @@ lean_lib CatCryptCore where
 lean_lib CatCryptCoreTest where
   globs := #[.submodules `CatCryptCoreTest]
 
--- Pinned to the module-system port on spitters/nominal-lean. A path-require of
+-- Pinned to a revision of nominal-lean's master. A path-require of
 -- the sibling builds locally but breaks CI, which has no sibling checkout.
 require nominalLean from git
-  "https://github.com/spitters/nominal-lean" @ "lean-upgrade-4.35"
+  "https://github.com/spitters/nominal-lean" @ "53116542dd6806bd9f9c0d36cf69ed275ce0d765"
 
 -- hax-lean: the runtime and typed AST of haxpipeT extractions (`HaxLean.Runtime`) and the
 -- fold lemmas (`HaxLean.FoldRange`), which the extraction bridges read.
@@ -46,20 +46,20 @@ require «hax-lean» from git
 -- `SubInstrument` on `Fin d`. Pinned to a commit of `main`.
 require QuantumFoundations from git
   "https://github.com/lean-crypto-foundations/QuantumFoundations" @
-    "901aaab7967ceecd2240d0b38bbde7cf3e2c14ac"
+    "5ecbeec205ce3e9e4a5b7cb900c181884856ba19"
 
 -- PolyFun: polynomial functors, the free monad `PFunctor.FreeM` (from cslib), roll bounds
 -- and the charge fold; `SPTree` and `OracleAdv` are related to `FreeM` by equivalences.
 -- Pinned to the revision VCVio uses.
 require PolyFun from git
-  "https://github.com/Verified-zkEVM/PolyFun" @ "afb9c1e57b4eba18e074eb7002bc512a95308b87"
+  "https://github.com/Verified-zkEVM/PolyFun" @ "528b3b1fda285487e55704409bd1b058dc18fcad"
 
 -- refinement-wp: the refinement weakest precondition `wrp` over `Std.WP`, which
 -- `Refinement/RRelWRP.lean` relates to `RRelPT`.
 require «refinement-wp» from git
-  "https://github.com/spitters/refinement-wp" @ "86bfb5d6d49ee09edf290cd45c98f7be7373bda9"
+  "https://github.com/spitters/refinement-wp" @ "ff0d84f818c3a1b81961e1ca4a63ad1345f23434"
 
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"
+  "https://github.com/leanprover-community/mathlib4" @ "v4.36.0"

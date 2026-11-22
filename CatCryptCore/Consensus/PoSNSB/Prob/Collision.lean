@@ -333,7 +333,9 @@ theorem collFinder_advantage_randomFun_le [Fintype Tx] [Fintype Hash] [Nonempty 
   rw [collFinder, CR_Search_Advantage_ofCoins]
   refine bind_map_apply_le _ _ _ _ fun c => ?_
   rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
-  refine (MeasureTheory.OuterMeasure.mono _ fun f hf => hwin f c hf).trans ?_
+  refine (MeasureTheory.OuterMeasure.mono _
+    (show _ ⊆ {f | ROCollision (next (kinds c.1) c.2) q f} from
+      fun f hf => hwin f c hf)).trans ?_
   exact prob_ROCollision_le (next (kinds c.1) c.2) q
 
 end Finder

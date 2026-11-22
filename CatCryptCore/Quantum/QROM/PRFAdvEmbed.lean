@@ -665,7 +665,7 @@ theorem one_kronecker_diagonal {d₁ d₂ : ℕ} (f : Fin d₂ → ℂ) :
     (1 : Matrix (Fin d₁) (Fin d₁) ℂ) ⊗ₖ Matrix.diagonal f =
       Matrix.diagonal (fun k => f ((finProdEquiv d₁ d₂).symm k).2) := by
   ext i j
-  rw [kronecker_apply, diagonal_apply, one_apply, diagonal_apply]
+  rw [kronecker_apply, diagonal_apply, Matrix.one_apply, diagonal_apply]
   by_cases h : i = j
   · subst h; simp
   · have h' : (finProdEquiv d₁ d₂).symm i ≠ (finProdEquiv d₁ d₂).symm j :=

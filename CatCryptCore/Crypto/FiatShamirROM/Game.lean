@@ -2103,8 +2103,9 @@ theorem flag_sign_term_le (xw : G.Stmt × G.Wit) {Γ : ℝ≥0∞}
       List.append_nil]
   rw [hT]
   refine (run_real_addRejs_flag_le xw _ _ T₀ false).trans ?_
-  refine (MeasureTheory.measure_mono (fun y hy => hy)).trans
-    ((MeasureTheory.measure_union_le _ _).trans (add_le_add ?_ ?_))
+  refine (MeasureTheory.measure_mono (fun y hy => hy)).trans ?_
+  rw [Set.ofPred_or]
+  refine le_trans (MeasureTheory.measure_union_le _ _) (add_le_add ?_ ?_)
   · refine (ih _ T₀ ht).trans (mul_le_mul_of_nonneg_right ?_ zero_le)
     have h1 : T₀.hash.length + T₀.prog.length ≤ t.hash.length + t.prog.length +
         (G.trace xw.1 xw.2 m r v).1.length + (G.trace xw.1 xw.2 m r v).2.1.length :=
@@ -2410,8 +2411,9 @@ theorem flag_sign_term_le_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.�
       List.append_nil]
   rw [hT]
   refine (run_real_addRejs_flag_le xw _ _ T₀ false).trans ?_
-  refine (MeasureTheory.measure_mono (fun y hy => hy)).trans
-    ((MeasureTheory.measure_union_le _ _).trans (add_le_add ?_ ?_))
+  refine (MeasureTheory.measure_mono (fun y hy => hy)).trans ?_
+  rw [Set.ofPred_or]
+  refine le_trans (MeasureTheory.measure_union_le _ _) (add_le_add ?_ ?_)
   · refine (ih _ T₀ ht).trans
       (Finset.sum_le_sum fun c _ => mul_le_mul_of_nonneg_right ?_ zero_le)
     have h1 : κ.count T₀.keys c ≤ κ.count t.keys c +

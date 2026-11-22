@@ -49,9 +49,9 @@ sending and a receiving chain. Opening an epoch runs the CKA sending algorithm a
 on its key; receiving runs the CKA receiving algorithm and the root step on the key the
 receiver derives itself; sending runs the chain generator and the AEAD; a corruption reveals
 the state. `acdSM C R G D` is `acdSMAD C R G D (fun _ ad => ad)`: the construction
-`acdSMAD C R G D adOf` takes an AEAD `D : AEADDef W Ct AD` with its own type of associated
-data, and encrypts a message from the state `x` with associated data `adOf x ad`, which names
-the associated data of the message and a header of the sender, as the Double Ratchet
+`acdSMAD C R G D adOf` takes an AEAD `D : AEADDef W Ct AD Kt` with its own types of associated
+data and of keys, and encrypts a message from the state `x` with associated data `adOf x ad`,
+which names the associated data of the message and a header of the sender, as the Double Ratchet
 specification's `ENCRYPT(mk, plaintext, CONCAT(ad, header))`. The game `sm_corrupt_game`
 holds the root output of the epoch in transit and gives it to the receiver. When the CKA is
 correct along a relation `J` of the states of the next sender and the next receiver
@@ -366,7 +366,8 @@ structure SMPartySt (Sc RK Sa : Type) where
 section ACD
 
 variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand]
-  [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
+  [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK] {Kt : Type}
+  [SampleableType Kt]
 
 /-- **The ACD construction with associated data of the AEAD in `AD`**, from the CKA `C`, the
 root KDF `R`, the chain generator `G`, the AEAD `D` and the map `adOf` from the state of the
@@ -378,7 +379,7 @@ receiver derives, which gives the next root key and the receiving chain; sending
 `x` encrypts under the next key of the sending chain with associated data `adOf x ad`; a
 corruption reveals the state. -/
 noncomputable def acdSMAD (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (adOf : SMPartySt Sc RK Sa → W → AD) :
     SMScheme (SMPartySt Sc RK Sa) Msg Rand W Ct (SMPartySt Sc RK Sa) where
   init := SPComp.bind C.init fun i => SPComp.bind (SPComp.sample RK) fun rk =>
@@ -400,7 +401,7 @@ noncomputable def acdSMAD (C : CKADef Sc Msg Key) [CKACoins C Rand]
 the chain generator `G` and the AEAD `D`: `acdSMAD` with the associated data of the message as
 the associated data of the AEAD. -/
 noncomputable def acdSM (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) :
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) :
     SMScheme (SMPartySt Sc RK Sa) Msg Rand W Ct (SMPartySt Sc RK Sa) :=
   acdSMAD C R G D fun _ ad => ad
 
@@ -568,12 +569,13 @@ omit [Fintype RK] [Nonempty RK] in
 theorem SMSt.toScheme_allowCorr (s : SMSt Sc Msg RK Sa) (ΔFS ΔPCS t : ℕ) (p : CKAParty) :
     ckaAllowCorr ΔFS ΔPCS t s.toScheme.ck p = ckaAllowCorr ΔFS ΔPCS t s.ck p := rfl
 
+omit [SampleableType Kt] in
 /-- **The oracle of `sm_corrupt_game` is the oracle over `acdSMAD` with associated data
 `f ad`.** Under the invariant `ACDInv`, each call of `smOracleOf` at the real root step on the
 query `q` with the associated data mapped by `f`, with its answer and state carried to the game
 over the scheme, is the call of `smSchemeOracle (acdSMAD C R G D fun _ => f)` on `q`. -/
 theorem acdAD_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (f : W → AD) (J : Sc → Sc → Prop)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (f : W → AD) (J : Sc → Sc → Prop)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (hs : ACDInv C R J s)
     (q : SMQuery W) :
     (smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R) s (q.mapAD f)).map
@@ -633,12 +635,13 @@ theorem acdAD_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × 
     by_cases hc : ckaAllowCorr ΔFS ΔPCS t s.ck p = true <;>
       simp only [hc, ite_true, Bool.false_eq_true, ite_false] <;> rfl
 
+omit [SampleableType Kt] in
 /-- **The oracle of `sm_corrupt_game` is the oracle over `acdSM`.** Under the invariant
 `ACDInv`, each call of `smOracleOf` at the real root step, with its answer and state carried to
 the game over `acdSM`, is the call of `smSchemeOracle (acdSM C R G D)`: `acdAD_step` at the
 identity on associated data. -/
 theorem acd_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (J : Sc → Sc → Prop) (ΔFS ΔPCS t : ℕ)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) (J : Sc → Sc → Prop) (ΔFS ΔPCS t : ℕ)
     (ideal : Bool) (s : SMSt Sc Msg RK Sa) (hs : ACDInv C R J s) (q : SMQuery W) :
     (smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R) s q).map
         (fun x => (SMAns.toScheme x.1, x.2.toScheme)) =
@@ -655,12 +658,13 @@ theorem ACDInv.of_eq {C : CKADef Sc Msg Key} {R : PRGDef (RK × Key) (RK × Sa)}
   obtain ⟨h1, h2, h3⟩ := hs
   exact ⟨hck ▸ h1, hck ▸ hrk ▸ h2, hck ▸ hrk ▸ hout ▸ h3⟩
 
-omit [Fintype RK] [Nonempty RK] in
+omit [Fintype RK] [Nonempty RK] [SampleableType Kt] in
 /-- **The invariant `ACDInv` is kept** by every call of `smOracleOf` at the real root step,
 when the CKA is correct along `J`. -/
 theorem acdInv_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
-    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (hs : ACDInv C R J s)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) {J : Sc → Sc → Prop}
+    (hJ : CKACorrect C J) (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa)
+    (hs : ACDInv C R J s)
     (q : SMQuery W AD) :
     ∀ x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R) s q).support, ACDInv C R J x.2 := by
   intro x hx
@@ -771,6 +775,7 @@ theorem acdInv_smInit (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (RK × Sa)
     rw [CKAGameSt.canRecv_iff] at hq
     simp [smInit, CKAGameSt.init] at hq
 
+omit [SampleableType Kt] in
 /-- **The corruption game over `acdSMAD` is `sm_corrupt_game` with associated data in `AD`.**
 For a CKA `C` correct along `J`, with an initialisation that is the lift of `initP` and initial
 states related by `J`, the corruption game over the ACD construction whose associated data of
@@ -779,8 +784,8 @@ game `sm_corrupt_game C R G D` against `A.toSMAD f`. -/
 theorem smCorruptGame_acdAD (C : CKADef Sc Msg Key) [CKACoins C Rand] {J : Sc → Sc → Prop}
     (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (f : W → AD) (ΔFS ΔPCS : ℕ) (ideal : Bool)
-    (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (f : W → AD) (ΔFS ΔPCS : ℕ)
+    (ideal : Bool) (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     smCorruptGame (acdSMAD C R G D fun _ => f) ΔFS ΔPCS ideal A =
       sm_corrupt_game C R G D ΔFS ΔPCS ideal (A.toSMAD f) := by
   rw [sm_corrupt_game, sm_corrupt_gameOf_eq_liftPMF C initP hinit]
@@ -795,18 +800,20 @@ theorem smCorruptGame_acdAD (C : CKADef Sc Msg Key) [CKACoins C Rand] {J : Sc �
     (fun s d hs => acdAD_step C R G D f J ΔFS ΔPCS t ideal s hs d) _ _
     (acdInv_smInit C R i (hJi i hi) rk)
 
+omit [SampleableType Kt] in
 /-- **The advantage of an adversary against `acdSMAD`** with associated data `f ad` is the
 advantage of the adversary `A.toSMAD f` in `sm_corrupt_game` with associated data in `AD`. -/
 theorem acdSMAD_corruptAdvantage_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     {J : Sc → Sc → Prop} (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc))
     (hinit : C.init = liftPMF initP) (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (f : W → AD) (ΔFS ΔPCS : ℕ) (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     (acdSMAD C R G D fun _ => f).corruptAdvantage ΔFS ΔPCS A =
       SM_Corrupt_Advantage C R G D ΔFS ΔPCS (A.toSMAD f) := by
   simp only [SMScheme.corruptAdvantage, SM_Corrupt_Advantage,
     smCorruptGame_acdAD C hJ initP hinit hJi]
 
+omit [SampleableType Kt] in
 /-- **The corruption game over `acdSM` is `sm_corrupt_game`.** For a CKA `C` correct along `J`,
 with an initialisation that is the lift of `initP` and initial states related by `J`, the
 corruption game over the ACD construction against an adversary `A` is the game
@@ -814,28 +821,30 @@ corruption game over the ACD construction against an adversary `A` is the game
 theorem smCorruptGame_acd (C : CKADef Sc Msg Key) [CKACoins C Rand] {J : Sc → Sc → Prop}
     (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS : ℕ) (ideal : Bool)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) (ΔFS ΔPCS : ℕ) (ideal : Bool)
     (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     smCorruptGame (acdSM C R G D) ΔFS ΔPCS ideal A =
       sm_corrupt_game C R G D ΔFS ΔPCS ideal A.toSM := by
   rw [← SMSchemeAdv.toSMAD_id]
   exact smCorruptGame_acdAD C hJ initP hinit hJi R G D id ΔFS ΔPCS ideal A
 
+omit [SampleableType Kt] in
 /-- **The advantage of an adversary against `acdSM`** is the advantage of the relabelled
 adversary in `sm_corrupt_game`. -/
 theorem acdSM_corruptAdvantage_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     {J : Sc → Sc → Prop} (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc))
     (hinit : C.init = liftPMF initP) (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS : ℕ) (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     (acdSM C R G D).corruptAdvantage ΔFS ΔPCS A = SM_Corrupt_Advantage C R G D ΔFS ΔPCS A.toSM := by
   simp only [SMScheme.corruptAdvantage, SM_Corrupt_Advantage,
     smCorruptGame_acd C hJ initP hinit hJi]
 
+omit [SampleableType Kt] in
 /-- **The adaptive oracle of `sm_adaptive_game` is the adaptive oracle over `acdSM`** under
 the invariant `ACDInv` of its secure-messaging state. -/
 theorem acd_ad_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (J : Sc → Sc → Prop) (ΔFS ΔPCS : ℕ)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) (J : Sc → Sc → Prop) (ΔFS ΔPCS : ℕ)
     (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec) (hx : ACDInv C R J x.1) (q : SMQuery W) :
     (smAdOracle C R G D ΔFS ΔPCS ideal x q).map
         (fun y => (SMAns.toScheme y.1, (y.2.1.toScheme, y.2.2))) =
@@ -878,10 +887,10 @@ theorem acd_ad_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK ×
       simp only [PMF.pure_map]
       by_cases hc : e + ΔFS ≤ x.1.ck.t p <;> simp only [hc, ite_true, ite_false] <;> rfl
 
-omit [Fintype RK] [Nonempty RK] in
+omit [Fintype RK] [Nonempty RK] [SampleableType Kt] in
 /-- **The invariant `ACDInv` is kept by the adaptive oracle.** -/
 theorem acdInv_ad_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     {J : Sc → Sc → Prop} (hJ : CKACorrect C J) (ΔFS ΔPCS : ℕ) (ideal : Bool)
     (x : SMSt Sc Msg RK Sa × SMAdRec) (hx : ACDInv C R J x.1) (q : SMQuery W) :
     ∀ y ∈ (smAdOracle C R G D ΔFS ΔPCS ideal x q).support, ACDInv C R J y.2.1 := by
@@ -913,6 +922,7 @@ theorem acdInv_ad_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
     split at hy <;> simp only [PMF.support_pure, Set.mem_singleton_iff] at hy <;> rw [hy] <;>
       exact hx
 
+omit [SampleableType Kt] in
 /-- **The adaptive game over `acdSM` is `sm_adaptive_game`.** For a CKA `C` correct along `J`,
 with an initialisation that is the lift of `initP` and initial states related by `J`, the game
 with an adaptive challenge epoch over the ACD construction against `A` is `sm_adaptive_game`
@@ -920,7 +930,7 @@ against `A` with the answers relabelled. -/
 theorem smAdaptiveGame_acd (C : CKADef Sc Msg Key) [CKACoins C Rand] {J : Sc → Sc → Prop}
     (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS : ℕ) (ideal : Bool)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) (ΔFS ΔPCS : ℕ) (ideal : Bool)
     (A : Msg → OracleAdv (SMQuery W) (SMSchemeAns Msg Ct (SMPartySt Sc RK Sa)) Bool) :
     smAdaptiveGame (acdSM C R G D) ΔFS ΔPCS ideal A =
       sm_adaptive_game C R G D ΔFS ΔPCS ideal fun T => (A T).mapQueryAnswer id SMAns.toScheme := by
@@ -938,12 +948,13 @@ theorem smAdaptiveGame_acd (C : CKADef Sc Msg Key) [CKACoins C Rand] {J : Sc →
     (fun x d hx => acd_ad_step C R G D J ΔFS ΔPCS ideal x hx d) _ _
     (acdInv_smInit C R i (hJi i hi) rk)
 
+omit [SampleableType Kt] in
 /-- **The advantage of an adversary against `acdSM` with an adaptive challenge epoch** is the
 advantage of the relabelled adversary in `sm_adaptive_game`. -/
 theorem acdSM_adaptiveAdvantage_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     {J : Sc → Sc → Prop} (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc))
     (hinit : C.init = liftPMF initP) (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS : ℕ)
     (A : Msg → OracleAdv (SMQuery W) (SMSchemeAns Msg Ct (SMPartySt Sc RK Sa)) Bool) :
     (acdSM C R G D).adaptiveAdvantage ΔFS ΔPCS A =
@@ -964,7 +975,7 @@ theorem acdSM_corruptAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
     (hPCS : 1 ≤ ΔPCS) (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     (acdSM C R G D).corruptAdvantage ΔFS ΔPCS A ≤
       ∑ b : Bool, CKA_Corrupt_Advantage C ΔFS ΔPCS (smcCKARed R G D b A.toSM) +
@@ -974,7 +985,7 @@ theorem acdSM_corruptAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
   exact sm_corrupt_advantage_le C hS initP hinit R G D hFS hPCS _
 
 /-- **The corruption game over `acdSMAD` from CKA, PRF-PRNG and FS-AEAD security**, for the
-AEAD `D : AEADDef W Ct AD` whose associated data is `f ad` for the associated data `ad` of the
+AEAD `D : AEADDef W Ct AD Kt` whose associated data is `f ad` for the associated data `ad` of the
 message. For a CKA correct along `J` with a sound explicit-randomness sending algorithm, and
 `2 ≤ ΔFS`, `1 ≤ ΔPCS`, the advantage of every adversary `A` against the ACD construction is the
 bound of `sm_corrupt_advantage_le` at the relabelled adversary `A.toSMAD f`, whose FS-AEAD term
@@ -983,7 +994,7 @@ theorem acdSMAD_corruptAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (f : W → AD) {ΔFS ΔPCS : ℕ}
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (f : W → AD) {ΔFS ΔPCS : ℕ}
     (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     (acdSMAD C R G D fun _ => f).corruptAdvantage ΔFS ΔPCS A ≤
       ∑ b : Bool, CKA_Corrupt_Advantage C ΔFS ΔPCS (smcCKARed R G D b (A.toSMAD f)) +
@@ -998,7 +1009,7 @@ theorem acdSM_adaptiveAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
     (hPCS : 1 ≤ ΔPCS)
     (A : Msg → OracleAdv (SMQuery W) (SMSchemeAns Msg Ct (SMPartySt Sc RK Sa)) Bool) :
     (acdSM C R G D).adaptiveAdvantage ΔFS ΔPCS A ≤
@@ -1019,7 +1030,7 @@ theorem acdSM_adaptiveAdvantage_le_of_isQueryBound (C : CKADef Sc Msg Key) [CKAC
     (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
     (hPCS : 1 ≤ ΔPCS) {q : ℕ}
     (A : Msg → OracleAdv (SMQuery W) (SMSchemeAns Msg Ct (SMPartySt Sc RK Sa)) Bool)
     (hA : ∀ T, (A T).IsQueryBound q) :
@@ -1072,7 +1083,7 @@ section DHBounds
 
 variable (G : Type) [CG : CyclicGroup G] [DecidableEq G] {Sk RK Sa W Ct : Type} [Fintype Sk]
   [Nonempty Sk] [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
-  [DecidableEq RK] [Fintype Sa] [Nonempty Sa]
+  [DecidableEq RK] [Fintype Sa] [Nonempty Sa] {Kt : Type} [SampleableType Kt]
 
 /-- **The Diffie–Hellman ACD construction over a key space with an adaptive challenge epoch,
 from DDH.** Let the secret keys of `dhCKAOf G decE` be drawn uniformly from `Sk` and act
@@ -1086,7 +1097,7 @@ CKA terms of each epoch. -/
 theorem acdSM_dhCKAOf_adaptiveAdvantage_le_of_isQueryBound (decE : Sk → CG.Exp)
     (c : SamplerCert CG.Exp) (hμ : c.μ = (SDistr.uniform Sk).bind fun x => SDistr.pure (decE x))
     (hν : c.ν = SDistr.uniform CG.Exp) (R : PRGDef (RK × G) (RK × Sa))
-    (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (F : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
     (hPCS : 2 ≤ ΔPCS) {q : ℕ}
     (A : G → OracleAdv (SMQuery W) (SMSchemeAns G Ct (SMPartySt (G × Sk) RK Sa)) Bool)
     (hA : ∀ T, (A T).IsQueryBound q) :
@@ -1460,7 +1471,7 @@ section SimDH
 
 variable (G : Type) [CG : CyclicGroup G] [DecidableEq G] {Sk RK Sa W Ct St' Pub' Ct' Leak' : Type}
   [Fintype Sk] [Nonempty Sk] [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
-  [DecidableEq RK] [Fintype Sa] [Nonempty Sa]
+  [DecidableEq RK] [Fintype Sa] [Nonempty Sa] {Kt : Type} [SampleableType Kt]
 
 /-- **A scheme that simulates the Diffie–Hellman ACD construction, with an adaptive challenge
 epoch and a query bound, from DDH.** If `M'` simulates `acdSM (dhCKAOf G decE) R F D`, the
@@ -1471,7 +1482,7 @@ adaptive challenge epoch is the bound of `acdSM_dhCKAOf_adaptiveAdvantage_le_of_
 theorem SMScheme.Sim.adaptiveAdvantage_le_dhCKAOf_of_isQueryBound (decE : Sk → CG.Exp)
     (c : SamplerCert CG.Exp) (hμ : c.μ = (SDistr.uniform Sk).bind fun x => SDistr.pure (decE x))
     (hν : c.ν = SDistr.uniform CG.Exp) (R : PRGDef (RK × G) (RK × Sa))
-    (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {M' : SMScheme St' Pub' Sk W Ct' Leak'}
+    (F : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) {M' : SMScheme St' Pub' Sk W Ct' Leak'}
     {ρ : St' → SMPartySt (G × Sk) RK Sa → Prop} {encP : G → Pub'} {encC : Ct → Ct'}
     {encL : SMPartySt (G × Sk) RK Sa → Leak'} {encI : SMPartySt (G × Sk) RK Sa → St'}
     (h : M'.Sim (acdSM (dhCKAOf G decE) R F D) ρ encP encC encL encI) {ΔFS ΔPCS : ℕ}

@@ -24,7 +24,7 @@ datum, each keyed by the session key through the keyed initialisation `ini · x�
 `k` and the datum `x₀` is `smRealViewK M ini Sch t n ΔFS ΔPCS (k, x₀)`, the real view of
 `SignalStackSM` over `M x₀`; its ideal view at the datum `x₀` is `smIdealViewK`.
 
-**The ideal functionality.** `F_SMK M ini Sch t n ΔFS ΔPCS` is the secure channel with a datum
+**The ideal functionality.** `F_SMK M ini Sch t n ΔFS ΔPCS` is the functionality with a datum
 `F_SCK` of `SignalStackUC` at the split `prekeySplit K S` of a key `(k, x₀)` into the secret part
 `k` and the datum `x₀`: a session that completed without exposure has the ideal view at its
 datum, an exposed session the real view under the adversary key and datum.
@@ -44,7 +44,10 @@ the corruption advantages over `M x₀` of the hybrid adversaries `(smHopAdv Sch
 at the datum `x₀` chosen by the first stage (`CDAdv.advantage_le_tsum`). For the gated double
 ratchet of ACD at the signed-prekey pair, the layer of `smPreView` is the efficient one
 (`smSessView_pair_eq_pre`) and each corruption advantage has the bound of
-`sm_dh_corrupt_advantage_le_pair` (`signal_stack_realizes_FSM_acd_prekey`).
+`sm_dh_corrupt_advantage_le_pair` (`signal_stack_realizes_FSM_acd_prekey`). The term of a key
+also contains the probability that the key is read twice, which is `1` when both partners of an
+unexposed session always read their key; the bound is then at least `1`. Each `getKey` runs a
+session of its own, and the partners share no channel.
 
 ## Main definitions
 
@@ -258,6 +261,7 @@ theorem scBoundK_le_keyTermK (M : S → SMScheme Sst Pub Rand Wd Ct Leak)
         (smIdealViewK M ini Sch t n ΔFS ΔPCS) Z ≤
       ∑ i ∈ Finset.range Z.input.rounds,
         smKeyTermK M ini (fun d => (M d).corruptAdvantage ΔFS ΔPCS) Sch t n ΔFS ΔPCS i Z := by
+  rw [scBoundK, scBoundImp]
   refine Finset.sum_le_sum fun i _ => add_le_add ?_ le_rfl
   refine (CDAdv.advantage_le_tsum _ _ _ (fun d => ?_) (fun d => ?_)).trans
     (ENNReal.tsum_le_tsum fun p => mul_le_mul' le_rfl ?_)
@@ -313,7 +317,7 @@ theorem fsmBoundPair_mono [Inhabited S] (P : Finset PartyId)
 /-- **The Signal stack with the signed prekey realizes secure messaging with corruption**
 (genuine UC).
 
-*Ideal functionality.* `F_SMK M ini Sch t n ΔFS ΔPCS`: the multi-session secure channel of
+*Ideal functionality.* `F_SMK M ini Sch t n ΔFS ΔPCS`: the multi-session functionality over
 `F_AKEK` with unlinked delivery and the prekey datum, whose completed sessions have the ideal
 view of the schedule `Sch` over `M x₀` at their datum `x₀`, whose exposed sessions have the real
 view under the adversary key and datum, and whose adversary port is that of `F_AKEK`.

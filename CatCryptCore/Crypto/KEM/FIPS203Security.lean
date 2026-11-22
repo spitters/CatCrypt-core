@@ -1946,16 +1946,16 @@ theorem tsum_arrow_comm (H : (PK × SK) → M → K → (M → R) → ℝ≥0∞
   have h1 : ∀ (ks : PK × SK) (m : M),
       ∑' k, PMF.uniformFintype K k * ∑' f, PMF.uniformFintype (M → R) f * H ks m k f =
         ∑' f, PMF.uniformFintype (M → R) f * ∑' k, PMF.uniformFintype K k * H ks m k f :=
-    fun ks m => FOTransformU.tsum_mul_comm _ _ _
+    fun ks m => ENNReal.tsum_mul_tsum_mul_comm _ _ _
   simp only [h1]
   have h2 : ∀ ks : PK × SK,
       ∑' m, PMF.uniformFintype M m *
           ∑' f, PMF.uniformFintype (M → R) f * ∑' k, PMF.uniformFintype K k * H ks m k f =
         ∑' f, PMF.uniformFintype (M → R) f *
           ∑' m, PMF.uniformFintype M m * ∑' k, PMF.uniformFintype K k * H ks m k f :=
-    fun ks => FOTransformU.tsum_mul_comm _ _ _
+    fun ks => ENNReal.tsum_mul_tsum_mul_comm _ _ _
   simp only [h2]
-  exact FOTransformU.tsum_mul_comm _ _ _
+  exact ENNReal.tsum_mul_tsum_mul_comm _ _ _
 
 omit [DecidableEq C] [DecidableEq Z] in
 /-- The average over the rejection seed moves inside the other averages. -/
@@ -1966,10 +1966,10 @@ theorem tsum_seed_inner (H : (PK × SK) → Z → M → K → (M → R) → ℝ�
       ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m * ∑' k, PMF.uniformFintype K k *
         ∑' f, PMF.uniformFintype (M → R) f * ∑' z, PMF.uniformFintype Z z * H ks z m k f := by
   refine tsum_congr fun ks => congrArg _ ?_
-  rw [FOTransformU.tsum_mul_comm]
+  rw [ENNReal.tsum_mul_tsum_mul_comm]
   refine tsum_congr fun m => congrArg _ ?_
-  rw [FOTransformU.tsum_mul_comm]
-  exact tsum_congr fun k => congrArg _ (FOTransformU.tsum_mul_comm _ _ _)
+  rw [ENNReal.tsum_mul_tsum_mul_comm]
+  exact tsum_congr fun k => congrArg _ (ENNReal.tsum_mul_tsum_mul_comm _ _ _)
 
 end Summation
 

@@ -159,6 +159,7 @@ end PRFPRNGTime
 section CKATime
 
 variable {Sc Msg Key Rand RK Sa W Ct : Type} [SampleableType W] [SampleableType Ct]
+  {Kt : Type} [SampleableType Kt]
 
 /-- The bound `B` on the cost companions of a costed state of the CKA simulator: the companions
 of the root keys, the sending and receiving chains, the CKA shadow states and the counters. -/
@@ -175,12 +176,13 @@ def smCKACostInv (B : ℕ)
 cost at most `e`. -/
 def smCKAQueryTime (r g e B : ℕ) : ℕ := r + 2 * g + e + 6 * B + 50
 
+omit [SampleableType Kt] in
 /-- **Time of a query of the CKA simulator.** From a costed state with companions at most
 `1 + 3 i`, the costed simulator `smCKAImplOf` answers in time at most
 `smCKAQueryTime r g e (1 + 3 i)` and returns states with companions at most `1 + 3 (i + 1)`. -/
-theorem smCKAImplOf.timed_bound (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (t : ℕ) (ideal : Bool) (σ : SMLoc RK Sa × CKAGameSt Unit Unit)
-    (q : SMQuery W) (rCost : RK × Key → ℕ) (eCost : W → W → W → ℕ) (gCost : Sa → ℕ)
+theorem smCKAImplOf.timed_bound (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct W Kt) (t : ℕ) (ideal : Bool) (σ : SMLoc RK Sa × CKAGameSt Unit Unit)
+    (q : SMQuery W) (rCost : RK × Key → ℕ) (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ)
     {r g e : ℕ} (hr : ∀ x, rCost x ≤ r) (he : ∀ k m a, eCost k m a ≤ e) (hg : ∀ s, gCost s ≤ g)
     (i : ℕ) (fh sh) (hinv : smCKACostInv (1 + 3 * i) fh sh) :
     OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.delay 1
@@ -203,21 +205,23 @@ variable [Fintype RK] [Nonempty RK]
 
 /-- The oracle tree of the CKA reduction `smcCKARed` at the challenge epoch `t` and the public
 value `pub`, for the interaction `play` of the secure-messaging adversary. -/
-noncomputable def smcCKARed.tree (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (ideal : Bool)
+noncomputable def smcCKARed.tree (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct W Kt) (ideal : Bool)
     (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) (t : ℕ) (pub : Msg) :
     OracleAdv CKAQuery (CKAAns Sc Msg Key Rand) Bool :=
   smCKATreeOf R G D ideal play t pub
 
 derive_timed smcCKARed.tree
 
+omit [SampleableType Kt] in
 /-- The derived costed tree of `smcCKARed`, at a costed interaction `play` that erases to the
 interaction of `A`, erases to the interaction of the CKA reduction. -/
 theorem smcCKARed.compile_tree [Fintype Rand] [Nonempty Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) (ideal : Bool)
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct)
     (play : ℕ → Msg → OracleAdv.Timed (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
     (playCost : ℕ → Msg → ℕ) (hplay : ∀ t g, (play t g).erase = A.play t g) (t : ℕ) (pub : Msg)
-    (rCost : RK × Key → ℕ) (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) :
+    (rCost : RK × Key → ℕ) (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) :
     (smcCKARed.tree.timed R G D ideal play playCost t pub rCost eCost gCost).2.erase =
       (smcCKARed (Rand := Rand) (Key := Key) R G D ideal A).play t pub := by
   rw [smcCKARed.tree.erase_timed]
@@ -241,16 +245,17 @@ theorem timeBound_rand_cost_bind_fst {D R X Ŝ : Type} (μ : PMF X) (c : X → �
   refine ⟨by dsimp only; omega, h4.mono ?_⟩
   dsimp only; omega
 
+omit [SampleableType Kt] in
 /-- **Time of the CKA reduction.** For a costed interaction of time at most `T`, at most `q`
 queries and call cost at most `a`, root steps of cost at most `r`, chain steps of cost at most
 `g` and encryptions of cost at most `e`, the derived costed tree of `smcCKARed` has time at most
 `T + ∑_{j < q} (r + 2 g + e + 6 (1 + 3 j) + 50) + a + 5`: one simulated query per query,
 whose cost grows with the cost companions of the simulator state. -/
-theorem smcCKARed.timeBound_timed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct) (ideal : Bool)
+theorem smcCKARed.timeBound_timed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct W Kt) (ideal : Bool)
     (play : ℕ → Msg → OracleAdv.Timed (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
     (playCost : ℕ → Msg → ℕ) (t : ℕ) (pub : Msg) (rCost : RK × Key → ℕ)
-    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {T q a r g e : ℕ}
+    (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) {T q a r g e : ℕ}
     (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
     (ha : ∀ t g, playCost t g ≤ a) (hr : ∀ x, rCost x ≤ r) (he : ∀ k m a, eCost k m a ≤ e)
     (hg : ∀ s, gCost s ≤ g) :
@@ -285,7 +290,7 @@ theorem timeBound_rand_zero {D R X α : Type} (μ : PMF X) (k : X → OracleAdv.
 section RootTime
 
 variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct]
+  [SampleableType Ct] {Kt : Type} [SampleableType Kt]
 
 /-- The bound `B` on the cost companions of a costed state of the secure-messaging game: the
 companions of the CKA states and counters (`ck`), and of the root keys, the sending and the
@@ -302,14 +307,15 @@ at most `B`, with CKA sends of cost at most `s`, CKA receives of cost at most `v
 cost at most `r`, chain steps of cost at most `g` and encryptions of cost at most `e`. -/
 def smQueryTime (s v r g e B : ℕ) : ℕ := 3 * s + 2 * v + r + 2 * g + e + 16 * B + 100
 
+omit [SampleableType Kt] in
 /-- **Time of a query of the PRF-PRNG simulator.** From a costed state with companions at most
 `1 + 3 i`, the costed simulator `smRootImplOf` answers in time at most
 `smQueryTime s v r g e (1 + 3 i)` and returns states with companions at most `1 + 3 (i + 1)`. -/
 theorem smRootImplOf.timed_bound (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t : ℕ) (ideal : Bool) (σ : SMSt Sc Msg RK Sa) (q : SMQuery W)
     (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
-    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (hs : ∀ x c, sCost x c ≤ s)
+    (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (hs : ∀ x c, sCost x c ≤ s)
     (hv : ∀ x m, vCost x m ≤ v) (hr : ∀ x, rCost x ≤ r) (he : ∀ k m a, eCost k m a ≤ e)
     (hg : ∀ x, gCost x ≤ g) (i : ℕ) (loc ck) (hinv : smCostInv (1 + 3 * i) ck loc) :
     OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.delay 1
@@ -333,7 +339,7 @@ variable [Fintype RK] [Nonempty RK]
 /-- The oracle tree of the PRF-PRNG reduction `smcRootRed`, for the distribution `tStar` of the
 challenge epoch and the interaction `play` of the secure-messaging adversary. -/
 noncomputable def smcRootRed.tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
     (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
     OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
@@ -341,17 +347,18 @@ noncomputable def smcRootRed.tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 derive_timed smcRootRed.tree
 
+omit [SampleableType Kt] in
 /-- The derived costed tree of `smcRootRed`, at the challenge-epoch distribution of `A` and a
 costed interaction `play` that erases to the interaction of `A`, erases to the PRF-PRNG
 reduction. -/
 theorem smcRootRed.compile_tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc))
     (A : SMCorruptAdv Sc Msg RK Sa W Ct)
     (play : ℕ → Msg → OracleAdv.Timed (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
     (playCost : ℕ → Msg → ℕ) (hplay : ∀ t g, (play t g).erase = A.play t g)
     (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
-    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) :
+    (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) :
     (smcRootRed.tree.timed C R G D ΔFS ΔPCS ideal initP A.tStar play playCost sCost rCost vCost
       eCost gCost).2.erase = smcRootRed C R G D ΔFS ΔPCS ideal initP A := by
   rw [smcRootRed.tree.erase_timed]
@@ -359,17 +366,18 @@ theorem smcRootRed.compile_tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
   rw [h]
   rfl
 
+omit [SampleableType Kt] in
 /-- **Time of the PRF-PRNG reduction.** For a costed interaction of time at most `T`, at most
 `q` queries and call cost at most `a`, CKA sends of cost at most `s`, CKA receives of cost at
 most `v`, root steps of cost at most `r`, chain steps of cost at most `g` and encryptions of cost
 at most `e`, the derived costed tree of `smcRootRed` has time at most
 `T + ∑_{j < q} smQueryTime s v r g e (1 + 3 j) + a + 8`. -/
 theorem smcRootRed.timeBound_timed (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
     (play : ℕ → Msg → OracleAdv.Timed (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
     (playCost : ℕ → Msg → ℕ) (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ)
-    (vCost : Sc → Msg → ℕ) (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {T q a s v r g e : ℕ}
+    (vCost : Sc → Msg → ℕ) (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) {T q a s v r g e : ℕ}
     (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
     (ha : ∀ t g, playCost t g ≤ a) (hs : ∀ x c, sCost x c ≤ s) (hv : ∀ x m, vCost x m ≤ v)
     (hr : ∀ x, rCost x ≤ r) (he : ∀ k m a, eCost k m a ≤ e) (hg : ∀ x, gCost x ≤ g) :
@@ -398,6 +406,7 @@ end RootTime
 section FSTime
 
 variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  {Kt : Type} [SampleableType Kt]
 
 /-- The bound `B` on the cost companions of a costed state of the FS-AEAD simulator: those of
 the secure-messaging state (`smCostInv`) and of the two flags of the FS-AEAD instance. -/
@@ -408,134 +417,140 @@ def smFSCostInv (B : ℕ)
     (sndXCost rcvXCost : CKAParty → ℕ) : Prop :=
   smCostInv B sh.1 sh.2 ∧ (∀ p, sndXCost p ≤ B) ∧ ∀ p, rcvXCost p ≤ B
 
+omit [SampleableType Kt] in
 /-- The time bound of `smFSImplOf.timed_bound` at the opening of an epoch. -/
 theorem smFSImplOf.timed_bound_ratchet (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (p : CKAParty)
     (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
-    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (_hs : ∀ x c, sCost x c ≤ s)
+    (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (_hs : ∀ x c, sCost x c ≤ s)
     (_hv : ∀ x m, vCost x m ≤ v) (_hr : ∀ x, rCost x ≤ r) (_he : ∀ k m a, eCost k m a ≤ e)
     (_hg : ∀ x, gCost x ≤ g) (i : ℕ) (sh sndXCost rcvXCost)
     (hinv : smFSCostInv (1 + 3 * i) sh sndXCost rcvXCost) :
     OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.delay 1
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.ratchet p) sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost))
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.ratchet p) sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost))
         (smQueryTime s v r g e (1 + 3 * i)) ∧
       OracleAdv.Timed.AllRet (fun y => smFSCostInv (1 + 3 * (i + 1)) y.2.1 y.2.2.1.2 y.2.2.2.1.2)
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.ratchet p) sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost).2 := by
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.ratchet p) sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost).2 := by
   obtain ⟨⟨h1, h2, h3, h4, h5⟩, h6, h7⟩ := hinv
   unfold smFSCostInv smCostInv smQueryTime
   simp only [smFSImplOf.timed, smFSRatchet.timed, OracleAdv.Timed.delay,
     OracleAdv.Timed.StepTimeBound]
   sm_cost_steps
 
+omit [SampleableType Kt] in
 /-- The time bound of `smFSImplOf.timed_bound` at a receive. -/
 theorem smFSImplOf.timed_bound_recv (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (p : CKAParty)
     (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
-    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (_hs : ∀ x c, sCost x c ≤ s)
+    (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (_hs : ∀ x c, sCost x c ≤ s)
     (_hv : ∀ x m, vCost x m ≤ v) (_hr : ∀ x, rCost x ≤ r) (_he : ∀ k m a, eCost k m a ≤ e)
     (_hg : ∀ x, gCost x ≤ g) (i : ℕ) (sh sndXCost rcvXCost)
     (hinv : smFSCostInv (1 + 3 * i) sh sndXCost rcvXCost) :
     OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.delay 1
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.recv p) sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost))
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.recv p) sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost))
         (smQueryTime s v r g e (1 + 3 * i)) ∧
       OracleAdv.Timed.AllRet (fun y => smFSCostInv (1 + 3 * (i + 1)) y.2.1 y.2.2.1.2 y.2.2.2.1.2)
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.recv p) sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost).2 := by
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.recv p) sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost).2 := by
   obtain ⟨⟨h1, h2, h3, h4, h5⟩, h6, h7⟩ := hinv
   unfold smFSCostInv smCostInv smQueryTime
   simp only [smFSImplOf.timed, smFSRecv.timed, OracleAdv.Timed.delay,
     OracleAdv.Timed.StepTimeBound]
   sm_cost_steps
 
+omit [SampleableType Kt] in
 /-- The time bound of `smFSImplOf.timed_bound` at a send. -/
 theorem smFSImplOf.timed_bound_send (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (p : CKAParty) (m : W × W)
     (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
-    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (_hs : ∀ x c, sCost x c ≤ s)
+    (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (_hs : ∀ x c, sCost x c ≤ s)
     (_hv : ∀ x m, vCost x m ≤ v) (_hr : ∀ x, rCost x ≤ r) (_he : ∀ k m a, eCost k m a ≤ e)
     (_hg : ∀ x, gCost x ≤ g) (i : ℕ) (sh sndXCost rcvXCost)
     (hinv : smFSCostInv (1 + 3 * i) sh sndXCost rcvXCost) :
     OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.delay 1
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.send p m) sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost))
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.send p m) sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost))
         (smQueryTime s v r g e (1 + 3 * i)) ∧
       OracleAdv.Timed.AllRet (fun y => smFSCostInv (1 + 3 * (i + 1)) y.2.1 y.2.2.1.2 y.2.2.2.1.2)
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.send p m) sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost).2 := by
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.send p m) sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost).2 := by
   obtain ⟨⟨h1, h2, h3, h4, h5⟩, h6, h7⟩ := hinv
   unfold smFSCostInv smCostInv smQueryTime
   simp only [smFSImplOf.timed, smFSSend.timed, OracleAdv.Timed.delay,
     OracleAdv.Timed.StepTimeBound]
   sm_cost_steps
 
+omit [SampleableType Kt] in
 /-- The time bound of `smFSImplOf.timed_bound` at a challenge. -/
 theorem smFSImplOf.timed_bound_chall (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (p : CKAParty) (m : W × W)
     (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
-    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (_hs : ∀ x c, sCost x c ≤ s)
+    (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (_hs : ∀ x c, sCost x c ≤ s)
     (_hv : ∀ x m, vCost x m ≤ v) (_hr : ∀ x, rCost x ≤ r) (_he : ∀ k m a, eCost k m a ≤ e)
     (_hg : ∀ x, gCost x ≤ g) (i : ℕ) (sh sndXCost rcvXCost)
     (hinv : smFSCostInv (1 + 3 * i) sh sndXCost rcvXCost) :
     OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.delay 1
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.chall p m) sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost))
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.chall p m) sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost))
         (smQueryTime s v r g e (1 + 3 * i)) ∧
       OracleAdv.Timed.AllRet (fun y => smFSCostInv (1 + 3 * (i + 1)) y.2.1 y.2.2.1.2 y.2.2.2.1.2)
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.chall p m) sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost).2 := by
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.chall p m) sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost).2 := by
   obtain ⟨⟨h1, h2, h3, h4, h5⟩, h6, h7⟩ := hinv
   unfold smFSCostInv smCostInv smQueryTime
   simp only [smFSImplOf.timed, smFSChall.timed, OracleAdv.Timed.delay,
     OracleAdv.Timed.StepTimeBound]
   sm_cost_steps
 
+omit [SampleableType Kt] in
 /-- The time bound of `smFSImplOf.timed_bound` at a corruption. -/
 theorem smFSImplOf.timed_bound_corrupt (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (p : CKAParty)
     (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
-    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (_hs : ∀ x c, sCost x c ≤ s)
+    (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (_hs : ∀ x c, sCost x c ≤ s)
     (_hv : ∀ x m, vCost x m ≤ v) (_hr : ∀ x, rCost x ≤ r) (_he : ∀ k m a, eCost k m a ≤ e)
     (_hg : ∀ x, gCost x ≤ g) (i : ℕ) (sh sndXCost rcvXCost)
     (hinv : smFSCostInv (1 + 3 * i) sh sndXCost rcvXCost) :
     OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.delay 1
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.corrupt p) sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost))
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.corrupt p) sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost))
         (smQueryTime s v r g e (1 + 3 * i)) ∧
       OracleAdv.Timed.AllRet (fun y => smFSCostInv (1 + 3 * (i + 1)) y.2.1 y.2.2.1.2 y.2.2.2.1.2)
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.corrupt p) sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost).2 := by
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x (.corrupt p) sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost).2 := by
   obtain ⟨⟨h1, h2, h3, h4, h5⟩, h6, h7⟩ := hinv
   unfold smFSCostInv smCostInv smQueryTime
   simp only [smFSImplOf.timed, smFSCorr.timed, OracleAdv.Timed.delay,
     OracleAdv.Timed.StepTimeBound]
   sm_cost_steps
 
+omit [SampleableType Kt] in
 /-- **Time of a query of the FS-AEAD simulator.** From a costed state with companions at most
 `1 + 3 i`, the costed simulator `smFSImplOf` answers in time at most
 `smQueryTime s v r g e (1 + 3 i)` and returns states with companions at most `1 + 3 (i + 1)`. -/
 theorem smFSImplOf.timed_bound (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (q : SMQuery W)
     (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
-    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (hs : ∀ x c, sCost x c ≤ s)
+    (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (hs : ∀ x c, sCost x c ≤ s)
     (hv : ∀ x m, vCost x m ≤ v) (hr : ∀ x, rCost x ≤ r) (he : ∀ k m a, eCost k m a ≤ e)
     (hg : ∀ x, gCost x ≤ g) (i : ℕ) (sh sndXCost rcvXCost)
     (hinv : smFSCostInv (1 + 3 * i) sh sndXCost rcvXCost) :
     OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.delay 1
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x q sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost))
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x q sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost))
         (smQueryTime s v r g e (1 + 3 * i)) ∧
       OracleAdv.Timed.AllRet (fun y => smFSCostInv (1 + 3 * (i + 1)) y.2.1 y.2.2.1.2 y.2.2.2.1.2)
-        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x q sCost rCost sh sndXCost rcvXCost vCost
-          eCost gCost).2 := by
+        (smFSImplOf.timed C R G D ΔFS ΔPCS t rkS x q sCost rCost sh sndXCost rcvXCost
+          vCost eCost gCost).2 := by
   cases q with
   | ratchet p =>
     exact smFSImplOf.timed_bound_ratchet C R G D ΔFS ΔPCS t rkS x p sCost rCost vCost eCost
@@ -558,7 +573,7 @@ variable [Fintype RK] [Nonempty RK]
 /-- The oracle tree of the FS-AEAD reduction `smcFSRed`, for the distribution `tStar` of the
 challenge epoch and the interaction `play` of the secure-messaging adversary. -/
 noncomputable def smcFSRed.tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS : ℕ) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
     (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
     OracleAdv (FSQuery W) (FSAns Sa Ct) Bool :=
@@ -566,16 +581,17 @@ noncomputable def smcFSRed.tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 derive_timed smcFSRed.tree
 
+omit [SampleableType Kt] in
 /-- The derived costed tree of `smcFSRed`, at the challenge-epoch distribution of `A` and a
 costed interaction `play` that erases to the interaction of `A`, erases to the FS-AEAD
 reduction. -/
 theorem smcFSRed.compile_tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS : ℕ) (initP : PMF (Msg × Sc × Sc)) (A : SMCorruptAdv Sc Msg RK Sa W Ct)
     (play : ℕ → Msg → OracleAdv.Timed (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
     (playCost : ℕ → Msg → ℕ) (hplay : ∀ t g, (play t g).erase = A.play t g)
     (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
-    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) :
+    (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) :
     (smcFSRed.tree.timed C R G D ΔFS ΔPCS initP A.tStar play playCost sCost rCost vCost eCost
       gCost).2.erase = smcFSRed C R G D ΔFS ΔPCS initP A := by
   rw [smcFSRed.tree.erase_timed]
@@ -583,17 +599,18 @@ theorem smcFSRed.compile_tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
   rw [h]
   rfl
 
+omit [SampleableType Kt] in
 /-- **Time of the FS-AEAD reduction.** For a costed interaction of time at most `T`, at most `q`
 queries and call cost at most `a`, CKA sends of cost at most `s`, CKA receives of cost at most
 `v`, root steps of cost at most `r`, chain steps of cost at most `g` and encryptions of cost at
 most `e`, the derived costed tree of `smcFSRed` has time at most
 `T + ∑_{j < q} smQueryTime s v r g e (1 + 3 j) + a + 9`. -/
 theorem smcFSRed.timeBound_timed (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS : ℕ) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
     (play : ℕ → Msg → OracleAdv.Timed (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
     (playCost : ℕ → Msg → ℕ) (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ)
-    (vCost : Sc → Msg → ℕ) (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {T q a s v r g e : ℕ}
+    (vCost : Sc → Msg → ℕ) (eCost : Kt → W → W → ℕ) (gCost : Sa → ℕ) {T q a s v r g e : ℕ}
     (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
     (ha : ∀ t g, playCost t g ≤ a) (hs : ∀ x c, sCost x c ≤ s) (hv : ∀ x m, vCost x m ≤ v)
     (hr : ∀ x, rCost x ≤ r) (he : ∀ k m a, eCost k m a ≤ e) (hg : ∀ x, gCost x ≤ g) :

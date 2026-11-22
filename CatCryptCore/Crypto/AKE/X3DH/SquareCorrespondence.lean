@@ -32,7 +32,9 @@ encoding of `H` of `bobInp`, and the two agree on an unmodified exchange by
 
 The equations are stated with the one-time prekey (`use_opk = true`) only: the input `Inp W`
 has the fourth Diffie-Hellman value as a field, and the branch without the one-time prekey,
-whose KDF takes three values, has no counterpart in it.
+whose KDF takes three values, has no counterpart in it. The field `dh_pub` of `X3dhSquareHom`
+holds at every scalar, `0` included, so the record excludes X25519 with the u-coordinate as
+`encW`: no clamped scalar has the neutral element as public key.
 
 ## Main definitions
 

@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Messaging.CKA
-public import CatCryptCore.Crypto.Messaging.CKACorrupt
 public import CatCryptCore.Examples.KEMDEM
 import CatCryptCore.Tactics.DeriveReduction
 

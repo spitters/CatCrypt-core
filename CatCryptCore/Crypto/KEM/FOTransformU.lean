@@ -11,6 +11,7 @@ public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
 public import CatCryptCore.Crypto.LazyTableReindex
 public import CatCryptCore.Crypto.OracleQueryVec
 public import CatCryptCore.Tactics.QueryBound
+public import CatCryptCore.ForMathlib.TsumExchange
 
 /-!
 # The U-transforms of Hofheinz–Hövelmanns–Kiltz in the random-oracle model
@@ -592,7 +593,8 @@ theorem toOuterMeasure_le_add_flag_set {α σ : Type} (p₁ p₂ : PMF (α × (�
     p₁.toOuterMeasure S ≤ p₂.toOuterMeasure S + p₂.toOuterMeasure {x | x.2.2 = true} := by
   refine (MeasureTheory.measure_le_inter_add_sdiff p₁.toOuterMeasure S
     {x | x.2.2 = false}).trans (add_le_add ?_ ?_)
-  · rw [toOuterMeasure_eq_of_subset_false p₁ p₂ h _ fun x hx => hx.2]
+  · rw [toOuterMeasure_eq_of_subset_false p₁ p₂ h _
+      fun x (hx : x ∈ S ∩ {x | x.2.2 = false}) => hx.2]
     exact MeasureTheory.measure_mono Set.inter_subset_left
   · rw [← toOuterMeasure_flag_eq p₁ p₂ h]
     refine MeasureTheory.measure_mono fun x hx => ?_
@@ -915,14 +917,6 @@ omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [Decidabl
 theorem tsum_mul_const {α : Type} (p : PMF α) (c : ℝ≥0∞) : ∑' a, p a * c = c := by
   rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
-omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C]
-  [Fintype K] [Nonempty K] in
-theorem tsum_mul_comm {α β : Type} (p : α → ℝ≥0∞) (q : β → ℝ≥0∞) (F : α → β → ℝ≥0∞) :
-    ∑' a, p a * ∑' b, q b * F a b = ∑' b, q b * ∑' a, p a * F a b := by
-  simp only [← ENNReal.tsum_mul_left]
-  rw [ENNReal.tsum_comm]
-  exact tsum_congr fun b => tsum_congr fun a => by ring
-
 variable (P : Scheme PK SK M C R)
 
 omit [DecidableEq M] [DecidableEq C] in
@@ -1029,13 +1023,13 @@ theorem uNotBot_indcca {qH qD : ℕ} (P : Scheme PK SK M C R)
         simp only [Draw.c, tsum_mul_const]
         calc _ ≤ ∑' ks, P.keygen ks * ((qH : ℝ≥0∞) / Fintype.card M) := by
               refine ENNReal.tsum_le_tsum fun ks => mul_le_mul_right ?_ _
-              rw [tsum_mul_comm]
+              rw [ENNReal.tsum_mul_tsum_mul_comm]
               calc _ ≤ ∑' m, PMF.uniformFintype M m * ((qH : ℝ≥0∞) / Fintype.card M) := by
                     refine ENNReal.tsum_le_tsum fun m => mul_le_mul_right ?_ _
-                    rw [tsum_mul_comm]
+                    rw [ENNReal.tsum_mul_tsum_mul_comm]
                     calc _ ≤ ∑' r, PMF.uniformFintype R r * ((qH : ℝ≥0∞) / Fintype.card M) := by
                           refine ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _
-                          rw [tsum_mul_comm]
+                          rw [ENNReal.tsum_mul_tsum_mul_comm]
                           calc _ ≤ ∑' k₀, PMF.uniformFintype K k₀ *
                                 ((qH : ℝ≥0∞) / Fintype.card M) := by
                                 refine ENNReal.tsum_le_tsum fun k₀ => mul_le_mul_right ?_ _

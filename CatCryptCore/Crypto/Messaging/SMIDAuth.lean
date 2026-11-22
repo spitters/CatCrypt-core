@@ -345,33 +345,33 @@ end LogBad
 
 section Join
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type}
+variable {Sc Msg Key Rand RK Sa W Ct Kt : Type}
 
 /-- The state `x` of the ACD construction with headers with the base state `b` in place of its
 own. -/
-def ACDIDSt.withBase {Sc' RK' : Type} (x : ACDIDSt Sc' RK' Sa Msg W) (b : SMPartySt Sc RK Sa) :
-    ACDIDSt Sc RK Sa Msg W :=
+def ACDIDSt.withBase {Sc' RK' : Type} (x : ACDIDSt Sc' RK' Sa Msg Kt) (b : SMPartySt Sc RK Sa) :
+    ACDIDSt Sc RK Sa Msg Kt :=
   ⟨b, x.pubS, x.ns, x.ep, x.er, x.nr, x.rpubs, x.store⟩
 
 /-- The bookkeeping of the parties of `acdIDSM` beside their base states, with the number `PN`
 of the public value in transit. It is kept over the trivial base type; the base state inside is
 not read: `acdIDJoin` replaces it. -/
-abbrev ACDIDX (Sa Msg W : Type) := (CKAParty → ACDIDSt Unit Unit Sa Msg W) × ℕ
+abbrev ACDIDX (Sa Msg Kt : Type) := (CKAParty → ACDIDSt Unit Unit Sa Msg Kt) × ℕ
 
 /-- The header of the next ciphertext of party `p`. -/
-def acdIDHdr (X : ACDIDX Sa Msg W) (p : CKAParty) : ACDHdr Msg :=
+def acdIDHdr (X : ACDIDX Sa Msg Kt) (p : CKAParty) : ACDHdr Msg :=
   ((X.1 p).pubS, (X.1 p).ns)
 
 /-- The state of the game over `acdIDSM` from the state `σ` of the game over the base and the
 bookkeeping `X`. -/
-def acdIDJoin (σ : SMSt Sc Msg RK Sa) (X : ACDIDX Sa Msg W) :
-    SMSchemeSt (ACDIDSt Sc RK Sa Msg W) (Msg × ℕ) :=
+def acdIDJoin (σ : SMSt Sc Msg RK Sa) (X : ACDIDX Sa Msg Kt) :
+    SMSchemeSt (ACDIDSt Sc RK Sa Msg Kt) (Msg × ℕ) :=
   ⟨⟨fun p => (X.1 p).withBase (σ.toScheme.ck.st p), σ.ck.t, (σ.ck.msg, X.2)⟩, σ.loc.done⟩
 
 /-- The answer of the game over `acdIDSM` from the answer of the game over the base, for a party
 with the bookkeeping `x`. -/
-def acdIDAns (x : ACDIDSt Unit Unit Sa Msg W) :
-    SMAns Sc Msg RK Sa Ct → SMSchemeAns (Msg × ℕ) Ct (ACDIDLeak Sc RK Sa Msg W)
+def acdIDAns (x : ACDIDSt Unit Unit Sa Msg Kt) :
+    SMAns Sc Msg RK Sa Ct → SMSchemeAns (Msg × ℕ) Ct (ACDIDLeak Sc RK Sa Msg Kt)
   | .none => .none
   | .msg T => .msg (T, x.ns)
   | .ct c => .ct c
@@ -380,16 +380,16 @@ def acdIDAns (x : ACDIDSt Unit Unit Sa Msg W) :
 
 /-- The bookkeeping of party `p` after receiving the public value `(T, PN)` with the receiving
 chain `rcv` of its closed receiving epoch. -/
-def ACDIDSt.recvX (G : PRGDef Sa (W × Sa)) (x : ACDIDSt Sc RK Sa Msg W) (rcv : Option Sa)
-    (T : Msg × ℕ) : ACDIDSt Sc RK Sa Msg W :=
+def ACDIDSt.recvX (G : PRGDef Sa (Kt × Sa)) (x : ACDIDSt Sc RK Sa Msg Kt) (rcv : Option Sa)
+    (T : Msg × ℕ) : ACDIDSt Sc RK Sa Msg Kt :=
   ⟨x.base, x.pubS, x.ns, x.ep + 1, x.ep + 1, 0, (x.ep + 1, T) :: x.rpubs,
     (if x.er = 0 then [] else
       (rcv.map fun sa => ACDIDSt.skipKeys G x.er sa x.nr (T.2 - x.nr)).getD []) ++ x.store⟩
 
 /-- The bookkeeping after the query `q` with the answer `a` of the game over the base, from the
 receiving chains `rcv`, the epoch counters `sh` and the CKA message `T₀` in transit. -/
-def acdIDXUpd (G : PRGDef Sa (W × Sa)) (rcv : CKAParty → Option Sa) (sh : CKAGameSt Unit Unit)
-    (T₀ : Msg) (X : ACDIDX Sa Msg W) : SMQuery W → SMAns Sc Msg RK Sa Ct → ACDIDX Sa Msg W
+def acdIDXUpd (G : PRGDef Sa (Kt × Sa)) (rcv : CKAParty → Option Sa) (sh : CKAGameSt Unit Unit)
+    (T₀ : Msg) (X : ACDIDX Sa Msg Kt) : SMQuery W → SMAns Sc Msg RK Sa Ct → ACDIDX Sa Msg Kt
   | .ratchet p, .msg T => (Function.update X.1 p
       ⟨(X.1 p).base, (T, (X.1 p).ns), 0, (X.1 p).ep + 1, (X.1 p).er, (X.1 p).nr, (X.1 p).rpubs,
         (X.1 p).store⟩, (X.1 p).ns)
@@ -407,19 +407,20 @@ theorem SMSchemeSt.ext_of {St Pub : Type} {s s' : SMSchemeSt St Pub} (hst : s.ck
   obtain ⟨⟨st', t', m'⟩, d'⟩ := s'
   simp_all
 
-variable [Fintype Rand] [Nonempty Rand] [SampleableType W] [SampleableType Ct] [Fintype RK]
-  [Nonempty RK] [Inhabited Msg] [DecidableEq Msg]
+variable [Fintype Rand] [Nonempty Rand] [SampleableType W] [SampleableType Ct]
+  [SampleableType Kt] [Fintype RK] [Nonempty RK] [Inhabited Msg] [DecidableEq Msg]
 
+omit [SampleableType Kt] in
 /-- **The oracle over `acdIDSM` from the oracle over the base.** Under the invariant `ACDInv`,
 each call of the corruption-game oracle over `acdIDSM` at a joined state is the call of
 `smOracleOf` at the real root step over the base with the AEAD `aeadComapAD D dec`, on the query
 with the header attached to the associated data, with the answer and the bookkeeping
 completed. -/
 theorem acdIDSM_scheme_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored : ℕ)
     (J : Sc → Sc → Prop) (ΔFS ΔPCS t : ℕ) (ideal : Bool) (σ : SMSt Sc Msg RK Sa)
-    (X : ACDIDX Sa Msg W) (hs : ACDInv C R J σ) (q : SMQuery W) :
+    (X : ACDIDX Sa Msg Kt) (hs : ACDInv C R J σ) (q : SMQuery W) :
     smSchemeOracle (acdIDSM C R G D dec enc maxSkip maxStored).toSMScheme ΔFS ΔPCS t ideal
         (acdIDJoin σ X) q =
       (smOracleOf C R G (aeadComapAD D dec) ΔFS ΔPCS t ideal (realRoot R) σ
@@ -433,7 +434,8 @@ theorem acdIDSM_scheme_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
     · have hc' : (acdIDJoin σ X).ck.canSend p = true := hc
       simp only [hc, hc', ite_true, PMF.map_bind, PMF.pure_map]
       refine congrArg _ (funext fun r => ?_)
-      simp only [acdIDAns, acdIDXUpd, acdIDJoin, acdIDSM, acdIDBase, acdSMAD, CKAGameSt.sent]
+      simp only [acdIDAns, acdIDXUpd, acdIDJoin, acdIDSM, acdIDHdrSM, acdIDHdrBase,
+        aeadEncComapAD, acdIDBase, acdSMAD, CKAGameSt.sent]
       refine congrArg PMF.pure (Prod.ext rfl ?_)
       simp only [SMSchemeSt.mk.injEq, CKAGameSt.mk.injEq]
       refine ⟨⟨funext fun q => ?_, trivial, rfl⟩, rfl⟩
@@ -454,7 +456,8 @@ theorem acdIDSM_scheme_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
       funext q
       by_cases hq : q = p
       · subst hq
-        simp [acdIDXUpd, hc, acdIDJoin, acdIDSM, acdIDBase, acdSMAD, CKAGameSt.recvd,
+        simp [acdIDXUpd, hc, acdIDJoin, acdIDSM, acdIDHdrSM, acdIDHdrBase, aeadEncComapAD,
+          acdIDBase, acdSMAD, CKAGameSt.recvd,
           SMLoc.recvY, SMSt.toScheme, ACDIDSt.withBase, ACDIDSt.recvX]
       · simp [acdIDXUpd, hc, acdIDJoin, CKAGameSt.recvd, SMLoc.recvY,
           SMSt.toScheme, ACDIDSt.withBase,
@@ -470,7 +473,8 @@ theorem acdIDSM_scheme_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
     | none =>
       have h0 : (acdIDSM C R G D dec enc maxSkip maxStored).send ((acdIDJoin σ X).ck.st p) m =
           none := by
-        simp [acdIDSM, acdIDBase, acdSMAD, acdIDJoin, SMSt.toScheme, ACDIDSt.withBase, hsnd]
+        simp [acdIDSM, acdIDHdrSM, acdIDHdrBase, aeadEncComapAD, acdIDBase, acdSMAD, acdIDJoin,
+          SMSt.toScheme, ACDIDSt.withBase, hsnd]
       simp only [h0, PMF.pure_map]
       split_ifs <;> rfl
     | some sa =>
@@ -480,7 +484,7 @@ theorem acdIDSM_scheme_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
             some (⟨⟨σ.ck.st p, σ.loc.rk p, some (G.stretch sa).2, σ.loc.rcv p⟩, (X.1 p).pubS,
               (X.1 p).ns + 1, (X.1 p).ep, (X.1 p).er, (X.1 p).nr, (X.1 p).rpubs, (X.1 p).store⟩,
               D.encrypt (G.stretch sa).1 m.1 (dec (enc (acdIDHdr X p) m.2))) := by
-          simp [acdIDSM, acdIDBase, acdSMAD, acdIDJoin,
+          simp [acdIDSM, acdIDHdrSM, acdIDHdrBase, aeadEncComapAD, acdIDBase, acdSMAD, acdIDJoin,
               SMSt.toScheme, ACDIDSt.withBase, hsnd, acdIDHdr]
         simp only [h1]
         refine congrArg PMF.pure (Prod.ext rfl (SMSchemeSt.ext_of ?_ rfl rfl rfl))
@@ -502,7 +506,8 @@ theorem acdIDSM_scheme_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
     | none =>
       have h0 : (acdIDSM C R G D dec enc maxSkip maxStored).send ((acdIDJoin σ X).ck.st p) m =
           none := by
-        simp [acdIDSM, acdIDBase, acdSMAD, acdIDJoin, SMSt.toScheme, ACDIDSt.withBase, hsnd]
+        simp [acdIDSM, acdIDHdrSM, acdIDHdrBase, aeadEncComapAD, acdIDBase, acdSMAD, acdIDJoin,
+          SMSt.toScheme, ACDIDSt.withBase, hsnd]
       simp only [h0, PMF.pure_map]
       split_ifs <;> rfl
     | some sa =>
@@ -512,7 +517,7 @@ theorem acdIDSM_scheme_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
             some (⟨⟨σ.ck.st p, σ.loc.rk p, some (G.stretch sa).2, σ.loc.rcv p⟩, (X.1 p).pubS,
               (X.1 p).ns + 1, (X.1 p).ep, (X.1 p).er, (X.1 p).nr, (X.1 p).rpubs, (X.1 p).store⟩,
               D.encrypt (G.stretch sa).1 m.1 (dec (enc (acdIDHdr X p) m.2))) := by
-          simp [acdIDSM, acdIDBase, acdSMAD, acdIDJoin,
+          simp [acdIDSM, acdIDHdrSM, acdIDHdrBase, aeadEncComapAD, acdIDBase, acdSMAD, acdIDJoin,
               SMSt.toScheme, ACDIDSt.withBase, hsnd, acdIDHdr]
         simp only [h1]
         cases ideal
@@ -553,13 +558,13 @@ end Join
 
 section Deliver
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [SampleableType W] [SampleableType Ct]
+variable {Sc Msg Key Rand RK Sa W Ct Kt : Type} [SampleableType W] [SampleableType Ct]
   [DecidableEq Msg] [DecidableEq W] [DecidableEq Ct]
 
 omit [SampleableType W] [SampleableType Ct] [DecidableEq W] [DecidableEq Ct] in
 /-- The key lookup of `acdIDSM` reads the base state only through the receiving chain. -/
-theorem acdIDRKey_base_congr (G : PRGDef Sa (W × Sa)) (maxSkip maxStored : ℕ)
-    {Sc' RK' : Type} (x : ACDIDSt Sc' RK' Sa Msg W) (b : SMPartySt Sc RK Sa)
+theorem acdIDRKey_base_congr (G : PRGDef Sa (Kt × Sa)) (maxSkip maxStored : ℕ)
+    {Sc' RK' : Type} (x : ACDIDSt Sc' RK' Sa Msg Kt) (b : SMPartySt Sc RK Sa)
     (hb : b.rcv = x.base.rcv) (h : ACDHdr Msg) :
     acdIDRKey G maxSkip maxStored (x.withBase b) h =
       (acdIDRKey G maxSkip maxStored x h).map fun y => (y.1.withBase b, y.2) := by
@@ -571,18 +576,18 @@ theorem acdIDRKey_base_congr (G : PRGDef Sa (W × Sa)) (maxSkip maxStored : ℕ)
 omit [SampleableType W] [SampleableType Ct] [DecidableEq Msg] [DecidableEq W] [DecidableEq Ct] in
 /-- The state of party `p` with the receiving chain `rcv` in place of the one of its base
 state. -/
-def acdIDRcvSt (rcv : CKAParty → Option Sa) (X : CKAParty → ACDIDSt Unit Unit Sa Msg W)
-    (p : CKAParty) : ACDIDSt Unit Unit Sa Msg W :=
+def acdIDRcvSt (rcv : CKAParty → Option Sa) (X : CKAParty → ACDIDSt Unit Unit Sa Msg Kt)
+    (p : CKAParty) : ACDIDSt Unit Unit Sa Msg Kt :=
   (X p).withBase ⟨(), (), none, rcv p⟩
 
 /-- **The delivery of the game with decryption from the log beside the base**, with the
 receiving chains `rcv` and the epoch counters `sh`: the answer from the log, the bookkeeping of
 the parties and of the game after it, and the flag of a forgery at the epoch `k`. -/
-def acdIDDeliver (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+def acdIDDeliver (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (maxSkip maxStored ΔFS ΔPCS k : ℕ) (rcv : CKAParty → Option Sa) (sh : CKAGameSt Unit Unit)
-    (X : CKAParty → ACDIDSt Unit Unit Sa Msg W) (x : SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct)
+    (X : CKAParty → ACDIDSt Unit Unit Sa Msg Kt) (x : SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct)
     (p : CKAParty) (h : ACDHdr Msg) (ad : W) (c : Ct) :
-    Option W × ((CKAParty → ACDIDSt Unit Unit Sa Msg W) × SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct) ×
+    Option W × ((CKAParty → ACDIDSt Unit Unit Sa Msg Kt) × SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct) ×
       Bool :=
   match x.epochOf sh p h.1 with
   | none => (none, (X, x), false)
@@ -605,9 +610,9 @@ omit [Fintype Rand] [Nonempty Rand] in
 at a joined state, and the forgery event at the epoch `k`, are those of `acdIDDeliver` at the
 receiving chains and the epoch counters of the base. -/
 theorem acdIDDeliver_join (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
-    (σ : SMSt Sc Msg RK Sa) (X : ACDIDX Sa Msg W) (x : SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct)
+    (σ : SMSt Sc Msg RK Sa) (X : ACDIDX Sa Msg Kt) (x : SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct)
     (p : CKAParty) (h : ACDHdr Msg) (ad : W) (c : Ct) :
     smIDDeliver (acdIDSM C R G D dec enc maxSkip maxStored) ΔFS ΔPCS (fun _ => true)
         (acdIDJoin σ X, x) p h ad c =
@@ -667,22 +672,22 @@ end Deliver
 
 section Hop
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [Fintype RK] [Nonempty RK] [Inhabited Msg] [DecidableEq Msg]
-  [DecidableEq W] [DecidableEq Ct]
+variable {Sc Msg Key Rand RK Sa W Ct Kt : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct] [SampleableType Kt] [Fintype RK] [Nonempty RK] [Inhabited Msg]
+  [DecidableEq Msg] [DecidableEq W] [DecidableEq Ct]
 
 /-- The states of the hop games: the state of the secure-messaging game of the base, the
 bookkeeping of `acdIDSM` beside it, the bookkeeping of the game with immediate decryption and
 the flag of a forgery. -/
-abbrev ACDIDHopSt (Sc Msg RK Sa W Ct : Type) :=
-  ((SMSt Sc Msg RK Sa × ACDIDX Sa Msg W) × SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct) × Bool
+abbrev ACDIDHopSt (Sc Msg RK Sa W Ct Kt : Type) :=
+  ((SMSt Sc Msg RK Sa × ACDIDX Sa Msg Kt) × SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct) × Bool
 
 /-- The answers of the game with immediate decryption over `acdIDSM`. -/
-abbrev ACDIDAns (Sc Msg RK Sa W Ct : Type) :=
-  SMIDAns (Msg × ℕ) (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W) W
+abbrev ACDIDAns (Sc Msg RK Sa W Ct Kt : Type) :=
+  SMIDAns (Msg × ℕ) (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt) W
 
 /-- The initial bookkeeping beside the initial state `σ` of the base. -/
-def acdIDXInit : ACDIDX Sa Msg W :=
+def acdIDXInit : ACDIDX Sa Msg Kt :=
   (fun _ => ACDIDSt.embed ⟨(), (), none, none⟩, 0)
 
 /-- The rejection of every transition into a state with the epoch `k` outside the safe
@@ -696,10 +701,11 @@ def acdIDCut {S' Pub Hdr Leak : Type} (ΔFS ΔPCS k : ℕ)
 the secure-messaging game of the base with the root step `root` at the opening of the epoch `k`
 and the challenge and corruption gates of the challenge epoch `t`. -/
 noncomputable def acdIDHopStep (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct) :
-    SMIDQuery W (ACDHdr Msg) Ct → PMF (ACDIDAns Sc Msg RK Sa W Ct × ACDIDHopSt Sc Msg RK Sa W Ct)
+    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) :
+    SMIDQuery W (ACDHdr Msg) Ct →
+      PMF (ACDIDAns Sc Msg RK Sa W Ct Kt × ACDIDHopSt Sc Msg RK Sa W Ct Kt)
   | .sm q =>
     if smIDGate s.1.2 (ckaShadow s.1.1.1.ck) q then
       (smOracleOfAt C R G (aeadComapAD D dec) ΔFS ΔPCS t k false root s.1.1.1
@@ -723,11 +729,11 @@ noncomputable def acdIDHopStep (C : CKADef Sc Msg Key) [CKACoins C Rand]
 `acdIDHopStep` until the first answered corruption with the epoch `k` in its window, which is
 answered by a rejection, and a rejection of every later query. -/
 noncomputable def acdIDHopOracle (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct)
+    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt)
     (d : SMIDQuery W (ACDHdr Msg) Ct) :
-    PMF (ACDIDAns Sc Msg RK Sa W Ct × ACDIDHopSt Sc Msg RK Sa W Ct) :=
+    PMF (ACDIDAns Sc Msg RK Sa W Ct Kt × ACDIDHopSt Sc Msg RK Sa W Ct Kt) :=
   (if s.1.2.epochSafe ΔFS ΔPCS k then
       acdIDHopStep C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k root s d
     else PMF.pure (.dec none, s)).map (acdIDCut ΔFS ΔPCS k)
@@ -737,10 +743,10 @@ noncomputable def acdIDHopOracle (C : CKADef Sc Msg Key) [CKACoins C Rand]
 forgery as output. At the real root step it is the truncated forgery game with decryption from
 the log (`acdIDSM_logTruncGame_eq_hop`). -/
 noncomputable def acdIDHopGame (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
     (root : RK → Key → PMF (RK × Sa))
-    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W)) : SPComp Bool :=
+    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt)) : SPComp Bool :=
   SPComp.bind (liftPMF A.tStar) fun t => SPComp.bind C.init fun i =>
     SPComp.bind (SPComp.sample RK) fun rk =>
       liftPMF ((OracleAdv.run
@@ -750,19 +756,20 @@ noncomputable def acdIDHopGame (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 /-- The state of the game with decryption from the log over `acdIDSM` that a state of the hop
 games corresponds to. -/
-def acdIDEmb (s : ACDIDHopSt Sc Msg RK Sa W Ct) :
-    (SMSchemeSt (ACDIDSt Sc RK Sa Msg W) (Msg × ℕ) × SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct) ×
+def acdIDEmb (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) :
+    (SMSchemeSt (ACDIDSt Sc RK Sa Msg Kt) (Msg × ℕ) × SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct) ×
       Bool :=
   ((acdIDJoin s.1.1.1 s.1.1.2, s.1.2), s.2)
 
+omit [SampleableType Kt] in
 /-- **The hop oracle at the real root step is the truncated oracle over `acdIDSM`.** Under the
 invariant `ACDInv`, each call of `acdIDHopOracle` at the real root step, carried to the states
 of the game over `acdIDSM`, is the call of `smIDTruncOracle` with decryption from the log, with
 the transitions into a corruption of the epoch `k` answered by a rejection. -/
 theorem acdIDHop_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored : ℕ)
-    (J : Sc → Sc → Prop) (ΔFS ΔPCS t k : ℕ) (s : ACDIDHopSt Sc Msg RK Sa W Ct)
+    (J : Sc → Sc → Prop) (ΔFS ΔPCS t k : ℕ) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt)
     (hs : ACDInv C R J s.1.1.1) (d : SMIDQuery W (ACDHdr Msg) Ct) :
     (acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k (realRoot R) s d).map
         (Prod.map id acdIDEmb) =
@@ -771,7 +778,7 @@ theorem acdIDHop_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
   obtain ⟨⟨⟨σ, X⟩, x⟩, b⟩ := s
   have hc : (Prod.map id acdIDEmb ∘ acdIDCut ΔFS ΔPCS k) =
       (acdIDCut ΔFS ΔPCS k ∘ Prod.map id acdIDEmb :
-        ACDIDAns Sc Msg RK Sa W Ct × ACDIDHopSt Sc Msg RK Sa W Ct → _) := by
+        ACDIDAns Sc Msg RK Sa W Ct Kt × ACDIDHopSt Sc Msg RK Sa W Ct Kt → _) := by
     funext y
     obtain ⟨a, ⟨⟨⟨σ', X'⟩, x'⟩, b'⟩⟩ := y
     by_cases h : x'.epochSafe ΔFS ΔPCS k = false <;> simp [acdIDCut, acdIDEmb, h]
@@ -801,13 +808,14 @@ theorem acdIDHop_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
     rfl
 
 omit [Fintype RK] [Nonempty RK] [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- The hop oracle at the real root step keeps the invariant `ACDInv`, when the CKA is correct
 along `J`. -/
 theorem acdIDHop_acdInv (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored : ℕ)
     {J : Sc → Sc → Prop} (hJ : CKACorrect C J) (ΔFS ΔPCS t k : ℕ)
-    (s : ACDIDHopSt Sc Msg RK Sa W Ct) (hs : ACDInv C R J s.1.1.1)
+    (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) (hs : ACDInv C R J s.1.1.1)
     (d : SMIDQuery W (ACDHdr Msg) Ct) :
     ∀ y ∈ (acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k (realRoot R) s d).support,
       ACDInv C R J y.2.1.1.1 := by
@@ -838,27 +846,29 @@ theorem acdIDHop_acdInv (C : CKADef Sc Msg Key) [CKACoins C Rand]
     subst hz
     exact hs
 
+omit [SampleableType Kt] in
 /-- **The truncated forgery game over `acdIDSM` with decryption from the log is the hop game at
 the real root step.** For a CKA correct along `J`, with an initialisation that is the lift of
 `initP` and initial states related by `J`. -/
 theorem acdIDSM_logTruncGame_eq_hop (C : CKADef Sc Msg Key) [CKACoins C Rand]
     {J : Sc → Sc → Prop} (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc))
     (hinit : C.init = liftPMF initP) (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
-    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W)) :
+    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt)) :
     smIDLogTruncGame (acdIDSM C R G D dec enc maxSkip maxStored) ΔFS ΔPCS k A =
       acdIDHopGame C R G D dec enc maxSkip maxStored ΔFS ΔPCS k (realRoot R) A := by
   have hI : (acdIDSM C R G D dec enc maxSkip maxStored).init =
       SPComp.bind C.init fun i => SPComp.bind (SPComp.sample RK) fun rk =>
-        SPComp.pure ((i.1, 0), (ACDIDSt.embed ⟨i.2.1, rk, none, none⟩ : ACDIDSt Sc RK Sa Msg W),
-          (ACDIDSt.embed ⟨i.2.2, rk, none, none⟩ : ACDIDSt Sc RK Sa Msg W)) := by
-    simp only [acdIDSM, acdIDBase, acdSMAD, SPComp.bind_assoc, SPComp.pure_bind]
+        SPComp.pure ((i.1, 0), (ACDIDSt.embed ⟨i.2.1, rk, none, none⟩ : ACDIDSt Sc RK Sa Msg Kt),
+          (ACDIDSt.embed ⟨i.2.2, rk, none, none⟩ : ACDIDSt Sc RK Sa Msg Kt)) := by
+    simp only [acdIDSM, acdIDHdrSM, acdIDHdrBase, acdIDBase, acdSMAD, ACDIDSt.embed,
+      SPComp.bind_assoc, SPComp.pure_bind]
   simp only [smIDLogTruncGame, acdIDHopGame, hI, hinit, sample_eq_liftPMF, SPComp.bind_assoc,
     SPComp.pure_bind, liftPMF_bind_liftPMF]
   refine congrArg _ (congrArg _ (funext fun t => ?_))
   refine PMF.bind_congr_support _ _ _ fun i hi => congrArg _ (funext fun rk => ?_)
-  have hfr : ∀ (s : (SMSchemeSt (ACDIDSt Sc RK Sa Msg W) (Msg × ℕ) ×
+  have hfr : ∀ (s : (SMSchemeSt (ACDIDSt Sc RK Sa Msg Kt) (Msg × ℕ) ×
       SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct) × Bool) d,
       s.1.2.epochSafe ΔFS ΔPCS k = false → ∀ x ∈ (smIDTruncOracle
         (acdIDSM C R G D dec enc maxSkip maxStored) ΔFS ΔPCS t false (fun _ => true) k
@@ -869,13 +879,13 @@ theorem acdIDSM_logTruncGame_eq_hop (C : CKADef Sc Msg Key) [CKACoins C Rand]
     subst hx
     exact ⟨hs, rfl⟩
   refine Eq.trans (OracleAdv.run_map_eq_of_cut _
-    (fun s : (SMSchemeSt (ACDIDSt Sc RK Sa Msg W) (Msg × ℕ) ×
+    (fun s : (SMSchemeSt (ACDIDSt Sc RK Sa Msg Kt) (Msg × ℕ) ×
       SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct) × Bool => s.1.2.epochSafe ΔFS ΔPCS k = false)
     (fun s => s.2) (SMIDAns.dec none) hfr _ _).symm ?_
   have he : acdIDEmb (((smInit i rk, acdIDXInit),
       (SMIDAux.init (i.1, 0) : SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct)), false) =
-      ((SMSchemeSt.init ((i.1, 0), (ACDIDSt.embed ⟨i.2.1, rk, none, none⟩ : ACDIDSt Sc RK Sa Msg W),
-        (ACDIDSt.embed ⟨i.2.2, rk, none, none⟩ : ACDIDSt Sc RK Sa Msg W)),
+      ((SMSchemeSt.init ((i.1, 0), (ACDIDSt.embed ⟨i.2.1, rk, none, none⟩ : ACDIDSt Sc RK Sa Msg Kt),
+        (ACDIDSt.embed ⟨i.2.2, rk, none, none⟩ : ACDIDSt Sc RK Sa Msg Kt)),
         SMIDAux.init (i.1, 0)), false) := by
     simp only [acdIDEmb, Prod.mk.injEq, and_true]
     refine SMSchemeSt.ext_of (funext fun q => ?_) rfl rfl rfl
@@ -899,11 +909,11 @@ def acdIDMsgUpd {Sc RK Sa Ct' : Type} (T₀ : Msg) : SMQuery W → SMAns Sc Msg 
   | .ratchet _, .msg T => T
   | _, _ => T₀
 
-omit [Fintype RK] [Nonempty RK] [Inhabited Msg] [DecidableEq Msg] [DecidableEq W]
-  [DecidableEq Ct] in
+omit [SampleableType Kt] [Fintype RK] [Nonempty RK] [Inhabited Msg] [DecidableEq Msg]
+  [DecidableEq W] [DecidableEq Ct] in
 /-- The CKA message in transit after a call of `smOracleOfAt`. -/
 theorem smOracleOfAt_msg (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa))
     (s : SMSt Sc Msg RK Sa) (q : SMQuery W) :
     ∀ y ∈ (smOracleOfAt C R G D ΔFS ΔPCS t k ideal root s q).support,
@@ -970,24 +980,24 @@ end Hop
 
 section CKAHop
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [Fintype RK] [Nonempty RK] [Inhabited Msg] [DecidableEq Msg]
-  [DecidableEq W] [DecidableEq Ct]
+variable {Sc Msg Key Rand RK Sa W Ct Kt : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct] [SampleableType Kt] [Fintype RK] [Nonempty RK] [Inhabited Msg]
+  [DecidableEq Msg] [DecidableEq W] [DecidableEq Ct]
 
 /-- The states of the simulator of the CKA hop: the part `SMLoc` of the secure-messaging state,
 the epoch counters, the bookkeeping of `acdIDSM` beside the base with the CKA message in transit,
 the bookkeeping of the game with immediate decryption and the flag of a forgery. -/
-abbrev ACDIDCKASt (Msg RK Sa W Ct : Type) :=
-  (((SMLoc RK Sa × CKAGameSt Unit Unit) × (ACDIDX Sa Msg W × Msg)) ×
+abbrev ACDIDCKASt (Msg RK Sa W Ct Kt : Type) :=
+  (((SMLoc RK Sa × CKAGameSt Unit Unit) × (ACDIDX Sa Msg Kt × Msg)) ×
     SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct) × Bool
 
 /-- A query of the corruption game forwarded to `smCKAImplAt` and completed as in
 `acdIDHopStep`. -/
-noncomputable def acdIDCKAFwd (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct (W × ACDHdr Msg)) (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W)
-    (ΔFS ΔPCS t k : ℕ) (σ : ACDIDCKASt Msg RK Sa W Ct) (q : SMQuery W) :
+noncomputable def acdIDCKAFwd (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct (W × ACDHdr Msg) Kt) (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W)
+    (ΔFS ΔPCS t k : ℕ) (σ : ACDIDCKASt Msg RK Sa W Ct Kt) (q : SMQuery W) :
     OracleAdv CKAQuery (CKAAns Sc Msg Key Rand)
-      (ACDIDAns Sc Msg RK Sa W Ct × ACDIDCKASt Msg RK Sa W Ct) :=
+      (ACDIDAns Sc Msg RK Sa W Ct Kt × ACDIDCKASt Msg RK Sa W Ct Kt) :=
   (smCKAImplAt R G (aeadComapAD D dec) ΔFS ΔPCS t k false σ.1.1.1
     (q.mapMsg fun m => (m.1, enc (acdIDHdr σ.1.1.2.1 q.party) m.2))).bind fun r =>
     .ret (.sm ((acdIDAns (σ.1.1.2.1.1 q.party) r.1).withHdr (acdIDHdr σ.1.1.2.1 q.party)),
@@ -1000,12 +1010,12 @@ noncomputable def acdIDCKAFwd (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa
 corruption game that pass the gate are forwarded by `acdIDCKAFwd`, deliveries are answered by
 `acdIDDeliver` from the receiving chains of the simulator, and a corruption with the epoch `k` in
 its window stops the simulation. -/
-noncomputable def acdIDCKAImpl (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct (W × ACDHdr Msg)) (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W)
-    (maxSkip maxStored ΔFS ΔPCS t k : ℕ) (σ : ACDIDCKASt Msg RK Sa W Ct)
+noncomputable def acdIDCKAImpl (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct (W × ACDHdr Msg) Kt) (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W)
+    (maxSkip maxStored ΔFS ΔPCS t k : ℕ) (σ : ACDIDCKASt Msg RK Sa W Ct Kt)
     (d : SMIDQuery W (ACDHdr Msg) Ct) :
     OracleAdv CKAQuery (CKAAns Sc Msg Key Rand)
-      (ACDIDAns Sc Msg RK Sa W Ct × ACDIDCKASt Msg RK Sa W Ct) :=
+      (ACDIDAns Sc Msg RK Sa W Ct Kt × ACDIDCKASt Msg RK Sa W Ct Kt) :=
   if σ.1.2.epochSafe ΔFS ΔPCS k then
     match d with
     | .sm q =>
@@ -1036,10 +1046,10 @@ noncomputable def acdIDCKAImpl (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef S
 challenge epoch `k` and the public value `pub`, it draws the challenge epoch `t` of the adversary
 from `tStar` and a uniform root key, runs the adversary against `acdIDCKAImpl` and outputs the
 flag of a forgery. -/
-noncomputable def acdIDCKATree (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct (W × ACDHdr Msg)) (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W)
+noncomputable def acdIDCKATree (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct (W × ACDHdr Msg) Kt) (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W)
     (maxSkip maxStored ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
-    (play : ℕ → Msg × ℕ → OracleAdv (SMIDQuery W (ACDHdr Msg) Ct) (ACDIDAns Sc Msg RK Sa W Ct)
+    (play : ℕ → Msg × ℕ → OracleAdv (SMIDQuery W (ACDHdr Msg) Ct) (ACDIDAns Sc Msg RK Sa W Ct Kt)
       Bool) (k : ℕ) (pub : Msg) : OracleAdv CKAQuery (CKAAns Sc Msg Key Rand) Bool :=
   .rand tStar fun t => .rand (PMF.uniformFintype RK) fun rk =>
     (OracleAdv.simulate (acdIDCKAImpl R G D dec enc maxSkip maxStored ΔFS ΔPCS t k)
@@ -1048,26 +1058,26 @@ noncomputable def acdIDCKATree (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef S
 
 /-- **The CKA reduction of the forgery event at the epoch `k`** over `acdIDSM`: the CKA adversary
 with the challenge epoch `k` that plays the tree `acdIDCKATree`. -/
-noncomputable def acdIDCKARed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct (W × ACDHdr Msg)) (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W)
+noncomputable def acdIDCKARed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct (W × ACDHdr Msg) Kt) (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W)
     (maxSkip maxStored ΔFS ΔPCS k : ℕ)
-    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W)) :
+    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt)) :
     CKACorruptAdv Sc Msg Key Rand Bool where
   tStar := PMF.pure k
   play := acdIDCKATree R G D dec enc maxSkip maxStored ΔFS ΔPCS A.tStar A.play
 
 /-- The state of the CKA reduction and of the CKA game that a state of the hop games
 corresponds to. -/
-def acdIDCKAEmb (s : ACDIDHopSt Sc Msg RK Sa W Ct) :
-    ACDIDCKASt Msg RK Sa W Ct × CKAGameSt Sc Msg :=
+def acdIDCKAEmb (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) :
+    ACDIDCKASt Msg RK Sa W Ct Kt × CKAGameSt Sc Msg :=
   (((((s.1.1.1.loc, ckaShadow s.1.1.1.ck), (s.1.1.2, s.1.1.1.ck.msg)), s.1.2), s.2), s.1.1.1.ck)
 
-omit [Fintype Rand] [Nonempty Rand] [SampleableType Ct] [Fintype RK] [Nonempty RK]
-  [Inhabited Msg] in
+omit [Fintype Rand] [Nonempty Rand] [SampleableType Ct] [SampleableType Kt] [Fintype RK]
+  [Nonempty RK] [Inhabited Msg] in
 /-- A delivery keeps the answered corruptions. -/
-theorem acdIDDeliver_epochSafe (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+theorem acdIDDeliver_epochSafe (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (maxSkip maxStored ΔFS ΔPCS k k' : ℕ) (rcv : CKAParty → Option Sa) (sh : CKAGameSt Unit Unit)
-    (X : CKAParty → ACDIDSt Unit Unit Sa Msg W) (x : SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct)
+    (X : CKAParty → ACDIDSt Unit Unit Sa Msg Kt) (x : SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct)
     (p : CKAParty) (h : ACDHdr Msg) (ad : W) (c : Ct) :
     (acdIDDeliver G D maxSkip maxStored ΔFS ΔPCS k rcv sh X x p h ad c).2.1.2.epochSafe ΔFS ΔPCS
       k' = x.epochSafe ΔFS ΔPCS k' := by
@@ -1090,13 +1100,14 @@ theorem acdIDMsgUpd_mapMsg {Sc RK Sa Ct' : Type} (T₀ : Msg) (f : W × W → W 
 variable [Fintype Key] [Nonempty Key]
 
 omit [Fintype RK] [Nonempty RK] [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- A forwarded query of the hop oracle with the root step `ckaHopRoot R idealK` at the epoch
 `k`, from a state with the epoch `k` safe, through the gate and other than a corruption with the
 epoch `k` in its window, is the forwarding simulator `acdIDCKAFwd` against the CKA oracle. -/
 theorem acdIDHop_fwd (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (idealK : Bool) (σ : SMSt Sc Msg RK Sa) (X : ACDIDX Sa Msg W)
+    (idealK : Bool) (σ : SMSt Sc Msg RK Sa) (X : ACDIDX Sa Msg Kt)
     (x : SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct) (b : Bool) (q : SMQuery W)
     (hx : x.epochSafe ΔFS ΔPCS k = true) (hg : smIDGate x (ckaShadow σ.ck) q = true)
     (hq : ∀ p, q = .corrupt p → ckaAllowCorr ΔFS ΔPCS t σ.ck p = true →
@@ -1152,14 +1163,15 @@ theorem acdIDHop_fwd (C : CKADef Sc Msg Key) [CKACoins C Rand]
     Prod.map, id_eq, acdIDCKAEmb, smCKAEmb, hm]
 
 omit [Fintype RK] [Nonempty RK] [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- **The CKA simulator of the forgery event is the hop oracle.** Each call of the hop oracle
 with the root step `ckaHopRoot R idealK` at the epoch `k`, mapped to the states of the reduction
 and of the CKA game, is the call of `acdIDCKAImpl` against the CKA oracle with the challenge
 epoch `k` and the challenge mode `idealK`. -/
 theorem acdIDHop_cka_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (idealK : Bool) (s : ACDIDHopSt Sc Msg RK Sa W Ct) (d : SMIDQuery W (ACDHdr Msg) Ct) :
+    (idealK : Bool) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) (d : SMIDQuery W (ACDHdr Msg) Ct) :
     (acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k (ckaHopRoot R idealK) s d).map
         (Prod.map id acdIDCKAEmb) =
       OracleAdv.simOracle (acdIDCKAImpl R G D dec enc maxSkip maxStored ΔFS ΔPCS t k)
@@ -1213,14 +1225,15 @@ theorem acdIDHop_cka_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
   · simp [acdIDHopOracle, acdIDCut, acdIDCKAImpl, acdIDCKAEmb, OracleAdv.simOracle, hx,
       PMF.pure_map]
 
+omit [SampleableType Kt] in
 /-- **The CKA hop of the forgery event over `acdIDSM`.** The CKA game with challenge mode
 `idealK` of the reduction `acdIDCKARed` at the epoch `k` is the hop game with the root step
 `ckaHopRoot R idealK` at the epoch `k`. -/
 theorem acdIDHopGame_eq_cka (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.Sound C)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
-    (idealK : Bool) (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W)) :
+    (idealK : Bool) (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt)) :
     cka_corrupt_game C ΔFS ΔPCS idealK
         (acdIDCKARed R G D dec enc maxSkip maxStored ΔFS ΔPCS k A) =
       acdIDHopGame C R G D dec enc maxSkip maxStored ΔFS ΔPCS k (ckaHopRoot R idealK) A := by
@@ -1232,7 +1245,7 @@ theorem acdIDHopGame_eq_cka (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKAC
   refine congrArg _ (funext fun t => congrArg _ (funext fun i =>
     congrArg _ (funext fun rk => ?_)))
   rw [OracleAdv.run_bind, OracleAdv.run_simulate]
-  have he : acdIDCKAEmb (((smInit (Sa := Sa) i rk, (acdIDXInit : ACDIDX Sa Msg W)),
+  have he : acdIDCKAEmb (((smInit (Sa := Sa) i rk, (acdIDXInit : ACDIDX Sa Msg Kt)),
       (SMIDAux.init (i.1, 0) : SMIDAux W (Msg × ℕ) (ACDHdr Msg) Ct)), false) =
       (((((SMLoc.init rk, CKAGameSt.init () () ()), (acdIDXInit, i.1)), SMIDAux.init (i.1, 0)),
         false), CKAGameSt.init i.1 i.2.1 i.2.2) := by
@@ -1243,6 +1256,7 @@ theorem acdIDHopGame_eq_cka (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKAC
   simp [PMF.map_bind, PMF.bind_map, PMF.map_comp, Function.comp_def, PMF.pure_map]
   rfl
 
+omit [SampleableType Kt] in
 /-- **The CKA hop of the forgery event at the epoch `k` over `acdIDSM`.** For a CKA correct along
 `J` with a sound explicit-randomness sending algorithm, an initialisation that is the lift of
 `initP` and initial states related by `J`, the probability of a forgery at the epoch `k` in the
@@ -1253,9 +1267,9 @@ theorem acdIDSM_logTruncGame_le_cka (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg)) (dec : W → W × ACDHdr Msg)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt) (dec : W → W × ACDHdr Msg)
     (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
-    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W)) :
+    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt)) :
     prTrue (smIDLogTruncGame (acdIDSM C R G D dec enc maxSkip maxStored) ΔFS ΔPCS k A)
         Heap.empty ≤
       CKA_Corrupt_Advantage C ΔFS ΔPCS
@@ -1282,31 +1296,31 @@ end CKAHop
 
 section RootHop
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [Fintype RK] [Nonempty RK] [Inhabited Msg] [DecidableEq Msg]
-  [DecidableEq W] [DecidableEq Ct]
+variable {Sc Msg Key Rand RK Sa W Ct Kt : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct] [SampleableType Kt] [Fintype RK] [Nonempty RK] [Inhabited Msg]
+  [DecidableEq Msg] [DecidableEq W] [DecidableEq Ct]
 
 /-- The query of the base for the query `q` of the corruption game of party state `X`: the
 header attached to the associated data by `enc`. -/
-def acdIDBaseQuery (enc : ACDHdr Msg → W → W) (X : ACDIDX Sa Msg W) (q : SMQuery W) :
+def acdIDBaseQuery (enc : ACDHdr Msg → W → W) (X : ACDIDX Sa Msg Kt) (q : SMQuery W) :
     SMQuery W :=
   q.mapMsg fun m => (m.1, enc (acdIDHdr X q.party) m.2)
 
 /-- The answer and the state of the hop games after the query `q` of the corruption game,
 answered by `y` over the base. -/
-def acdIDSmF (G : PRGDef Sa (W × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct) (q : SMQuery W)
+def acdIDSmF (G : PRGDef Sa (Kt × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) (q : SMQuery W)
     (y : SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :
-    ACDIDAns Sc Msg RK Sa W Ct × ACDIDHopSt Sc Msg RK Sa W Ct :=
+    ACDIDAns Sc Msg RK Sa W Ct Kt × ACDIDHopSt Sc Msg RK Sa W Ct Kt :=
   (.sm ((acdIDAns (s.1.1.2.1 q.party) y.1).withHdr (acdIDHdr s.1.1.2 q.party)),
     (((y.2, acdIDXUpd G s.1.1.1.loc.rcv (ckaShadow s.1.1.1.ck) s.1.1.1.ck.msg s.1.1.2 q y.1),
       s.1.2.upd Prod.snd (ckaShadow s.1.1.1.ck) q
         ((acdIDAns (s.1.1.2.1 q.party) y.1).withHdr (acdIDHdr s.1.1.2 q.party))), s.2))
 
 /-- The answer and the state of the hop games after a delivery. -/
-def acdIDDlvF (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
-    (maxSkip maxStored ΔFS ΔPCS k : ℕ) (s : ACDIDHopSt Sc Msg RK Sa W Ct) (p : CKAParty)
+def acdIDDlvF (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
+    (maxSkip maxStored ΔFS ΔPCS k : ℕ) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) (p : CKAParty)
     (h : ACDHdr Msg) (ad : W) (c : Ct) :
-    ACDIDAns Sc Msg RK Sa W Ct × ACDIDHopSt Sc Msg RK Sa W Ct :=
+    ACDIDAns Sc Msg RK Sa W Ct Kt × ACDIDHopSt Sc Msg RK Sa W Ct Kt :=
   (.dec (acdIDDeliver G D maxSkip maxStored ΔFS ΔPCS k s.1.1.1.loc.rcv (ckaShadow s.1.1.1.ck)
       s.1.1.2.1 s.1.2 p h ad c).1,
     (((s.1.1.1, ((acdIDDeliver G D maxSkip maxStored ΔFS ΔPCS k s.1.1.1.loc.rcv
@@ -1317,11 +1331,12 @@ def acdIDDlvF (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
         (ckaShadow s.1.1.1.ck) s.1.1.2.1 s.1.2 p h ad c).2.2))
 
 omit [Fintype RK] [Nonempty RK] [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- A query of the corruption game through the gate in the hop step. -/
 theorem acdIDHopStep_sm (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct) (q : SMQuery W)
+    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) (q : SMQuery W)
     (hg : smIDGate s.1.2 (ckaShadow s.1.1.1.ck) q = true) :
     acdIDHopStep C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k root s (.sm q) =
       (smOracleOfAt C R G (aeadComapAD D dec) ΔFS ΔPCS t k false root s.1.1.1
@@ -1331,7 +1346,7 @@ theorem acdIDHopStep_sm (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 /-- The opening of the epoch `k` in the hop games: a ratchet query through the gate from a
 state with the epoch `k` safe that opens the epoch `k`. -/
-def acdIDRootCrit (ΔFS ΔPCS k : ℕ) (s : ACDIDHopSt Sc Msg RK Sa W Ct) :
+def acdIDRootCrit (ΔFS ΔPCS k : ℕ) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) :
     SMIDQuery W (ACDHdr Msg) Ct → Bool
   | .sm q => s.1.2.epochSafe ΔFS ΔPCS k && smIDGate s.1.2 (ckaShadow s.1.1.1.ck) q &&
       smCrit k s.1.1.1 q
@@ -1342,11 +1357,11 @@ state is the state of the hop games; a query of the corruption game through the 
 answered by `smRootImplAt`, which asks the root step at the opening of the epoch `k` to the
 `prf` oracle of the PRF-PRNG game; a delivery is answered as in the hop games. -/
 noncomputable def acdIDRootImpl (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (s : ACDIDHopSt Sc Msg RK Sa W Ct) (d : SMIDQuery W (ACDHdr Msg) Ct) :
+    (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) (d : SMIDQuery W (ACDHdr Msg) Ct) :
     OracleAdv (PPQuery RK Key) (RK × Sa)
-      (ACDIDAns Sc Msg RK Sa W Ct × ACDIDHopSt Sc Msg RK Sa W Ct) :=
+      (ACDIDAns Sc Msg RK Sa W Ct Kt × ACDIDHopSt Sc Msg RK Sa W Ct Kt) :=
   if s.1.2.epochSafe ΔFS ΔPCS k then
     match d with
     | .sm q =>
@@ -1364,10 +1379,10 @@ tree: it draws the challenge epoch `t` of the adversary from `tStar`, the CKA in
 from `initP` and a uniform root key, runs the adversary against `acdIDRootImpl` and outputs the
 flag of a forgery. -/
 noncomputable def acdIDRootTree (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
     (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
-    (play : ℕ → Msg × ℕ → OracleAdv (SMIDQuery W (ACDHdr Msg) Ct) (ACDIDAns Sc Msg RK Sa W Ct)
+    (play : ℕ → Msg × ℕ → OracleAdv (SMIDQuery W (ACDHdr Msg) Ct) (ACDIDAns Sc Msg RK Sa W Ct Kt)
       Bool) : OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
   .rand tStar fun t => .rand initP fun i => .rand (PMF.uniformFintype RK) fun rk =>
     (OracleAdv.simulate (acdIDRootImpl C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k)
@@ -1377,21 +1392,22 @@ noncomputable def acdIDRootTree (C : CKADef Sc Msg Key) [CKACoins C Rand]
 /-- **The PRF-PRNG reduction of the forgery event at the epoch `k`** over `acdIDSM`: the tree
 `acdIDRootTree` at the challenge-epoch distribution and the interaction of `A`. -/
 noncomputable def acdIDRootRed (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
     (initP : PMF (Msg × Sc × Sc))
-    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W)) :
+    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt)) :
     OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
   acdIDRootTree C R G D dec enc maxSkip maxStored ΔFS ΔPCS k initP A.tStar A.play
 
 omit [Fintype RK] [Nonempty RK] [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- A query of the corruption game through the gate in the simulator of the root hop, from a
 safe state, is the query of `smRootImplAt`, completed and cut. -/
 theorem acdIDRootImpl_simOracle (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
     {U : Type} (O' : U → PPQuery RK Key → PMF ((RK × Sa) × U))
-    (s : ACDIDHopSt Sc Msg RK Sa W Ct) (u : U) (q : SMQuery W)
+    (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) (u : U) (q : SMQuery W)
     (hs : s.1.2.epochSafe ΔFS ΔPCS k = true) (hg : smIDGate s.1.2 (ckaShadow s.1.1.1.ck) q = true) :
     OracleAdv.simOracle (acdIDRootImpl C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k) O' (s, u)
         (.sm q) =
@@ -1402,22 +1418,23 @@ theorem acdIDRootImpl_simOracle (C : CKADef Sc Msg Key) [CKACoins C Rand]
   simp only [OracleAdv.simOracle, acdIDRootImpl, hs, hg, ite_true, OracleAdv.run_bind,
     OracleAdv.run_ret, PMF.map, PMF.bind_bind, PMF.pure_bind, Function.comp_def]
 
-omit [Fintype Rand] [Nonempty Rand] [SampleableType W] [SampleableType Ct] [Fintype RK]
-  [Nonempty RK] [Inhabited Msg] [DecidableEq Msg] [DecidableEq W] [DecidableEq Ct] in
+omit [Fintype Rand] [Nonempty Rand] [SampleableType W] [SampleableType Ct] [SampleableType Kt]
+  [Fintype RK] [Nonempty RK] [Inhabited Msg] [DecidableEq Msg] [DecidableEq W] [DecidableEq Ct] in
 /-- The opening of an epoch by the query of the base is the opening by the query. -/
-theorem smCrit_acdIDBaseQuery (enc : ACDHdr Msg → W → W) (X : ACDIDX Sa Msg W) (k : ℕ)
+theorem smCrit_acdIDBaseQuery (enc : ACDHdr Msg → W → W) (X : ACDIDX Sa Msg Kt) (k : ℕ)
     (s : SMSt Sc Msg RK Sa) (q : SMQuery W) :
     smCrit k s (acdIDBaseQuery enc X q) = smCrit k s q := by
   cases q <;> rfl
 
 omit [Fintype RK] [Nonempty RK] [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- The base states reached by a call of the hop oracle: the base state of the call, at a
 delivery, outside the gate or with the epoch `k` outside the safe epochs, or a state reached by
 `smOracleOfAt`. -/
 theorem acdIDHopOracle_support (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct)
+    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt)
     (d : SMIDQuery W (ACDHdr Msg) Ct) (x)
     (hx : x ∈ (acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k root s d).support) :
     (x.2.1.1.1 = s.1.1.1 ∧ ∀ q, d = .sm q →
@@ -1455,11 +1472,12 @@ theorem acdIDHopOracle_support (C : CKADef Sc Msg Key) [CKACoins C Rand]
     exact Or.inl ⟨rfl, fun _ _ => Or.inl (by simpa using hs)⟩
 
 omit [Fintype RK] [Nonempty RK] [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- Every call of the hop oracle keeps the epoch `k` opened. -/
 theorem acdIDHopOracle_opened (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct)
+    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt)
     (d : SMIDQuery W (ACDHdr Msg) Ct) (hs : smOpened k s.1.1.1) (x)
     (hx : x ∈ (acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k root s d).support) :
     smOpened k x.2.1.1.1 := by
@@ -1470,12 +1488,13 @@ theorem acdIDHopOracle_opened (C : CKADef Sc Msg Key) [CKACoins C Rand]
     exact smOracleOfAt_opened C R G (aeadComapAD D dec) ΔFS ΔPCS t k false root s.1.1.1 _ hs y hy
 
 omit [Fintype RK] [Nonempty RK] [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- The opening of the epoch `k` in the hop oracle leads to a state with the epoch `k`
 opened. -/
 theorem acdIDHopOracle_opened_of_crit (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct)
+    (root : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt)
     (d : SMIDQuery W (ACDHdr Msg) Ct) (hc : acdIDRootCrit ΔFS ΔPCS k s d = true) (x)
     (hx : x ∈ (acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k root s d).support) :
     smOpened k x.2.1.1.1 := by
@@ -1495,12 +1514,13 @@ theorem acdIDHopOracle_opened_of_crit (C : CKADef Sc Msg Key) [CKACoins C Rand]
     | _ => simp [smCrit] at hc
 
 omit [Fintype RK] [Nonempty RK] [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- Away from the opening of the epoch `k`, the hop oracle does not depend on the root step at
 the epoch `k`. -/
 theorem acdIDHopOracle_root_congr (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (root root' : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct)
+    (root root' : RK → Key → PMF (RK × Sa)) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt)
     (d : SMIDQuery W (ACDHdr Msg) Ct) (hc : acdIDRootCrit ΔFS ΔPCS k s d = false) :
     acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k root s d =
       acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k root' s d := by
@@ -1524,13 +1544,14 @@ theorem acdIDHopOracle_root_congr (C : CKADef Sc Msg Key) [CKACoins C Rand]
   · simp only [acdIDHopOracle, hs, Bool.false_eq_true, ite_false]
 
 omit [Fintype RK] [Nonempty RK] [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- Away from the opening of the epoch `k`, the simulator of the root hop asks no query and
 answers as the hop oracle with any root step at the epoch `k`. -/
 theorem acdIDRoot_step_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
     (root : RK → Key → PMF (RK × Sa)) {U : Type} (O' : U → PPQuery RK Key → PMF ((RK × Sa) × U))
-    (s : ACDIDHopSt Sc Msg RK Sa W Ct) (u : U) (d : SMIDQuery W (ACDHdr Msg) Ct)
+    (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) (u : U) (d : SMIDQuery W (ACDHdr Msg) Ct)
     (hc : acdIDRootCrit ΔFS ΔPCS k s d = false) :
     OracleAdv.simOracle (acdIDRootImpl C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k) O' (s, u) d =
       (acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k root s d).map
@@ -1557,14 +1578,15 @@ theorem acdIDRoot_step_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
 variable [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq Key]
 
 omit [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- **The simulator of the root hop against the real PRF-PRNG game.** With the hidden input
 `key`, each call of the hop oracle with the root step `fixedKeyRoot R key` at the epoch `k`,
 with the PRF-PRNG state attached, is the call of `acdIDRootImpl` against the real PRF-PRNG
 oracle. -/
 theorem acdIDRoot_step_real (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (rk' : RK) (key : Key) (s : ACDIDHopSt Sc Msg RK Sa W Ct) (d : SMIDQuery W (ACDHdr Msg) Ct) :
+    (rk' : RK) (key : Key) (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) (d : SMIDQuery W (ACDHdr Msg) Ct) :
     (acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k (fixedKeyRoot R key) s d).map
         (Prod.map id fun s => (s, (⟨rk', key, [], []⟩ : PPSt RK Key (RK × Sa)))) =
       OracleAdv.simOracle (acdIDRootImpl C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k)
@@ -1587,14 +1609,15 @@ theorem acdIDRoot_step_real (C : CKADef Sc Msg Key) [CKACoins C Rand]
   · simp [OracleAdv.simOracle, acdIDRootImpl, acdIDHopOracle, hs, PMF.pure_map, acdIDCut]
 
 omit [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- **The simulator of the root hop against the ideal PRF-PRNG game.** From a state whose table
 of the `prf` oracle is empty unless the epoch `k` has been opened, each call of
 `acdIDRootImpl` against the ideal PRF-PRNG oracle, with the PRF-PRNG state dropped, is the call
 of the hop oracle with a uniform root output at the epoch `k`. -/
 theorem acdIDRoot_step_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (s : ACDIDHopSt Sc Msg RK Sa W Ct) (u : PPSt RK Key (RK × Sa))
+    (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) (u : PPSt RK Key (RK × Sa))
     (hu : u.tR = [] ∨ smOpened k s.1.1.1) (d : SMIDQuery W (ACDHdr Msg) Ct) :
     (OracleAdv.simOracle (acdIDRootImpl C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k)
         (ppOracle (rootFn R) true true) (s, u) d).map (Prod.map id Prod.fst) =
@@ -1618,12 +1641,13 @@ theorem acdIDRoot_step_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
   · simp [OracleAdv.simOracle, acdIDRootImpl, acdIDHopOracle, hs, PMF.pure_map, acdIDCut]
 
 omit [Inhabited Msg] in
+omit [SampleableType Kt] in
 /-- The simulator of the root hop against the ideal PRF-PRNG game keeps the invariant of
 `acdIDRoot_step_ideal`. -/
 theorem acdIDRoot_inv_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    (s : ACDIDHopSt Sc Msg RK Sa W Ct) (u : PPSt RK Key (RK × Sa))
+    (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) (u : PPSt RK Key (RK × Sa))
     (hu : u.tR = [] ∨ smOpened k s.1.1.1) (d : SMIDQuery W (ACDHdr Msg) Ct) :
     ∀ y ∈ (OracleAdv.simOracle (acdIDRootImpl C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k)
         (ppOracle (rootFn R) true true) (s, u) d).support,
@@ -1648,14 +1672,14 @@ theorem acdIDRoot_inv_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 variable [Fintype Key] [Nonempty Key]
 
-omit [Fintype RK] [Nonempty RK] [Inhabited Msg] [Fintype Sa] [Nonempty Sa] [DecidableEq RK]
-  [DecidableEq Key] in
+omit [SampleableType Kt] [Fintype RK] [Nonempty RK] [Inhabited Msg] [Fintype Sa] [Nonempty Sa]
+  [DecidableEq RK] [DecidableEq Key] in
 /-- **Eager sampling of the key of the root step at the epoch `k`** in the hop oracle. -/
 theorem acdIDHop_run_eager (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS t k : ℕ)
-    {α : Type} (A : OracleAdv (SMIDQuery W (ACDHdr Msg) Ct) (ACDIDAns Sc Msg RK Sa W Ct) α)
-    (s : ACDIDHopSt Sc Msg RK Sa W Ct) :
+    {α : Type} (A : OracleAdv (SMIDQuery W (ACDHdr Msg) Ct) (ACDIDAns Sc Msg RK Sa W Ct Kt) α)
+    (s : ACDIDHopSt Sc Msg RK Sa W Ct Kt) :
     OracleAdv.run (acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k (unifKeyRoot R))
         A s =
       (PMF.uniformFintype Key).bind fun key =>
@@ -1699,14 +1723,15 @@ theorem acdIDHop_run_eager (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] [DecidableEq RK]
   [DecidableEq Key] in
+omit [SampleableType Kt] in
 /-- Running the PRF-PRNG reduction of the forgery event against an oracle is running the
 adversary against the composed oracle from the drawn initial state, with the flag of a forgery
 as output. -/
 theorem acdIDRootRed_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
     (initP : PMF (Msg × Sc × Sc))
-    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W)) {U : Type}
+    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt)) {U : Type}
     (O' : U → PPQuery RK Key → PMF ((RK × Sa) × U)) (u : U) :
     (OracleAdv.run O' (acdIDRootRed C R G D dec enc maxSkip maxStored ΔFS ΔPCS k initP A) u).map
         Prod.fst =
@@ -1724,14 +1749,15 @@ theorem acdIDRootRed_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] [DecidableEq RK]
   [DecidableEq Key] in
+omit [SampleableType Kt] in
 /-- The hop game as the lift of a distribution: the challenge epoch, the CKA initialisation,
 the root key and the run. -/
 theorem acdIDHopGame_eq_liftPMF (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
     (root : RK → Key → PMF (RK × Sa))
-    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W)) :
+    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt)) :
     acdIDHopGame C R G D dec enc maxSkip maxStored ΔFS ΔPCS k root A =
       liftPMF (A.tStar.bind fun t => initP.bind fun i => (PMF.uniformFintype RK).bind fun rk =>
         (OracleAdv.run (acdIDHopOracle C R G D dec enc maxSkip maxStored ΔFS ΔPCS t k root)
@@ -1739,13 +1765,14 @@ theorem acdIDHopGame_eq_liftPMF (C : CKADef Sc Msg Key) [CKACoins C Rand]
             fun x => x.2.2) := by
   simp only [acdIDHopGame, hinit, sample_eq_liftPMF, liftPMF_bind_liftPMF]
 
+omit [SampleableType Kt] in
 /-- **The real side of the root hop** over `acdIDSM`: the real PRF-PRNG game of `acdIDRootRed`
 is the hop game with the root KDF on a uniform key at the epoch `k`. -/
 theorem acdIDRoot_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
-    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W)) :
+    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt)) :
     pp_game (rootFn R) false false
         (acdIDRootRed C R G D dec enc maxSkip maxStored ΔFS ΔPCS k initP A) =
       acdIDHopGame C R G D dec enc maxSkip maxStored ΔFS ΔPCS k (unifKeyRoot R) A := by
@@ -1781,13 +1808,14 @@ theorem acdIDRoot_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     rw [acdIDHop_run_eager, PMF.map_bind]
   simp only [h2, PMF.bind_comm (PMF.uniformFintype Key)]
 
+omit [SampleableType Kt] in
 /-- **The ideal side of the root hop** over `acdIDSM`: the ideal PRF-PRNG game of
 `acdIDRootRed` is the hop game with a uniform root output at the epoch `k`. -/
 theorem acdIDRoot_ideal_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
-    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W)) :
+    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt)) :
     pp_game (rootFn R) true true
         (acdIDRootRed C R G D dec enc maxSkip maxStored ΔFS ΔPCS k initP A) =
       acdIDHopGame C R G D dec enc maxSkip maxStored ΔFS ΔPCS k unifRoot A := by
@@ -1820,15 +1848,16 @@ theorem acdIDRoot_ideal_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     rfl
   simp only [h1, PMF.bind_const]
 
+omit [SampleableType Kt] in
 /-- **The root hop of the forgery event at the epoch `k`** over `acdIDSM`: the probability of a
 forgery at the epoch `k` in the hop game with the root KDF on a uniform key at the epoch `k` is
 at most the PRF-PRNG advantage of `R` at `acdIDRootRed … k initP A` plus the probability of a
 forgery in the hop game with a uniform root output at the epoch `k`. -/
 theorem acdIDHopGame_le_root (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg))
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt)
     (dec : W → W × ACDHdr Msg) (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS k : ℕ)
-    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W)) :
+    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt)) :
     prTrue (acdIDHopGame C R G D dec enc maxSkip maxStored ΔFS ΔPCS k (unifKeyRoot R) A)
         Heap.empty ≤
       PRFPRNG_Advantage R (acdIDRootRed C R G D dec enc maxSkip maxStored ΔFS ΔPCS k initP A) +
@@ -1844,11 +1873,13 @@ end RootHop
 
 section Assembly
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [Fintype RK] [Nonempty RK] [Inhabited Msg] [DecidableEq Msg]
-  [DecidableEq W] [DecidableEq Ct] [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq Key]
+variable {Sc Msg Key Rand RK Sa W Ct Kt : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct] [SampleableType Kt] [Fintype RK] [Nonempty RK] [Inhabited Msg]
+  [DecidableEq Msg] [DecidableEq W] [DecidableEq Ct] [Fintype Sa] [Nonempty Sa] [DecidableEq RK]
+  [DecidableEq Key]
   [Fintype Key] [Nonempty Key]
 
+omit [SampleableType Kt] in
 /-- **Integrity of the ACD construction with headers up to the hop games with a uniform root
 output.** For a CKA correct along `J` with a sound explicit-randomness sending algorithm, an
 initialisation that is the lift of `initP`, initial states related by `J`, and an adversary `A`
@@ -1861,9 +1892,9 @@ theorem acdIDSM_intAdvantage_le_unifRoot (C : CKADef Sc Msg Key) [CKACoins C Ran
     (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg)) (dec : W → W × ACDHdr Msg)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct (W × ACDHdr Msg) Kt) (dec : W → W × ACDHdr Msg)
     (enc : ACDHdr Msg → W → W) (maxSkip maxStored ΔFS ΔPCS N : ℕ)
-    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg W))
+    (A : SMIDAdv (Msg × ℕ) W (ACDHdr Msg) Ct (ACDIDLeak Sc RK Sa Msg Kt))
     (hA : ∀ t pub, (A.play t pub).IsQueryBound N) :
     (acdIDSM C R G D dec enc maxSkip maxStored).intAdvantage ΔFS ΔPCS A ≤
       ∑ k ∈ Finset.range N,

@@ -1,0 +1,340 @@
+-- Fixture of scripts/unbounded-hardness-ratchet.sh. Each declaration states in its
+-- comment whether a rule counts it; scripts/unbounded-hardness-fixtures.expected lists
+-- the sites as category:line. The file is scanned as Lean source and never compiled.
+
+-- Counted by `single`: a numeric bound over every adversary.
+theorem fx_single_numeric (h : ∀ A, OW_Advantage F A ≤ ε) : True := trivial
+
+-- Counted by `single`: the adversary is a typed binder.
+theorem fx_single_typed (h : ∀ (D : β → SPComp Bool), AdvantageA (f ()) (g ()) D ≤ ε) : True := trivial
+
+-- Counted by `single`: a bound over inputs and adversaries.
+theorem fx_single_inputs (h : ∀ x (D : β → SPComp Bool), AdvantageA (f x) (g x) D ≤ ε) : True := trivial
+
+-- Not counted: the bound depends on the adversary (the `bound_le` shape).
+theorem fx_dep_bound (h : ∀ x D, AdvantageA (G_real x) (G_ideal x) D ≤ bound x D) : True := trivial
+
+-- Not counted: the bound depends on the adversary through a named function.
+theorem fx_dep_named (h : ∀ A, HKDF_Advantage H A ≤ hkdfBound H A) : True := trivial
+
+-- Not counted: a step for an adversary fixed outside the `∀`.
+theorem fx_fixed_adv (h : ∀ x, AdvantageA (f x) (g x) A ≤ ε) : True := trivial
+
+-- Not counted: the right-hand side is the advantage of a reduction.
+theorem fx_reduction (h : ∀ A, OW_Advantage F A ≤ CR_Advantage H (red A)) : True := trivial
+
+-- Counted by `ascii`: the numeric bound in ASCII notation.
+theorem fx_ascii (h : forall A, OW_Advantage F A <= ε) : True := trivial
+
+-- Not counted: the ASCII form of a bound that depends on the adversary.
+theorem fx_ascii_dep (h : forall x D, AdvantageA (G_real x) (G_ideal x) D <= bound x D) : True := trivial
+
+-- Counted by `multiline`: the numeric bound across two lines.
+theorem fx_multiline (h : ∀ A,
+    OW_Advantage F A ≤ ε) : True := trivial
+
+-- Not counted: the dependent bound across two lines.
+theorem fx_multiline_dep (h : ∀ A,
+    OW_Advantage F A ≤ owBound A) : True := trivial
+
+-- Counted by `single`: the numeric right-hand side stands on the continuation line.
+theorem fx_single_cont (h : ∀ A, OW_Advantage F A ≤
+    ε) : True := trivial
+
+-- Not counted: the right-hand side, on the continuation line, is the advantage of the
+-- adversary (the shape of an F_SIG verification gap bounded by the EUF-CMA advantage).
+theorem fx_single_cont_dep :
+    (∀ A, Advantage (sigReal S A) (sigIdeal S A) ≤
+      eufcmaAdvantage S A) := trivial
+
+-- Counted by `single`: a numeric bound that is a sum over a big-operator binder.
+theorem fx_sum_numeric (h : ∀ A, OW_Advantage F A ≤ ∑ i ∈ Finset.range n, δ i) : True := trivial
+
+-- Not counted: the right-hand side, after the comma of its `∑` binder, is a sum of
+-- the advantages of reductions of the adversary.
+theorem fx_sum_reduction (prg : PRG) (d : Nat) :
+    ∀ (j : Fin d) (A : prg.Seed → SPComp Bool),
+    VC_Hiding_Advantage prg d j A ≤ ∑ i : Fin d, PRG_Adv prg (vcRed prg d j A i) := by
+  trivial
+
+-- Counted by `single`: an advantage name ending in `_Adv`.
+theorem fx_adv_suffix (h : ∀ A, PRF_Adv F x A ≤ ε) : True := trivial
+
+-- Counted by `single`: an advantage name ending in `GameAdv`.
+theorem fx_game_adv (h : ∀ (H : G) (A : ExtractabilityAdversary gp), ExtractabilityGameAdv gp H A ≤ ε) : True := trivial
+
+-- Not counted: `DDH_Adversary_cost` is not an advantage name.
+theorem fx_adversary_cost (h : ∀ A, DDH_Adversary_cost A ≤ ε) : True := trivial
+
+-- The `sdist_named` cases below. A line `#path <path>` sets the path that the
+-- directory test of `sdist_named` reads for the declarations after it.
+#path CatCrypt/Crypto/Fixture/Security.lean
+
+-- Counted by `sdist_named`: a hypothesis on specific games.
+theorem fx_sd_hyp (P : Params) (h : sdist (game_real P) (game_ideal P) ≤ ε) : True := trivial
+
+-- Not counted: the games are variables of the lemma.
+theorem fx_sd_generic (f g : Unit → SPComp Bool) (h : sdist f g ≤ ε) : True := trivial
+
+-- Not counted: whitelisted combinators over variables; the binder type `Unit` is not a game.
+theorem fx_sd_comb (c : SPComp Bool) (k : Bool → SPComp Bool)
+    (h : sdist (fun _ : Unit => SPComp.bind c k) (fun _ : Unit => c) ≤ ε) : True := trivial
+
+-- Counted by `sdist_named`: a projection of a bound parameter is specific.
+theorem fx_sd_proj (Q : Proto) (h : sdist Q.real Q.ideal ≤ ε) : True := trivial
+
+-- Counted by `sdist_named`: the `= 0` form.
+theorem fx_sd_eq0 (P : Params) (h : sdist (game_real P) (game_ideal P) = 0) : True := trivial
+
+-- Not counted: the right-hand side is another distance.
+theorem fx_sd_rel (P : Params)
+    (h : sdist (game_real P) (game_ideal P) ≤ sdist (game_real P) (game_hyb P)) : True := trivial
+
+-- Counted by `sdist_named`: an antecedent of `→` in the conclusion.
+theorem fx_sd_ante (P : Params) : sdist (game_real P) (game_ideal P) ≤ ε → True := fun _ => trivial
+
+-- Not counted: a proved bound in the conclusion.
+theorem fx_sd_concl (P : Params) : sdist (game_real P) (game_ideal P) ≤ ε := by simp
+
+-- Counted by `sdist_named` (the field): the structure is named for `named_use`.
+structure FxSecure (P : Params) where
+  ε : ℝ≥0∞
+  bound : sdist (game_real P) (game_ideal P) ≤ ε
+
+-- Counted by `named_use`: a binder of the named structure.
+theorem fx_sd_use (P : Params) (h : FxSecure P) : True := trivial
+
+-- Counted by `sdist_named` (`via`): a structure extending the named one.
+structure FxSecureExt (P : Params) extends FxSecure P where
+  extra : True
+
+-- Not counted: a field over the structure's parameters; its binder is no use.
+structure FxGeneric (f g : Unit → SPComp Bool) where
+  ε : ℝ≥0∞
+  close : sdist f g ≤ ε
+
+theorem fx_sd_use_generic (f g : Unit → SPComp Bool) (h : FxGeneric f g) : True := trivial
+
+-- Counted by `sdist_named`: a field compared with a sibling field.
+structure FxSim (prove : Unit → SPComp Bool) where
+  simulate : Unit → SPComp Bool
+  close : sdist prove simulate ≤ 0
+
+-- Counted by `sdist_named` (the body) and, for the binder, by `named_use`.
+def FxPropBound (P : Params) (ε : ℝ≥0∞) : Prop :=
+  ∀ x : Nat, sdist (game_real P) (game_ideal P) ≤ ε
+
+theorem fx_sd_use_prop (P : Params) (h : FxPropBound P ε) : True := trivial
+
+-- Counted by `sdist_named`: a hypothesis in a `variable` command.
+variable (P : Params) (hv : sdist (game_real P) (game_ideal P) ≤ ε)
+
+-- Not counted: the games are variables bound by a `variable` command.
+variable (f₀ g₀ : Unit → SPComp Bool)
+theorem fx_sd_varbound (h : sdist f₀ g₀ ≤ ε) : True := trivial
+
+#path CatCrypt/Crypto/UCMonad/Fixture.lean
+
+-- Not counted: a framework directory.
+theorem fx_sd_framework (P : Params) (h : sdist (game_real P) (game_ideal P) ≤ ε) : True := trivial
+
+#path CatCrypt/Crypto/Bridges/IrisBridge/RatchetFixture.lean
+
+-- Counted by `sdist_named`: the ratchet bridges are protocol code.
+theorem fx_sd_ratchet (P : Params) (h : sdist (game_real P) (game_ideal P) ≤ ε) : True := trivial
+
+#path CatCrypt/Crypto/Bridges/IrisBridge/OtherFixture.lean
+
+-- Not counted: another bridge.
+theorem fx_sd_bridge (P : Params) (h : sdist (game_real P) (game_ideal P) ≤ ε) : True := trivial
+
+#path CatCrypt/Examples/Fixture.lean
+
+-- Counted by `sdist_named`: the compared games are the last two arguments.
+theorem fx_sd_itree (P : Params) (h : sdistITreeN n E handler (real P) (ideal P) ≤ ε) : True := trivial
+
+-- Not counted: the handler is no game; the games are variables.
+theorem fx_sd_itree_generic (f g : Unit → ITreeN n E Bool)
+    (h : sdistITreeN n E romHandler f g ≤ ε) : True := trivial
+
+-- Counted by `sdist_named`: an assumed instance of the bound class on specific games.
+theorem fx_sd_class (P : Params) [RefinesFamilyUpTo (game_real P) (game_ideal P) ε] : True := trivial
+
+-- Not counted: the games of the class are variables of the lemma.
+theorem fx_sd_class_generic (f g : Unit → SPComp Bool) [RefinesFamilyUpTo f g ε] : True := trivial
+
+-- Not counted: a proved instance of the class.
+instance fx_sd_class_concl (P : Params) : RefinesFamilyUpTo (game_real P) (game_ideal P) ε := by simp
+
+#path CatCrypt/Crypto/Shapes/Fixture.lean
+
+-- Counted by `nested`: the adversary of a package type inside a reduction term.
+theorem fx_nested_pkg (h : ∀ (A : NomPkg) (i : Bool),
+    Advantage_game (Gsodh d k) (nomComp (Ai A i) R) ≤ ε) : True := trivial
+
+-- Counted by `nested`: a typed variable named as an adversary inside an argument.
+theorem fx_nested_typed (h : ∀ (A : MyType) (i : Bool),
+    Advantage_game (G i) (compose A R) ≤ ε) : True := trivial
+
+-- Counted by `nested`: an advantage name outside the first pattern.
+theorem fx_nested_name (h : ∀ A, prf_advantage F iv A ≤ ε) : True := trivial
+
+-- Counted by `nested`: the same for a name ending in `_adv`.
+theorem fx_nested_suffix (h : ∀ A, inner_adv G A ≤ ε) : True := trivial
+
+-- Counted by `nested`: `Adv` as the name of the advantage.
+theorem fx_nested_bare (h : ∀ (A : NomPkg), Adv G₀ G₁ A ≤ ε) : True := trivial
+
+-- Not counted: the bound depends on the nested adversary.
+theorem fx_nested_dep (h : ∀ (A : NomPkg) (i : Bool),
+    Advantage_game (Gsodh d k) (nomComp (Ai A i) R) ≤ bound A) : True := trivial
+
+-- Not counted: the right-hand side is the advantage of a reduction.
+theorem fx_nested_red (h : ∀ (A : NomPkg),
+    Advantage_game (Gsodh d k) (nomComp A R) ≤ Adv G₀ G₁ (red A)) : True := trivial
+
+-- Not counted: a hybrid step for a package fixed outside the `∀`.
+theorem fx_nested_fixed (h : ∀ (i : Bool),
+    Advantage_game (Gsodh d k) (nomComp (Ai A i) R) ≤ ε) : True := trivial
+
+-- Not counted: `adv` is the bound adversary, no advantage.
+theorem fx_nested_var (h : ∀ (adv : NomPkg), prTrue (bindTo adv G) ≤ ε) : True := trivial
+
+-- Not counted: a constructor named like an advantage inside a distance.
+theorem fx_nested_sdist (h : ∀ (B : Strategy), gameSdist (run P) (run (staticAdv B)) ≤ ε) : True := trivial
+
+-- Counted by `nested` at the definition and by `nested_use` at its binder.
+def FxNestedHard (ε : ℝ≥0∞) : Prop :=
+  ∀ A, prf_advantage F A ≤ ε
+
+theorem fx_nested_user (h : FxNestedHard ε) : True := trivial
+
+-- Counted by `point_mass` at the definition and by `point_mass_use` at the theorem.
+noncomputable def fxPointAdvantage (f : W → W) (x : W) (A : W → SPComp Bool) : ℝ≥0∞ :=
+  AdvantageA (SPComp.pure (f x)) (SPComp.sample W) A
+
+theorem fx_point_user (hε : fxPointAdvantage f x A ≤ ε) : True := trivial
+
+-- Counted by `point_mass`: the games are named and defined in the file.
+def fxWrapGame : W → SPComp W :=
+  fun x => SPComp.pure (wrap key x)
+
+def fxWrapRandom : W → SPComp W :=
+  fun _ => SPComp.sample W
+
+theorem fx_point_named (h : sdist fxWrapGame fxWrapRandom ≤ ε) : True := trivial
+
+-- Counted by `point_mass`: the uniform side first.
+theorem fx_point_swapped (h : AdvantageA (sample W) (pure w) A ≤ ε) : True := trivial
+
+-- Not counted: the real game samples its key.
+noncomputable def fxKeyedAdvantage (A : W → SPComp Bool) : ℝ≥0∞ :=
+  AdvantageA (SPComp.bind (SPComp.sample K) (fun k => SPComp.pure (f k))) (SPComp.sample W) A
+
+-- Not counted: two point masses.
+noncomputable def fxTwoPointsAdvantage (A : W → SPComp Bool) : ℝ≥0∞ :=
+  AdvantageA (SPComp.pure a) (SPComp.pure b) A
+
+-- Not counted: two uniform samples.
+noncomputable def fxTwoUniformAdvantage (A : W → SPComp Bool) : ℝ≥0∞ :=
+  AdvantageA (SPComp.sample W) (SPComp.sample V) A
+
+-- Counted by `same_body`: the ideal game has the body of the real game.
+def fx_hash_real (H : X → Y) : X → SPComp Y :=
+  fun m => pure (H m)
+
+/-- The comment between the two does not matter. -/
+def fx_hash_ideal (H : X → Y) : X → SPComp Y :=
+  fun m => pure (H m)
+
+-- Counted by `same_body`: the same at names in camel case, on other lines.
+def fxSignReal (sk : SK) : M → SPComp S := fun m => sign sk m
+
+def fxSignIdeal (sk : SK) : M → SPComp S :=
+  fun m => sign sk m
+
+-- Counted by `same_body`: the ideal functionality is the real code by application.
+def fxTagReal (K : Key) : M → SPComp T :=
+  fun m => pure (mac K m)
+
+def fxTagIdeal (K : Key) : M → SPComp T := fxTagReal K
+
+-- Counted by `same_body`: an advantage that compares a game with itself.
+noncomputable def fxSelfAdvantage (A : W → SPComp Bool) : ℝ≥0∞ :=
+  AdvantageA (fxGame k) (fxGame k) A
+
+-- Not counted: the ideal game differs.
+def fxEncReal (k : Key) : M → SPComp C := fun m => enc k m
+
+def fxEncIdeal (k : Key) : M → SPComp C := fun m => enc k zero
+
+-- Not counted: the pair has one body in two namespaces, each differing from its own partner.
+namespace FxLeft
+def fxStepReal : SPComp Bool := leftStep
+def fxStepIdeal : SPComp Bool := rightStep
+end FxLeft
+
+namespace FxRight
+def fxStepReal : SPComp Bool := rightStep
+def fxStepIdeal : SPComp Bool := otherStep
+end FxRight
+
+-- Counted by `free_witness`: body and frame are existential.
+theorem fx_free_both (h : compile m = some (P, bytes)) :
+    ∃ body frame fuel s, runA frame body fuel e = some s ∧ haltedA body s = true
+      ∧ RunSafe frame body (AccessIn (layoutMem σ sa) frame body) fuel e false := proof h
+
+-- Counted by `free_witness`: the body is compiled, the frame map is existential.
+theorem fx_free_frame :
+    ∃ body, decode bytes = some body ∧ ∃ frame, AccessIn mem frame body x := proof
+
+-- Counted by `free_witness`: a predicate whose body is an existential conjunct.
+def FxSafe (e : AState) : Prop :=
+  ∃ body, StoreIn mem fr body e
+
+-- Not counted: both are functions of the compiled bytes.
+theorem fx_tied_both :
+    ∃ body frame, decode bytes = some (body, frame)
+      ∧ RunSafe frame body (AccessIn mem frame body) fuel e false := proof
+
+-- Not counted: an equation gives the frame, the body is an argument.
+theorem fx_tied_eq (body : List Instr) :
+    ∃ frame, frame = frameOf σ ∧ LoadIn mem frame body x := proof
+
+-- Not counted: only the number of steps is existential.
+theorem fx_tied_fuel :
+    ∃ fuel, RunSafe (frameOf σ) (bodyOf bytes) I fuel e false := proof
+
+-- Counted by `returned_arg`: the witness is the theorem's argument.
+theorem fx_returned (p : Prog) (ctx : Ctx) :
+    ∃ src : Ctx, trace p src = trace p ctx :=
+  ⟨ctx, rfl⟩
+
+-- Counted by `returned_arg`: the same through tactics.
+theorem fx_returned_tac (p : Prog) : ∀ (ctx : Ctx), ∃ src, trace p src = trace p ctx := by
+  intro ctx
+  exact ⟨ctx, fun _ => rfl⟩
+
+-- Counted by `returned_arg`: the same through `use`.
+theorem fx_returned_use (p : Prog) (ctx : Ctx) : ∃ src, trace p src = trace p ctx := by
+  use ctx
+
+-- Not counted: the witness is a function of the argument.
+theorem fx_translated (p : Prog) (ctx : Ctx) :
+    ∃ src : Ctx, trace p src = trace (compile p) ctx :=
+  ⟨backTranslate ctx, rfl⟩
+
+-- Not counted: the argument comes with a proof.
+theorem fx_witnessed (n : Nat) (hn : 0 < n) : ∃ k, 0 < k :=
+  ⟨n, hn⟩
+
+-- Not counted: no existential conclusion.
+theorem fx_plain (ctx : Ctx) : trace p ctx = trace p ctx := rfl
+
+-- Counted by `free_witness`: an equation of the body with itself determines nothing.
+theorem fx_free_self :
+    ∃ body, body = body ∧ RunSafe fr body I fuel e false := proof
+
+-- Not counted: the equation that gives the body is in a binder.
+theorem fx_tied_binder :
+    ∃ (body : List Instr) (_ : decode bytes = some body), RunSafe fr body I fuel e false := proof

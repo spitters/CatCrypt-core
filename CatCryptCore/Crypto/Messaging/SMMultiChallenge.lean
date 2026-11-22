@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Crypto.Messaging.SMScheme
 public import CatCryptCore.Crypto.OracleAdversaryTimed
-public import CatCryptCore.Crypto.HybridArgument
 
 /-!
 # The multi-challenge corruption game over a secure-messaging scheme
@@ -46,6 +45,7 @@ adversaries (`SMScheme.Sim.multiAdvantage_le`).
 * `smCorruptGame_hyb` — the single-challenge game against `A.hyb M n i` is a hybrid
 * `SMScheme.multiAdvantage_le` — the hybrid bound
 * `SMScheme.Sim.multiAdvantage_le` — the bound along a simulation of schemes
+* `SMSchemeAdv.hyb_play_isQueryBound` — the hybrid reduction keeps the query bound of `A`
 * `SMSchemeAdv.hybPlayTimed_time` — the costed hybrid reduction erases to the play of
   `A.hyb M n i` and, for a costed adversary of time `T` with at most `q` queries, takes time
   at most `T + q * (u + 2)` at the step cost `u` of the handler
@@ -385,6 +385,34 @@ theorem SMScheme.Sim.multiAdvantage_le {St' Pub' Ct' Leak' : Type}
   exact Finset.sum_congr rfl fun i _ => h.corruptAdvantage_eq ΔFS ΔPCS _
 
 end Hybrid
+
+/-! ## Query bound of the hybrid reduction -/
+
+section HybBound
+
+variable {St Pub Rand W Ct Leak : Type}
+
+/-- The hybrid reduction `A.hyb M n i` keeps the query bound of `A`: its handler asks at most
+one query for each query of `A`. -/
+theorem SMSchemeAdv.hyb_play_isQueryBound (M : SMScheme St Pub Rand W Ct Leak) (n i : ℕ)
+    {A : SMSchemeAdv Pub W Ct Leak} {q : ℕ} (hA : ∀ t T, (A.play t T).IsQueryBound q)
+    (t : ℕ) (T : Pub) : ((A.hyb M n i).play t T).IsQueryBound q := by
+  have himpl : ∀ σ d, (smHybImpl M t n i σ d).IsQueryBound 1 := by
+    intro σ d
+    cases d with
+    | chall p m =>
+      simp only [smHybImpl]
+      split_ifs <;> first
+        | trivial
+        | exact fun _ => trivial
+        | (intro a; cases a <;> first | trivial | exact fun _ => trivial)
+    | _ => exact fun _ => trivial
+  simp only [SMSchemeAdv.hyb]
+  simpa using OracleAdv.isQueryBound_bind (n := 0) (f := fun x => OracleAdv.ret x.1)
+    (OracleAdv.isQueryBound_simulate _ (fun _ => 1) himpl (hA t T).isQueryBoundBy_one _)
+    (fun _ => trivial)
+
+end HybBound
 
 /-! ## Running time of the hybrid reduction -/
 

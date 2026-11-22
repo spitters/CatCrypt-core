@@ -9,10 +9,13 @@ public import CatCryptCore.Crypto.Messaging.SignalStackUC
 public import CatCryptCore.Crypto.AKE.PQXDHSquareGDH
 
 /-!
-# The PQXDH Signal stack realizes the ideal secure channel
+# The PQXDH Signal stack realizes the view functionality `F_SC`
 
 The PQXDH key exchange `pqxdhReal P G` followed by the key layer `keyLayer realV` realizes the
-ideal secure channel `F_SC realV idealV` of `SignalStackUC.lean`. The proof is the instance of the
+functionality `F_SC realV idealV` of `SignalStackUC.lean`, which answers each `getKey` with a view
+and has no event for sending or receiving. Its bound `pqxdhStackBound` contains the probability
+that a key is read twice, which is `1` when both partners of an unexposed session always read
+their key. The proof is the instance of the
 KE-then-channel composition `stack_realizes_FSC_of` at the PQXDH square
 `pqxdh_realizesSim_gapDH` of `PQXDHSquareGDH.lean`: the PQXDH simulator `simProt P G` is a
 forwarding simulator for the data `pqFwd`, and the simulator over `F_SC` is
@@ -134,9 +137,9 @@ noncomputable def pqxdhStackBound (N : Finset PartyId) (realV : K → SPComp V) 
         (keyLayer_noFail fun k => (hR k).2)).reduceEnv Z)) +
     scBound realV idealV ((simSCOver (simProt (K := K) P G) pqFwd).reduceEnv (.inr .idle) Z)
 
-/-- **The PQXDH Signal stack realizes the ideal secure channel** (genuine UC).
+/-- **The PQXDH Signal stack realizes the view functionality `F_SC`** (genuine UC).
 
-*Ideal functionality.* `F_SC realV idealV`: the multi-session secure channel over `F_AKE` with
+*Ideal functionality.* `F_SC realV idealV`: the multi-session functionality over `F_AKE` with
 unlinked delivery, whose honest port outputs on `getKey` the ideal view `idealV` for a completed
 session, the real view `realV k` under the adversary key `k` for a session exposed by corruption,
 and nothing for a session without a key.
@@ -153,7 +156,8 @@ delivers keys through `newKey` or `newKeyUnlinked`; in the phase `fwd` it passes
 *Bound.* For views that neither touch the heap nor fail, for every finite set of parties `N` and
 every environment `Z`, the distance is at most `pqxdhStackBound`: the gap Diffie–Hellman bound
 `gdhBoundP` of the PQXDH square at the environment reduced through the key layer, plus
-`scBound realV idealV` at the environment reduced through the simulator. -/
+`scBound realV idealV` at the environment reduced through the simulator, whose term for a key read
+twice is `1` when both partners of an unexposed session always read their key. -/
 theorem pqxdh_stack_realizes_FSC (N : Finset PartyId) (realV : K → SPComp V) (idealV : SPComp V)
     (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
     (hI : SPComp.IsPure idealV ∧ SPComp.NoFail idealV) :

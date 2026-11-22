@@ -779,7 +779,7 @@ def leafPosKey : Name := `repairAction.leafPos
 /-- `x` with the start of the range `r` recorded as the position of the leaf (`leafPosKey`). -/
 def withLeafPos {α : Type} (r : Syntax.Range) (x : MetaM α) : MetaM α :=
   withTheReader Core.Context
-    (fun c => { c with options := c.options.set leafPosKey r.start.byteIdx }) x
+    (fun c => c.setOptions (c.options.set leafPosKey r.start.byteIdx)) x
 
 /-- The position of the leaf recorded by `withLeafPos`, in the file map of the context. -/
 def leafPos? : MetaM (Option Lean.Position) := do
@@ -1086,7 +1086,7 @@ def runDispatch (g : MVarId) (r : Syntax.Range) (hb ms : Nat) (declName? : Optio
   let off := !(← getOptions).get `repairAction.dispatchSuggestions false
   let opts := (capOptions (← getOptions) ms).set dispatchRunKey run
   let c ← withLeafPos r <| capped hb ms declName? fun tk =>
-    withTheReader Core.Context (fun c => { c with options := opts }) do
+    withTheReader Core.Context (fun c => c.setOptions opts) do
       modifyThe Core.State fun s => { s with infoState := { enabled := true } }
       if off then
         modifyEnv fun env => LibrarySuggestions.librarySuggestionsExt.modifyState env

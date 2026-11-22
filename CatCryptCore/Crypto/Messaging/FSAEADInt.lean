@@ -155,7 +155,7 @@ end FlagSim
 
 section Keyed
 
-variable {Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [DecidableEq W]
+variable {Sa W Ct Kt : Type} [SampleableType W] [SampleableType Ct] [DecidableEq W]
   [DecidableEq Ct]
 
 /-- The initial state of the keyed integrity oracle: an empty log and no corruption. The
@@ -166,7 +166,7 @@ omit [SampleableType W] [SampleableType Ct] in
 /-- A call of the integrity oracle with the key `k j` at the position `j`: `enc m` encrypts
 under the key at the next position and logs the ciphertext, `dec j ad c` decrypts under `k j`
 and is refused after the corruption, and `corrupt` sets the corruption and answers `none`. -/
-def fsKeyStep (D : AEADDef W Ct) (k : ℕ → W) (s : FSIntSt Unit W Ct) :
+def fsKeyStep (D : AEADDef W Ct W Kt) (k : ℕ → Kt) (s : FSIntSt Unit W Ct) :
     FSIntQuery W Ct → FSIntAns Sa Ct W × FSIntSt Unit W Ct
   | .enc m => (.ct (D.encrypt (k s.log.length) m.1 m.2),
       { s with log := (s.log.length, m.1, m.2, D.encrypt (k s.log.length) m.1 m.2) :: s.log })
@@ -175,14 +175,15 @@ def fsKeyStep (D : AEADDef W Ct) (k : ℕ → W) (s : FSIntSt Unit W Ct) :
 
 omit [SampleableType W] [SampleableType Ct] in
 /-- The keyed integrity oracle: the point mass at `fsKeyStep`. -/
-noncomputable def fsKeyOracle (D : AEADDef W Ct) (k : ℕ → W) (s : FSIntSt Unit W Ct)
+noncomputable def fsKeyOracle (D : AEADDef W Ct W Kt) (k : ℕ → Kt) (s : FSIntSt Unit W Ct)
     (d : FSIntQuery W Ct) : PMF (FSIntAns Sa Ct W × FSIntSt Unit W Ct) :=
   PMF.pure (fsKeyStep D k s d)
 
 omit [SampleableType W] [SampleableType Ct] in
 /-- The bad event of the integrity game at the positions `j` with `P j`: a decryption before
 the corruption whose answer under the key `k j` differs from the decryption from the log. -/
-def fsDecBad (D : AEADDef W Ct) (k : ℕ → W) (P : ℕ → Bool) {S : Type} (s : FSIntSt S W Ct) :
+def fsDecBad (D : AEADDef W Ct W Kt) (k : ℕ → Kt) (P : ℕ → Bool) {S : Type}
+    (s : FSIntSt S W Ct) :
     FSIntQuery W Ct → Bool
   | .dec j ad c => P j && !s.corr && decide (D.decrypt (k j) c ad ≠ s.logDec j ad c)
   | _ => false
@@ -194,16 +195,16 @@ def fsIntFar (N : ℕ) : FSIntQuery W Ct → ℕ
   | _ => 0
 
 omit [SampleableType W] [SampleableType Ct] [DecidableEq W] [DecidableEq Ct] in
-/-- The key function of the outputs `ks` of the generator `G` and the state `sN` after them:
-the output at a position below the number of outputs, and the key of the chain from `sN`
-after them. -/
-def fsKeyOf (G : PRGDef Sa (W × Sa)) (ks : List W) (sN : Sa) (j : ℕ) : W :=
+/-- The key function of the outputs `ks` of the generator `G` and the state `sN` after them,
+with keys in `Kt`: the output at a position below the number of outputs, and the key of the
+chain from `sN` after them. -/
+def fsKeyOf (G : PRGDef Sa (Kt × Sa)) (ks : List Kt) (sN : Sa) (j : ℕ) : Kt :=
   if h : j < ks.length then ks[j] else chainKey G sN (j - ks.length)
 
 omit [SampleableType Ct] in
 /-- The flag of the run of `A` against the keyed oracle with the key function `k`, flagged by
 the bad event at the positions of `P`. -/
-noncomputable def fsKeyFlag (D : AEADDef W Ct) (k : ℕ → W) (P : ℕ → Bool)
+noncomputable def fsKeyFlag (D : AEADDef W Ct W Kt) (k : ℕ → Kt) (P : ℕ → Bool)
     (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) : PMF Bool :=
   (OracleAdv.run (OracleAdv.flagWhen (fun s d _ => fsDecBad D k P s d = true)
     (fsKeyOracle D k)) A (fsKeyInit, false)).map fun y => y.2.2
@@ -220,7 +221,7 @@ theorem logDec_cons {S : Type} (s : FSIntSt S W Ct) (e : ℕ × W × W × Ct) (j
 omit [SampleableType W] [SampleableType Ct] [DecidableEq W] [DecidableEq Ct] in
 /-- The key function of the outputs and the final state of `N` steps of the generator from `s`
 is the key chain from `s`. -/
-theorem fsKeyOf_fsprgRun (G : PRGDef Sa (W × Sa)) (N : ℕ) (s : Sa) :
+theorem fsKeyOf_fsprgRun (G : PRGDef Sa (Kt × Sa)) (N : ℕ) (s : Sa) :
     fsKeyOf G (fsprgRun G N s).1 (fsprgRun G N s).2 = chainKey G s := by
   induction N generalizing s with
   | zero => funext j; simp [fsKeyOf, fsprgRun]
@@ -242,7 +243,7 @@ omit [SampleableType Ct] in
 /-- **The union bound over the positions.** For an adversary that decrypts at positions below
 `N` only, the event at all positions is set with at most the sum over `j < N` of the
 probabilities of the event at `j`. -/
-theorem fsKeyFlag_apply_le_sum (D : AEADDef W Ct) (k : ℕ → W) (N : ℕ)
+theorem fsKeyFlag_apply_le_sum (D : AEADDef W Ct W Kt) (k : ℕ → Kt) (N : ℕ)
     (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool)
     (hA : A.IsQueryBoundBy (fsIntFar N) 0) :
     fsKeyFlag D k (fun _ => true) A true ≤
@@ -288,8 +289,8 @@ omit [SampleableType Ct] in
 /-- **The FS-PRG distinguisher of FS-AEAD integrity.** On the outputs `ks` of the generator and
 the state `sN` after them, it runs `A` against the keyed oracle with the key function
 `fsKeyOf G ks sN` and outputs the bad event at all positions. -/
-noncomputable def fsIntPost (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) (ks : List W × Sa) :
+noncomputable def fsIntPost (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
+    (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) (ks : List Kt × Sa) :
     SPComp Bool :=
   liftPMF (fsKeyFlag D (fsKeyOf G ks.1 ks.2) (fun _ => true) A)
 
@@ -299,7 +300,8 @@ positions and a flag: the encryption at the position `j` and the decryptions at 
 corruption are queries to the authenticated-encryption challenger, and a decryption answer of
 the challenger that differs from the decryption from the log sets the flag. The other queries
 are answered by `fsKeyStep` with the keys `k`. -/
-def fsIntRedImpl (D : AEADDef W Ct) (j : ℕ) (k : ℕ → W) (s : FSIntSt Unit W Ct × Bool) :
+def fsIntRedImpl (D : AEADDef W Ct W Kt) (j : ℕ) (k : ℕ → Kt)
+    (s : FSIntSt Unit W Ct × Bool) :
     FSIntQuery W Ct → OracleAdv (AEAD_CCA_Query W Ct) (AEAD_CCA_Answer W Ct)
       (FSIntAns Sa Ct W × (FSIntSt Unit W Ct × Bool))
   | .enc m =>
@@ -320,8 +322,9 @@ def fsIntRedImpl (D : AEADDef W Ct) (j : ℕ) (k : ℕ → W) (s : FSIntSt Unit 
 
 omit [SampleableType W] [SampleableType Ct] [DecidableEq W] [DecidableEq Ct] in
 /-- The key function of uniform outputs with the output at `j` replaced by `key`. -/
-theorem update_fsKeyOf_ofFn (G : PRGDef Sa (W × Sa)) {N : ℕ} (v : Fin N → W) (sN : Sa) (j : ℕ)
-    (hj : j < N) (key : W) :
+theorem update_fsKeyOf_ofFn (G : PRGDef Sa (Kt × Sa)) {N : ℕ} (v : Fin N → Kt) (sN : Sa)
+    (j : ℕ)
+    (hj : j < N) (key : Kt) :
     Function.update (fsKeyOf G (List.ofFn v) sN) j key =
       fsKeyOf G (List.ofFn (Function.update v ⟨j, hj⟩ key)) sN := by
   funext i
@@ -340,7 +343,7 @@ omit [SampleableType Ct] in
 /-- **The AEAD reduction in the real game.** Against the real oracles of the key `key`, the
 simulated adversary outputs the bad event at `j` of the keyed oracle with the key `key` at `j`
 and the keys `k` elsewhere. -/
-theorem fsIntRed_run_real (D : AEADDef W Ct) (j : ℕ) (k : ℕ → W) (key : W)
+theorem fsIntRed_run_real (D : AEADDef W Ct W Kt) (j : ℕ) (k : ℕ → Kt) (key : Kt)
     (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) :
     (OracleAdv.run (aeadRealOracle D key)
         ((OracleAdv.simulate (fsIntRedImpl D j k) A (fsKeyInit, false)).bind
@@ -376,7 +379,7 @@ theorem fsIntRed_run_real (D : AEADDef W Ct) (j : ℕ) (k : ℕ → W) (key : W)
 /-- **The AEAD reduction in the ideal game.** Against the ideal oracles, the decryption answer
 of the challenger at `j` is the decryption from the log, so the simulated adversary outputs
 `false`. -/
-theorem fsIntRed_run_ideal (D : AEADDef W Ct) (j : ℕ) (k : ℕ → W)
+theorem fsIntRed_run_ideal (D : AEADDef W Ct W Kt) (j : ℕ) (k : ℕ → Kt)
     (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) :
     ((OracleAdv.run aeadIdealOracle
         ((OracleAdv.simulate (fsIntRedImpl D j k) A (fsKeyInit, false)).bind
@@ -460,23 +463,23 @@ end Keyed
 
 section Games
 
-variable {Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [DecidableEq W]
-  [DecidableEq Ct] [Fintype Sa] [Nonempty Sa]
+variable {Sa W Ct Kt : Type} [SampleableType W] [SampleableType Ct] [SampleableType Kt]
+  [DecidableEq W] [DecidableEq Ct] [Fintype Sa] [Nonempty Sa]
 
-/-- **The AEAD reduction of the position `j`.** It samples uniform keys for the positions
+/-- **The AEAD reduction of the position `j`.** It samples uniform keys in `Kt` for the positions
 below `N` and a uniform state for the chain of the positions from `N` on, and simulates the
 integrity game for `A` with the key of the challenger at `j` (`fsIntRedImpl`); it outputs the
 bad event at `j`. -/
-noncomputable def fsIntRed (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (N j : ℕ)
+noncomputable def fsIntRed (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) (N j : ℕ)
     (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) : AEAD_CCA_Adversary W Ct :=
-  .rand (PMF.uniformFintype (Fin N → W)) fun v => .rand (PMF.uniformFintype Sa) fun sN =>
+  .rand (PMF.uniformFintype (Fin N → Kt)) fun v => .rand (PMF.uniformFintype Sa) fun sN =>
     (OracleAdv.simulate (fsIntRedImpl D j (fsKeyOf G (List.ofFn v) sN)) A
       (fsKeyInit, false)).bind fun x => .ret x.2.2
 
-omit [SampleableType Ct] [Fintype Sa] [Nonempty Sa] in
+omit [SampleableType Ct] [SampleableType Kt] [Fintype Sa] [Nonempty Sa] in
 /-- The flagged real integrity game from the initial state `sa`, flagged by the bad event, has
 the flag distribution of the keyed oracle with the keys of the chain from `sa`. -/
-theorem fsInt_real_flag_eq (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (sa : Sa)
+theorem fsInt_real_flag_eq (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) (sa : Sa)
     (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) :
     (OracleAdv.run (OracleAdv.flagWhen
         (fun s d _ => fsDecBad D (chainKey G s.init) (fun _ => true) s d = true)
@@ -513,11 +516,11 @@ theorem fsInt_real_flag_eq (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (sa : Sa
       simp [hFr, fsKeyStep, fsDecBad, hi, hcorr, FSIntSt.logDec, ← hl, hc]
     | corrupt => simp [hFr, fsKeyStep, fsDecBad]
 
-omit [SampleableType Ct] in
+omit [SampleableType Ct] [SampleableType Kt] in
 /-- **Identical until the bad event.** The FS-AEAD integrity advantage is at most the
 probability of the bad event in the real game, the keyed oracle with the keys of the chain
 from a uniform state. -/
-theorem fsaead_int_advantage_le_flag (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+theorem fsaead_int_advantage_le_flag (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) :
     FSAEAD_Int_Advantage G D A ≤
       ((PMF.uniformFintype Sa).bind fun sa => fsKeyFlag D (chainKey G sa) (fun _ => true) A)
@@ -554,13 +557,14 @@ theorem fsaead_int_advantage_le_flag (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct
 /-- **The bad event at `j` under uniform keys is detected by `fsIntRed`.** The probability of
 the bad event at `j < N` of the keyed oracle with `N` uniform keys and the chain from a uniform
 state after them is at most the authenticated-encryption advantage of `fsIntRed G D N j A`. -/
-theorem fsKeyFlag_le_aead (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {N j : ℕ} (hj : j < N)
+theorem fsKeyFlag_le_aead (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) {N j : ℕ}
+    (hj : j < N)
     (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool) :
-    ((PMF.uniformFintype (Fin N → W)).bind fun v => (PMF.uniformFintype Sa).bind fun sN =>
+    ((PMF.uniformFintype (Fin N → Kt)).bind fun v => (PMF.uniformFintype Sa).bind fun sN =>
         fsKeyFlag D (fsKeyOf G (List.ofFn v) sN) (fun i => i == j) A) true ≤
       AEAD_CCA_Advantage D (fsIntRed G D N j A) := by
   have hreal : prTrue (AEAD_CCA_Game_Real D (fsIntRed G D N j A)) Heap.empty =
-      ((PMF.uniformFintype (Fin N → W)).bind fun v => (PMF.uniformFintype Sa).bind fun sN =>
+      ((PMF.uniformFintype (Fin N → Kt)).bind fun v => (PMF.uniformFintype Sa).bind fun sN =>
         fsKeyFlag D (fsKeyOf G (List.ofFn v) sN) (fun i => i == j) A) true := by
     rw [AEAD_CCA_Game_Real, prTrue_liftPMF]
     simp only [fsIntRed, OracleAdv.run_rand, PMF.map_bind, fsIntRed_run_real,
@@ -577,11 +581,11 @@ theorem fsKeyFlag_le_aead (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {N j : �
   unfold AEAD_CCA_Advantage Advantage
   grind [tsub_zero, le_max_left]
 
-/-- **FS-AEAD integrity from PRG and AEAD security.** For every adversary `A` that decrypts at
-positions below `N` only, the FS-AEAD integrity advantage is at most the FS-PRG advantage of
-`fsIntPost G D A` over `N` steps plus the authenticated-encryption advantages of the reductions
-`fsIntRed G D N j A` for `j < N`. -/
-theorem fsaead_int_advantage_le (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (N : ℕ)
+/-- **FS-AEAD integrity from PRG and AEAD security**, with keys in `Kt`. For every adversary `A`
+that decrypts at positions below `N` only, the FS-AEAD integrity advantage is at most the FS-PRG
+advantage of `fsIntPost G D A` over `N` steps plus the authenticated-encryption advantages of the
+reductions `fsIntRed G D N j A` for `j < N`. -/
+theorem fsaead_int_advantage_le (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) (N : ℕ)
     (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool)
     (hA : A.IsQueryBoundBy (fsIntFar N) 0) :
     FSAEAD_Int_Advantage G D A ≤
@@ -594,7 +598,7 @@ theorem fsaead_int_advantage_le (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (N 
       fsKeyOf_fsprgRun]
     rw [prTrue_sample_bind_liftPMF]
   have hideal : prTrue ((fsprg_ideal (St := Sa) N).bind (fsIntPost G D A)) Heap.empty =
-      ((PMF.uniformFintype (Fin N → W)).bind fun v => (PMF.uniformFintype Sa).bind fun sN =>
+      ((PMF.uniformFintype (Fin N → Kt)).bind fun v => (PMF.uniformFintype Sa).bind fun sN =>
         fsKeyFlag D (fsKeyOf G (List.ofFn v) sN) (fun _ => true) A) true := by
     simp only [fsprg_ideal, fsIntPost, SPComp.monad_bind_eq, SPComp.bind_assoc,
       SPComp.pure_bind, sample_eq_liftPMF Sa, liftPMF_bind_liftPMF]
@@ -612,7 +616,7 @@ theorem fsaead_int_advantage_le (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (N 
 adversary `A` that decrypts at positions below `N` only, the FS-AEAD integrity advantage is at
 most the PRG advantages of the FS-PRG reductions `fsprgRed G N i (fsIntPost G D A)` plus the
 authenticated-encryption advantages of the reductions `fsIntRed G D N j A` for `j < N`. -/
-theorem fsaead_int_advantage_le_prg (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (N : ℕ)
+theorem fsaead_int_advantage_le_prg (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) (N : ℕ)
     (A : OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool)
     (hA : A.IsQueryBoundBy (fsIntFar N) 0) :
     FSAEAD_Int_Advantage G D A ≤

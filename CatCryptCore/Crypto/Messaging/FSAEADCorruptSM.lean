@@ -46,21 +46,24 @@ open scoped ENNReal
 section QueryBound
 
 variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  {Kt : Type} [SampleableType Kt]
 
+omit [SampleableType Kt] in
 /-- Each query of the secure-messaging game in the simulator of the FS-AEAD reduction asks at
 most one query of cost `1` of the FS-AEAD game. -/
 theorem smFSImplOf_isQueryBoundBy (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (ΔFS ΔPCS t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (d : SMQuery W AD) :
     (smFSImplOf C R G D ΔFS ΔPCS t rkS x d).IsQueryBoundBy fsCost 1 := by
   cases d <;> query_bound [smFSImplOf, smFSRatchet, smFSRecv, smFSSend, smFSChall, smFSCorr,
     fsCost]
 
+omit [SampleableType Kt] in
 /-- **The cost bound of the FS-AEAD reduction.** If every interaction of `A` asks at most `q`
 queries, the FS-AEAD reduction `smcFSRed` has cost at most `q` under `fsCost`. -/
 theorem smcFSRed_isQueryBoundBy [Fintype RK] [Nonempty RK] (C : CKADef Sc Msg Key)
-    [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
-    (D : AEADDef W Ct AD) (ΔFS ΔPCS : ℕ) (initP : PMF (Msg × Sc × Sc))
+    [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct AD Kt) (ΔFS ΔPCS : ℕ) (initP : PMF (Msg × Sc × Sc))
     (A : SMCorruptAdv Sc Msg RK Sa W Ct AD) (q : ℕ)
     (hA : ∀ t m, (A.play t m).IsQueryBound q) :
     (smcFSRed C R G D ΔFS ΔPCS initP A).IsQueryBoundBy fsCost q := by
@@ -77,7 +80,7 @@ section Prim
 
 variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key] [Fintype Sa]
-  [Nonempty Sa] [DecidableEq RK] [DecidableEq Key] [DecidableEq AD]
+  [Nonempty Sa] [DecidableEq RK] [DecidableEq Key] [DecidableEq AD] {Kt : Type} [SampleableType Kt]
 
 /-- **Secure messaging with state corruption from CKA, PRF-PRNG, PRG and AEAD security.** Under
 the hypotheses of `sm_corrupt_advantage_le`, for an adversary `A` whose interactions ask at most
@@ -87,7 +90,7 @@ the hypotheses of `sm_corrupt_advantage_le`, for an adversary `A` whose interact
 FS-AEAD reduction `smcFSRed C R G D ΔFS ΔPCS initP A`. -/
 theorem sm_corrupt_advantage_le_prim (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hS : CKACoins.Sound C) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (A : SMCorruptAdv Sc Msg RK Sa W Ct AD)
     (q : ℕ) (hA : ∀ t m, (A.play t m).IsQueryBound q) :
     SM_Corrupt_Advantage C R G D ΔFS ΔPCS A ≤
@@ -111,7 +114,7 @@ theorem acdSMAD_corruptAdvantage_le_prim (C : CKADef Sc Msg Key) [CKACoins C Ran
     (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (f : W → AD) {ΔFS ΔPCS : ℕ}
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (f : W → AD) {ΔFS ΔPCS : ℕ}
     (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) (q : ℕ)
     (hA : ∀ t T, (A.play t T).IsQueryBound q) :
     (acdSMAD C R G D fun _ => f).corruptAdvantage ΔFS ΔPCS A ≤
@@ -132,11 +135,12 @@ end Prim
 
 section AEADRed
 
-variable {Sa W Ct AD : Type} [SampleableType W] [Fintype Sa] [Nonempty Sa]
+variable {Sa W Ct AD : Type} [SampleableType W] [Fintype Sa] [Nonempty Sa] {Kt : Type}
+  [SampleableType Kt]
 
 /-- **The query bound of the AEAD reduction of the FS-AEAD game.** For an adversary of cost at
 most `q` under `fsCost`, the AEAD reduction `fsCorrAEADRed G D B` asks at most `q` queries. -/
-theorem fsCorrAEADRed_isQueryBound (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+theorem fsCorrAEADRed_isQueryBound (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (B : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) (q : ℕ) (hB : B.IsQueryBoundBy fsCost q) :
     (fsCorrAEADRed G D B).IsQueryBound q := by
   have himpl : ∀ h d, (fsCorrAEADImpl G D h d).IsQueryBound (fsCost d) := by

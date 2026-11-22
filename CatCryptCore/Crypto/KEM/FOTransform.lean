@@ -434,9 +434,9 @@ theorem corrErr_fixedT (P : Scheme PK SK M C R) :
       from rfl, FOTransformU.tsum_map_mul]
     simp only [failProb_fixedT]
   simp only [h]
-  rw [FOTransformU.tsum_mul_comm]
+  rw [ENNReal.tsum_mul_tsum_mul_comm]
   refine tsum_congr fun ks => congrArg _ ?_
-  rw [FOTransformU.tsum_mul_comm]
+  rw [ENNReal.tsum_mul_tsum_mul_comm]
   refine tsum_congr fun m => congrArg _ ?_
   exact tsum_uniform_eval m fun r => PKE.FOTransformT.failInd P ks.2 m (P.enc ks.1 m r)
 

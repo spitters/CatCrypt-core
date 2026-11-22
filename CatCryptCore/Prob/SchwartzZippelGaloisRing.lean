@@ -78,7 +78,8 @@ theorem exists_C_pow_mul_residue (π : R →+* F) (t : R)
   let g : R[X] := ∑ i ∈ f.support, monomial i (c i)
   have hgc : ∀ i, g.coeff i = if i ∈ f.support then c i else 0 := by
     intro i
-    simp only [g, finsetSum_coeff, coeff_monomial, Finset.sum_ite_eq']
+    simp only [g, finsetSum_coeff, coeff_monomial, Finsupp.single_apply,
+      Finset.sum_ite_eq']
   have hfg : f = C (t ^ s) * g := by
     ext i
     rw [coeff_C_mul, hgc]

@@ -10,8 +10,10 @@ public import CatCryptCore.Examples.Cryptobox.Cryptobox
 /-!
 # Cryptobox Game-Hopping Chain
 
-This file proves the game-hopping decomposition for the Cryptobox security proof,
-replacing the monolithic `hdecomp` hypothesis with a transparent chain of game hops.
+This file proves the game-hopping decomposition of `pkaeAdvantage`, with a chain of game
+hops in place of the monolithic `hdecomp` hypothesis. The adversary of the game `PKAE`
+receives the secret keys of honest public keys (`getsk`), so these bounds are no security
+statement for Cryptobox.
 
 ## Game-hopping chain
 
@@ -32,8 +34,8 @@ where `PKAE_cc` uses collision-checking in the GEN oracle.
 * `PKAE_cc_eq_PKEY_check` - PKAE_cc = PKEY(check) with reduction adversary (by rfl)
 * `pkae_pkey_step` - PKEY switching step equals `pkeyAdvantage` of reduction
 * `pkae_game_hopping` - Full three-step decomposition via triangle inequality
-* `cryptobox_security_chain` - Main theorem with explicit game-hopping structure
-* `cryptobox_security_full` - Full 4-component security bound
+* `cryptobox_security_chain` - Composition of the three hops
+* `cryptobox_security_full` - Composition of the four hop bounds, two of them hypotheses
 
 ## Architecture
 
@@ -48,16 +50,13 @@ This is further decomposed into:
 2. KEY structural: KEY(0) = KEY(1) when inputs are already random
 3. AE switching: replace real encryption with ideal encryption (hybrid argument)
 
-## Degenerate statements (finding 6 of the vacuity sweep)
+## The games
 
 The PKAE, PKEY and NIKE games of this development give the adversary a `getsk`
 oracle on honest keys and unrestricted access to the heap, so every adversary
 that runs the scheme itself has advantage close to `1`. The bounds on
 `pkaeAdvantage` in this file are therefore marked degenerate in their
-docstrings. The repair (removing `getsk` from the adversary interface, a
-location-disjointness condition on adversaries, rebasing on `GPKAE`, and proofs
-of the NIKE and AE hops) is not carried out here. `nikeStep_eq_reduction`,
-whose hypothesis was its conclusion, is deleted.
+docstrings.
 
 ## References
 
@@ -202,14 +201,14 @@ theorem pkae_game_hopping (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjectio
         simp_all [pkae_pkey_step]
     _ = _ := by simp_all [add_assoc]
 
-/-! ## Main Security Theorem (Chain Version) -/
+/-! ## Composition of the hops (chain version) -/
 
-/-- **Degenerate: see finding 6 of the vacuity sweep; the bound concerns `pkaeAdvantage`,
+/-- **Degenerate; the bound concerns `pkaeAdvantage`,
     in which the game lets the adversary call `getsk` on honest keys and read any heap
     location (including `skStoreLoc`), so every adversary that runs the scheme itself wins
     with advantage close to 1.**
 
-    **Cryptobox security theorem (game-hopping chain version).**
+    **Composition of the Cryptobox hops (game-hopping chain version).**
 
     The PKAE advantage is bounded by `2 * pkey_eps + middle_eps`, where:
     - `pkey_eps` bounds the PKEY advantage for both reduction adversaries
@@ -375,21 +374,20 @@ theorem middle_bounded_by_steps
 /-! ## Full Decomposition
 
 Combining the game-hopping chain with the middle step decomposition
-gives the full security bound. -/
+gives the composition of the four hop bounds. -/
 
-/-- **Degenerate: see finding 6 of the vacuity sweep; the bound concerns `pkaeAdvantage`,
+/-- **Degenerate; the bound concerns `pkaeAdvantage`,
     in which the game lets the adversary call `getsk` on honest keys and read any heap
     location (including `skStoreLoc`), so every adversary that runs the scheme itself wins
     with advantage close to 1, and the NIKE and AE hops `h_nike`, `h_ae` are hypotheses.**
 
-    **Full Cryptobox security bound with explicit game-hopping structure.**
+    **Composition of the four Cryptobox hop bounds.**
 
     Decomposes PKAE advantage into:
     - `2 * pkey_eps`: Two PKEY switching steps (collision bounds)
     - `nike_eps`: NIKE switching (shared key indistinguishability)
     - `ae_eps`: AE switching (encryption indistinguishability)
 
-    This is the most structured version of the Cryptobox security theorem.
     Each hypothesis corresponds to a single, well-defined proof obligation:
 
     1. `h_pkey_real/ideal`: Bound PKEY collision probability (FEL)
@@ -421,7 +419,7 @@ theorem cryptobox_security_full
 
 Specializations of the full security theorem for common scenarios. -/
 
-/-- **Degenerate: see finding 6 of the vacuity sweep (corollary of
+/-- **Degenerate (corollary of
     `cryptobox_security_full`).**
 
     When the PKEY collision bound is zero (e.g., infinite key space),
@@ -440,7 +438,7 @@ theorem cryptobox_security_no_collision
   simp only [mul_zero, zero_add] at this
   simp_all
 
-/-- **Degenerate: see finding 6 of the vacuity sweep (corollary of
+/-- **Degenerate (corollary of
     `cryptobox_security_full`).**
 
     When NIKE and AE are perfectly secure (e.g., information-theoretic),
@@ -712,7 +710,7 @@ theorem nikeStep_bounded (N : @NIKEScheme CT) (E : @NBSES CT)
 Combining `cryptobox_security_full` with the NIKE reduction gives a
 version where the NIKE bound comes from a concrete reduction adversary. -/
 
-/-- **Degenerate: see finding 6 of the vacuity sweep; the bound concerns `pkaeAdvantage`,
+/-- **Degenerate; the bound concerns `pkaeAdvantage`,
     and the NIKE hop is the hypothesis `h_cache`.**
 
     **Cryptobox security with explicit NIKE reduction.**
@@ -743,7 +741,7 @@ theorem cryptobox_security_with_nike_reduction
     pkaeAdvantage N E I A ≤ 2 * pkey_eps + (nike_eps + caching_gap) + ae_eps := by
   grind [nikeStep_bounded, cryptobox_security_full]
 
-/-- **Degenerate: see finding 6 of the vacuity sweep; the bound concerns `pkaeAdvantage`,
+/-- **Degenerate; the bound concerns `pkaeAdvantage`,
     and the NIKE hop is the hypothesis `h_cache`.**
 
     **Simplified version when the caching gap is zero.**

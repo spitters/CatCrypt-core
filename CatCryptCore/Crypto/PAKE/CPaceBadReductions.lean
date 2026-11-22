@@ -2610,19 +2610,21 @@ theorem uqp_avg_le (pw₀ : Pw) (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : 
       exact h₀.trans (h₁.trans h₂)
     calc _ ≤ ∑' r : Sˣ, PMF.uniformFintype Sˣ r * (OracleAdv.run O₂ B (hInit G)).toOuterMeasure
           {y | Mt G (Function.update g pw₀ r) pw₀ y.2.1 ∧ ZsInv y.2.1.1} :=
-          ENNReal.tsum_le_tsum fun r => by gcongr; exact hstep r
+          tsum_le_tsum fun r => by gcongr; exact hstep r
       _ = ∑' y, (OracleAdv.run O₂ B (hInit G)) y * (PMF.uniformFintype Sˣ).toOuterMeasure
           {r | Mt G (Function.update g pw₀ r) pw₀ y.2.1 ∧ ZsInv y.2.1.1} := by
           simp only [PMF.toOuterMeasure_eq_tsum_ite, ← ENNReal.tsum_mul_left]
-          rw [ENNReal.tsum_comm]
+          rw [tsum_comm]
           refine tsum_congr fun y => tsum_congr fun r => ?_
           ring
       _ ≤ ∑' y, (OracleAdv.run O₂ B (hInit G)) y * (((4 * q : ℕ) : ℝ≥0∞) * ε) := by
-          refine ENNReal.tsum_le_tsum fun y => ?_
+          refine tsum_le_tsum fun y => ?_
           by_cases hy : y ∈ (OracleAdv.run O₂ B (hInit G)).support
           · gcongr
             by_cases hI : ZsInv y.2.1.1
-            · refine (MeasureTheory.measure_mono fun r hr => hr.1).trans
+            · refine (MeasureTheory.measure_mono
+                (show {r | Mt G (Function.update g pw₀ r) pw₀ y.2.1 ∧ ZsInv y.2.1.1} ⊆
+                  {t | Mt G (Function.update g pw₀ t) pw₀ y.2.1} from fun r hr => hr.1)).trans
                 ((uniform_Mt_le G g pw₀ y.2.1 hI).trans ?_)
               refine mul_le_mul' (Nat.cast_le.mpr ?_) le_rfl
               have := idealStep_entries_le G _ B q hB y hy
@@ -2636,11 +2638,11 @@ theorem uqp_avg_le (pw₀ : Pw) (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : 
     _ = ∑' g : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) g * ∑' r : Sˣ, PMF.uniformFintype Sˣ r *
         f (Function.update g pw₀ r) (Function.update g pw₀ r) := by
         simp only [← ENNReal.tsum_mul_left]
-        rw [ENNReal.tsum_comm]
+        rw [tsum_comm]
         refine tsum_congr fun g => tsum_congr fun r => ?_
         ring
     _ ≤ ∑' g : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) g * (((4 * q : ℕ) : ℝ≥0∞) * ε) :=
-        ENNReal.tsum_le_tsum fun g => by gcongr; exact hfix g
+        tsum_le_tsum fun g => by gcongr; exact hfix g
     _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
 /-- **The unqueried-match experiment.** For an oracle adversary with at most `q` queries, a match

@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.PKE.Games
 public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
+public import CatCryptCore.ForMathlib.TsumExchange
 
 /-!
 # The T-transform of Hofheinz–Hövelmanns–Kiltz in the random-oracle model
@@ -287,7 +288,8 @@ theorem toOuterMeasure_le_add_flag_set {α σ : Type} (p₁ p₂ : PMF (α × (�
     p₁.toOuterMeasure S ≤ p₂.toOuterMeasure S + p₂.toOuterMeasure {x | x.2.2 = true} := by
   refine (MeasureTheory.measure_le_inter_add_sdiff p₁.toOuterMeasure S
     {x | x.2.2 = false}).trans (add_le_add ?_ ?_)
-  · rw [toOuterMeasure_eq_of_subset_false p₁ p₂ h _ fun x hx => hx.2]
+  · rw [toOuterMeasure_eq_of_subset_false p₁ p₂ h _
+      fun x (hx : x ∈ S ∩ {x | x.2.2 = false}) => hx.2]
     exact MeasureTheory.measure_mono Set.inter_subset_left
   · rw [← toOuterMeasure_flag_eq p₁ p₂ h]
     refine MeasureTheory.measure_mono fun x hx => ?_
@@ -319,8 +321,9 @@ theorem toOuterMeasure_le_or_flag {α σ : Type} (p₁ p₂ : PMF (α × (σ × 
   · calc ∑' x, {x | x ∈ S ∧ x.2.2 = true}.indicator p₁ x
         ≤ p₁.toOuterMeasure {x | x.2.2 = true} := by
           rw [PMF.toOuterMeasure_apply]
-          exact ENNReal.tsum_le_tsum fun x =>
-            Set.indicator_le_indicator_of_subset (fun x hx => hx.2) (fun _ => bot_le) x
+          exact tsum_le_tsum fun x =>
+            Set.indicator_le_indicator_of_subset
+              (fun x (hx : x ∈ {x | x ∈ S ∧ x.2.2 = true}) => hx.2) (fun _ => bot_le) x
       _ = p₂.toOuterMeasure {x | x.2.2 = true} := toOuterMeasure_flag_eq p₁ p₂ h
       _ = _ := by
           rw [PMF.toOuterMeasure_apply]
@@ -857,13 +860,6 @@ end Lazy
 
 section Main
 
-omit [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C] [Fintype R] [Nonempty R] in
-theorem tsum_mul_comm' {α β : Type} (p : α → ℝ≥0∞) (q : β → ℝ≥0∞) (F : α → β → ℝ≥0∞) :
-    ∑' a, p a * ∑' b, q b * F a b = ∑' b, q b * ∑' a, p a * F a b := by
-  simp only [← ENNReal.tsum_mul_left]
-  rw [ENNReal.tsum_comm]
-  exact tsum_congr fun b => tsum_congr fun a => by ring
-
 /-- The indicator of a decryption failure: `0` when `Dec(sk, c) = m`, `1` otherwise. -/
 noncomputable def failInd (sk : SK) (m : M) (c : C) : ℝ≥0∞ :=
   if P.dec sk c = some m then 0 else 1
@@ -921,7 +917,7 @@ theorem game_le_chain {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (ks
   refine (ENNReal.tsum_le_tsum fun f => mul_le_mul_right (h1 f) _).trans (h2.trans ?_)
   refine (ENNReal.tsum_le_tsum fun f => mul_le_mul_right (ENNReal.tsum_le_tsum fun r =>
     mul_le_mul_right (add_le_add (h3 f r) le_rfl) _) _).trans (le_of_eq ?_)
-  rw [tsum_mul_comm']
+  rw [ENNReal.tsum_mul_tsum_mul_comm]
   simp only [mul_add, ENNReal.tsum_add]
   rfl
 

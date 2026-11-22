@@ -83,10 +83,11 @@ theorem tripleRatchetDeployed_init_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (P : SidecarDef PSt PHdr S) (E : SidecarPack PHdr S W) (hC : SPComp.IsPure C.init) :
     (tripleRatchetDeployed C R G D₀ F dec enc maxSkip maxStored P E).init =
       SPComp.bind (SPComp.sample RK) (tripleRatchetDeployedIni (Sa := Sa) (W := W) C P) := by
-  simp only [tripleRatchetDeployed, smidSidecar, acdIDSM, acdIDBase, acdSMAD,
-    SPComp.bind_assoc, SPComp.pure_bind]
+  simp only [tripleRatchetDeployed, smidSidecar, acdIDSM, acdIDHdrSM, acdIDHdrBase,
+    aeadEncComapAD, acdSMAD, SPComp.bind_assoc, SPComp.pure_bind]
   refine (SPComp.isPure_bind_comm_left _ _ _ hC).trans (congrArg _ (funext fun rk => ?_))
-  simp only [tripleRatchetDeployedIni, acdIni, SPComp.bind_assoc, SPComp.pure_bind]
+  simp only [tripleRatchetDeployedIni, acdIni, ACDIDSt.embed, SPComp.bind_assoc,
+    SPComp.pure_bind]
 
 variable {Sf Wg PKp SKp SSp Cp V : Type} [Field Sf] [Fintype Sf] [SampleableType Wg]
   [Inhabited RK] [DecidableEq SSp]
@@ -107,7 +108,8 @@ deployed Triple Ratchet, with the PQXDH session key as the first root key.
 *Bound.* `pqxdhFsmBound` at the deployed Triple Ratchet: the gap Diffie–Hellman bound of the
 PQXDH square, and per key of the run the corruption advantages of the in-order scheme of
 `tripleRatchetDeployed` at the reductions `smHopRed i j` and the probability that the key is
-read twice. -/
+read twice. The injective packing `SidecarPack` into a finite word type forces a single salt
+and a single sidecar header, so the statement applies only to runs with a constant salt. -/
 theorem pqxdh_tripleRatchetDeployed_realizes_FSM (KP : Scheme PKp SKp SSp Cp)
     (Gd : DHGroup Sf Wg) (N : Finset PartyId) (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hC : PureNF C.init) (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))

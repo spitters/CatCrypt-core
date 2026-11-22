@@ -62,18 +62,18 @@ private theorem traceNorm_eq_sum_of_schmidt (M : Matrix n n ℂ) {r : ℕ} (s : 
   set D : Matrix (Fin r) (Fin r) ℂ := diagonal (fun k => (s k : ℂ)) with hDdef
   have hA : Aᴴ * A = 1 := by
     ext k l
-    simpa [mul_apply, dotProduct, conjTranspose_apply, one_apply, hAdef] using ha k l
+    simpa [Matrix.mul_apply, dotProduct, conjTranspose_apply, Matrix.one_apply, hAdef] using ha k l
   have hB : Bcᴴ * Bc = 1 := by
     ext k l
     have := hb l k
     simp only [dotProduct, Pi.star_apply] at this
-    simp only [mul_apply, conjTranspose_apply, one_apply, of_apply, star_star, hBdef]
+    simp only [Matrix.mul_apply, conjTranspose_apply, Matrix.one_apply, of_apply, star_star, hBdef]
     simp_rw [mul_comm (b k _)]
     rw [this]
     grind
   have hC : M = A * D * Bcᴴ := by
     ext i j
-    simp only [mul_apply, diagonal_apply, conjTranspose_apply, hM i j, of_apply, star_star,
+    simp only [Matrix.mul_apply, diagonal_apply, conjTranspose_apply, hM i j, of_apply, star_star,
       hAdef, hBdef, hDdef]
     simp only [mul_ite, mul_zero, Finset.sum_ite_eq', Finset.mem_univ, ↓reduceIte]
     exact Finset.sum_congr rfl fun k _ => by ring
@@ -110,7 +110,7 @@ theorem norm_trace_mul_le_traceNorm (M K : Matrix n n ℂ)
   obtain ⟨r, s, a, b, hs, ha, hb, hM⟩ := exists_schmidt M
   rw [traceNorm_eq_sum_of_schmidt M s a b hs ha hb hM]
   have htr : (K * M).trace = ∑ k, (s k : ℂ) * (b k ⬝ᵥ (K *ᵥ a k)) := by
-    simp only [trace, diag_apply, mul_apply, hM, mulVec, dotProduct, Finset.mul_sum]
+    simp only [trace, diag_apply, Matrix.mul_apply, hM, mulVec, dotProduct, Finset.mul_sum]
     rw [Finset.sum_comm]
     conv_lhs => enter [2, x]; rw [Finset.sum_comm]
     rw [Finset.sum_comm]

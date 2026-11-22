@@ -124,7 +124,7 @@ the transformer of `c` is the weakest precondition of `c`. -/
       grade := ()
       mono := fun hpost hepost =>
         (LERelCompat.le_iff_rel _ _).2
-          (WP.wp_trans_monotone c _ _ _ _ ((LERelCompat.le_iff_rel _ _).1 hepost)
+          (WP.trans_monotone c _ _ _ _ ((LERelCompat.le_iff_rel _ _).1 hepost)
             (fun a => (LERelCompat.le_iff_rel _ _).1 (hpost a))) }
 
 variable {m}
@@ -258,8 +258,8 @@ variable {m : Type u → Type v} {Pred : Type w} {EPred : Type w'}
 transformers of the instance. -/
 theorem toWPMonad_ofWPMonad_wpTrans [inst : WPMonad m Pred EPred] {α : Type u} (c : m α) :
     ((@XCoreWP.toWPMonadOfLe m Pred EPred Unit _ inst.toLawfulMonad _ _ _ _ _ _
-        (XCoreWP.ofWPMonad m) lowerLaws_ofWPMonad).toWP α).wpTrans c =
-      (inst.toWP α).wpTrans c := rfl
+        (XCoreWP.ofWPMonad m) lowerLaws_ofWPMonad).toWP α).trans c =
+      (inst.toWP α).trans c := rfl
 
 /-- Building a `WPMonad` instance from an `XCoreWP` and observing it through
 `XCoreWP.ofWPMonad` gives the weakest preconditions of the `XCoreWP`; the grade

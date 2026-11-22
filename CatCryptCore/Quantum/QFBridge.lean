@@ -28,7 +28,7 @@ namespace CatCrypt.Quantum.GentleMeasurement
 variable {d : ℕ}
 
 /-- The QuantumFoundations projector with the same matrix as `P`. -/
-def Projector.toQF (P : Projector d) : _root_.Quantum.GentleMeasurement.Projector d :=
+def Projector.toQF (P : Projector d) : _root_.Quantum.GentleMeasurement.Projector (Fin d) :=
   ⟨P.val, P.self_adjoint, P.idempotent⟩
 
 /-- `Projector.toQF` keeps the matrix. -/

@@ -90,7 +90,9 @@ theorem deployedAD_injective (E : SidecarPack PHdr S W) (hE : Function.Injective
 variable [SampleableType W]
 
 /-- **The message AEAD of the deployed Triple Ratchet**: `D₀` under the key `F mk s`, with the
-salt `s` decoded from the associated data by `E`. -/
+salt `s` decoded from the associated data by `E`. The injective packing `SidecarPack` into a
+finite word type forces a single salt and a single sidecar header, so the statement applies only
+to runs with a constant salt. -/
 def deployedAEAD (D₀ : AEADDef W Ct ((PHdr × W) × ACDHdr Msg)) (F : W → S → W)
     (E : SidecarPack PHdr S W) : AEADDef W Ct (W × ACDHdr Msg) :=
   aeadComapAD (saltedAEAD D₀ F) (deployedAD E)
@@ -127,7 +129,9 @@ variable {Sc Msg Key Rand RK Sa W Ct PSt PHdr S : Type} [Fintype Rand] [Nonempty
 /-- **The deployed Triple Ratchet** (DJKPS, ePrint 2025/078, with per-message mixing
 `mk = KDF_HYBRID(ec_mk, pq_mk)`): the ACD construction with headers over the CKA `C`, with the
 message AEAD `deployedAEAD D₀ F E`, run with the sidecar `P` mixed into every message key. The
-receiver's sidecar commits only after a successful decryption. -/
+receiver's sidecar commits only after a successful decryption. The injective packing
+`SidecarPack` into a finite word type forces a single salt and a single sidecar header, so the
+statement applies only to runs with a constant salt. -/
 noncomputable def tripleRatchetDeployed (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
     (D₀ : AEADDef W Ct ((PHdr × W) × ACDHdr Msg)) (F : W → S → W)
@@ -156,7 +160,9 @@ adversary `A`, the immediate-decryption advantage against `tripleRatchetDeployed
 integrity advantage of the ACD construction with headers against `sidecarRed P E A`, the
 corruption advantage of the ACD construction against `tripleRatchetDeployedRed`, and the
 probabilities of a wrong salt in the real game and in the game with a uniform challenge and
-decryption from the log. -/
+decryption from the log. The injective packing `SidecarPack` into a finite word type forces a
+single salt and a single sidecar header, so the statement applies only to runs with a constant
+salt. -/
 theorem tripleRatchetDeployed_idAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
     (D₀ : AEADDef W Ct ((PHdr × W) × ACDHdr Msg)) (F : W → S → W)
@@ -183,7 +189,9 @@ of `tripleRatchetDeployed_idAdvantage_le` is bounded by `acdSMAD_corruptAdvantag
 decoding `dec` of the associated data: the CKA corruption advantages, the PRF-PRNG advantages
 of `R`, and the FS-AEAD advantage with corruption of `G` and the message AEAD
 `deployedAEAD D₀ F E`, whose associated data are `W × ACDHdr Msg`, each at an explicit
-reduction of `tripleRatchetDeployedRed … A` relabelled by `toSMAD dec`. -/
+reduction of `tripleRatchetDeployedRed … A` relabelled by `toSMAD dec`. The injective packing
+`SidecarPack` into a finite word type forces a single salt and a single sidecar header, so the
+statement applies only to runs with a constant salt. -/
 theorem tripleRatchetDeployed_idAdvantage_le_fs [Fintype Key] [Nonempty Key] [Fintype Sa]
     [Nonempty Sa] [DecidableEq RK] [DecidableEq Key] (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)

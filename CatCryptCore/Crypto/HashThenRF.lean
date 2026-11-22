@@ -117,7 +117,8 @@ theorem prob_exists_coll_le {H : K → M → B} {ε : ℝ≥0∞} (hH : IsAlmost
     have hy : μ {k | m ≠ y ∧ H k m = H k y} ≤ ε := by
       by_cases hmy : m = y
       · simp [hmy]
-      · exact (MeasureTheory.measure_mono fun k hk => hk.2).trans (hH m y hmy)
+      · exact (MeasureTheory.measure_mono
+          fun k (hk : k ∈ {k | m ≠ y ∧ H k m = H k y}) => hk.2).trans (hH m y hmy)
     calc μ {k | ∃ z ∈ y :: L, m ≠ z ∧ H k m = H k z}
         ≤ μ ({k | m ≠ y ∧ H k m = H k y} ∪ {k | ∃ z ∈ L, m ≠ z ∧ H k m = H k z}) := by
           refine MeasureTheory.measure_mono fun k hk => ?_

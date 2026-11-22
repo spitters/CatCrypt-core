@@ -10,12 +10,14 @@ public import CatCryptCore.Examples.Cryptobox.SAE
 public import CatCryptCore.Examples.Cryptobox.AE
 
 /-!
-# Cryptobox: Main Security Theorem
+# Cryptobox: the game PKAE and the composition of its hops
 
-This file states the main security theorem for the Cryptobox construction
-(NaCl's `crypto_box`), which combines a Non-Interactive Key Exchange (NIKE,
-e.g., X25519) with a Nonce-Based Symmetric Encryption Scheme (NBSES,
-e.g., XSalsa20-Poly1305) to achieve Public-Key Authenticated Encryption (PKAE).
+This file defines the game `PKAE` for the Cryptobox construction (NaCl's
+`crypto_box`), which combines a Non-Interactive Key Exchange (NIKE, e.g., X25519)
+with a Nonce-Based Symmetric Encryption Scheme (NBSES, e.g., XSalsa20-Poly1305),
+and composes bounds on the game hops into a bound on `pkaeAdvantage`. The
+adversary of `PKAE` receives the secret keys of honest public keys, so these
+bounds are no security statement for Public-Key Authenticated Encryption.
 
 ## Game-hopping chain
 
@@ -42,7 +44,7 @@ The proof proceeds by a sequence of game hops:
 
 ## Architecture
 
-The `hdecomp` hypothesis in the main theorem corresponds to the **three structural
+The `hdecomp` hypothesis of `cryptobox_security` corresponds to the **three structural
 equivalences that are ADMITTED in the Rocq SSProve formalization**:
 1. PKAE(real) decomposes into PKEY(0) ∘ NIKE(0) ∘ KEY(0) ∘ AE(0)
 2. PKAE(ideal) decomposes into PKEY(1) ∘ NIKE(1) ∘ KEY(1) ∘ AE(1)
@@ -73,7 +75,7 @@ The `cryptobox_security_full` theorem in `GameHopping.lean` improves on
 
 `GameHopping.lean` composes the full hop chain (`cryptobox_security_full`).
 
-## Degenerate statements (finding 6 of the vacuity sweep)
+## The game
 
 In the game `PKAE` the adversary receives `getsk` on honest keys
 (`PKAEOracles.getsk`) and unrestricted access to the heap, so every adversary
@@ -109,7 +111,7 @@ PKEY oracles plus encryption/decryption parameterized by `b : Bool`:
 - `b = true` (ideal): encryption returns random ciphertexts, decryption
   uses a log -/
 
-/-- **Degenerate: see finding 6 of the vacuity sweep. The field `getsk` returns the secret
+/-- **Degenerate. The field `getsk` returns the secret
     key of every honest public key to the adversary.**
 
     Oracle interface for the PKAE game.
@@ -193,7 +195,7 @@ noncomputable def PKAE (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjection C
       enc := pkaeEncOracle N E I b pkeyO,
       dec := pkaeDecOracle N E I b pkeyO }
 
-/-- **Degenerate: see finding 6 of the vacuity sweep; the game lets the adversary call
+/-- **Degenerate; the game lets the adversary call
     `getsk` on honest keys and read any heap location (including `skStoreLoc`), so every
     adversary that runs the scheme itself wins with advantage close to 1.**
 
@@ -225,7 +227,7 @@ noncomputable def R_GNIKE (_N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjecti
         let k ← nikeO.sharedkey pk_s pk_r
         E.dec (I.encode k) c n }
 
-/-- **Degenerate: see finding 6 of the vacuity sweep; the reduction ignores its hybrid
+/-- **Degenerate; the reduction ignores its hybrid
     index.**
 
     SAE reduction at hybrid index `i`: wrap a PKAE adversary into one
@@ -252,7 +254,7 @@ The `i`-th hybrid game uses ideal encryption for sessions `0, ..., i-1` and
 real encryption for sessions `i, ..., q-1`. -/
 
 set_option linter.unusedSectionVars false in
-/-- **Degenerate: see finding 6 of the vacuity sweep; the hypothesis `hdecomp` is the
+/-- **Degenerate; the hypothesis `hdecomp` is the
     conclusion up to free variables that are not linked to any game.**
 
     AE advantage bounded by sum of SAE advantages via hybrid argument.
@@ -272,12 +274,12 @@ theorem ae_hybrid_bound (E : @NBSES CT) (I : @KeyInjection CT)
     aeAdvantage E I keyO A ≤ Finset.sum (Finset.range q) sae_eps :=
   hdecomp.trans (Finset.sum_le_sum fun i hi => hsteps i (Finset.mem_range.mp hi))
 
-/-! ## Main Security Theorem -/
+/-! ## Composition of the hop bounds -/
 
-/-- **Degenerate: see finding 6 of the vacuity sweep; the hypothesis `hdecomp` bounds
+/-- **Degenerate; the hypothesis `hdecomp` bounds
     `pkaeAdvantage` by free variables that are not linked to any game.**
 
-    **Cryptobox security theorem.**
+    **Composition of the Cryptobox hop bounds.**
 
     The PKAE advantage of any adversary `A` against the Cryptobox construction
     is bounded by the sum of:

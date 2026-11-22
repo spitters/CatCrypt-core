@@ -73,7 +73,7 @@ omit [Fintype E] in
 /-- The ancilla projectors sum to the identity. -/
 theorem sum_ancProj : ∑ x : X, ancProj (E := E) x = 1 := by
   ext p q
-  simp [ancProj, diagonal_apply, Matrix.sum_apply, one_apply]
+  simp [ancProj, diagonal_apply, Matrix.sum_apply, Matrix.one_apply]
 
 /-- `Vᴴ (1 ⊗ |x⟩⟨x|) V = M_x` for the dilation `V` of a measurement `M`. -/
 theorem povmDilation_compress {M : X → Matrix E E ℂ} (hM : ∀ x, (M x).PosSemidef) (x : X) :
@@ -83,7 +83,7 @@ theorem povmDilation_compress {M : X → Matrix E E ℂ} (hM : ∀ x, (M x).PosS
   conv_rhs => rw [← CFC.sqrt_mul_sqrt_self (M x) h0]
   nth_rw 1 [← hH]
   ext e e'
-  simp [mul_apply, povmDilation, ancProj, Fintype.sum_prod_type, diagonal_apply]
+  simp [Matrix.mul_apply, povmDilation, ancProj, Fintype.sum_prod_type, diagonal_apply]
 
 omit [DecidableEq X] in
 /-- The dilation of a measurement is an isometry. -/
@@ -107,7 +107,7 @@ theorem exists_unitary_mul_ancEmb (x₀ : X) {V : Matrix (E × X) E ℂ} (hV : V
     rw [orthonormal_iff_ite]
     intro y y'
     have h := congrFun (congrFun hV y) y'
-    rw [mul_apply, one_apply] at h
+    rw [Matrix.mul_apply, Matrix.one_apply] at h
     rw [← h]
     simp only [col, PiLp.inner_apply, conjTranspose_apply, RCLike.inner_apply]
     exact Finset.sum_congr rfl fun _ _ => mul_comm _ _
@@ -125,7 +125,7 @@ theorem exists_unitary_mul_ancEmb (x₀ : X) {V : Matrix (E × X) E ℂ} (hV : V
   have hby : b (j y) = col y := by
     rw [hb _ ⟨y, rfl⟩]
     simp [v, hj.extend_apply]
-  simpa [ancEmb, mul_apply, Module.Basis.toMatrix_apply] using
+  simpa [ancEmb, Matrix.mul_apply, Module.Basis.toMatrix_apply] using
     congrArg (fun w => w.ofLp a) hby
 
 /-- **Naimark dilation.** A measurement `M` on `E` with outcomes in `X` is the compression to

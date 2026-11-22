@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Constructions.ECBCPRF
+public import CatCryptCore.Crypto.OracleFlagCount
 public import CatCryptCore.Tactics.AutoMetrics
 
 /-!
@@ -109,47 +110,9 @@ theorem run_flag_le_of_step (O : σ × Bool → D → PMF (R × (σ × Bool))) (
     (hlen : ∀ t d, ∀ x ∈ (O (t, false) d).support, len x.2.1 ≤ len t + ℓ)
     (A : OracleAdv D R α) (n : ℕ) (hA : A.IsQueryBound n) (t : σ) :
     (OracleAdv.run O A (t, false)).toOuterMeasure {x | x.2.2 = true} ≤
-      ∑ i ∈ Finset.range n, c (len t + i * ℓ) := by
-  induction A generalizing n t with
-  | ret a => simp [PMF.toOuterMeasure_pure_apply]
-  | rand p k ih =>
-    rw [OracleAdv.run_rand, PMF.toOuterMeasure_bind_apply]
-    calc ∑' b, p b * (OracleAdv.run O (k b) (t, false)).toOuterMeasure _
-        ≤ ∑' b, p b * ∑ i ∈ Finset.range n, c (len t + i * ℓ) :=
-          ENNReal.tsum_le_tsum fun b => by gcongr; exact ih b n (hA b) t
-      _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
-  | query d k ih =>
-    cases n with
-    | zero => exact hA.elim
-    | succ n =>
-    set T : ℝ≥0∞ := ∑ i ∈ Finset.range n, c (len t + (i + 1) * ℓ)
-    rw [OracleAdv.run_query, PMF.toOuterMeasure_bind_apply]
-    have hterm : ∀ x : R × (σ × Bool), O (t, false) d x *
-        (OracleAdv.run O (k x.1) x.2).toOuterMeasure {x | x.2.2 = true} ≤
-        O (t, false) d x * ((if x.2.2 = true then 1 else 0) + T) := by
-      intro x
-      by_cases hx : x ∈ (O (t, false) d).support
-      · gcongr
-        obtain ⟨r, t', fl⟩ := x
-        cases fl with
-        | true => exact (toOuterMeasure_le_one _ _).trans (by simp)
-        | false =>
-          simp only [Bool.false_eq_true, ite_false, zero_add]
-          refine (ih r n (hA r) t').trans (Finset.sum_le_sum fun i _ => hc ?_)
-          have := hlen t d _ hx
-          simp only at this
-          nlinarith
-      · simp_all [zero_mul]
-    calc ∑' x, O (t, false) d x *
-          (OracleAdv.run O (k x.1) x.2).toOuterMeasure {x | x.2.2 = true}
-        ≤ ∑' x, O (t, false) d x * ((if x.2.2 = true then 1 else 0) + T) :=
-          ENNReal.tsum_le_tsum hterm
-      _ = (O (t, false) d).toOuterMeasure {x | x.2.2 = true} + T := by
-          simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul,
-            toOuterMeasure_flag_eq_tsum]
-      _ ≤ c (len t) + T := by gcongr; exact hstep t d
-      _ = ∑ i ∈ Finset.range (n + 1), c (len t + i * ℓ) := by
-          rw [Finset.sum_range_succ', zero_mul, add_zero, add_comm]
+      ∑ i ∈ Finset.range n, c (len t + i * ℓ) :=
+  OracleAdv.run_flag_le_sum_of_inv O (fun _ => True) len ℓ c hc (fun t d _ => hstep t d)
+    (fun t d _ x hx _ => ⟨trivial, hlen t d x hx⟩) A n hA t trivial
 
 end FlagBound
 

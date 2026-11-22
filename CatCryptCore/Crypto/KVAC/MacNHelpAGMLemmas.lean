@@ -298,9 +298,9 @@ theorem quad_eq {a b c a' b' c' : R}
     (h : Polynomial.C a + Polynomial.C b * Polynomial.X + Polynomial.C c * Polynomial.X ^ 2 =
       Polynomial.C a' + Polynomial.C b' * Polynomial.X + Polynomial.C c' * Polynomial.X ^ 2) :
     a = a' ∧ b = b' ∧ c = c' := by
-  have h0 := congrArg (Polynomial.coeff · 0) h
-  have h1 := congrArg (Polynomial.coeff · 1) h
-  have h2 := congrArg (Polynomial.coeff · 2) h
+  have h0 := congrArg (fun p : Polynomial R => p.coeff 0) h
+  have h1 := congrArg (fun p : Polynomial R => p.coeff 1) h
+  have h2 := congrArg (fun p : Polynomial R => p.coeff 2) h
   simp only [Polynomial.coeff_add, Polynomial.coeff_C_mul, Polynomial.coeff_C,
     Polynomial.coeff_X, Polynomial.coeff_X_pow] at h0 h1 h2
   simp_all

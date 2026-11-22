@@ -169,7 +169,7 @@ theorem partialTrace₂_kronecker_one_mul (A : Matrix (Fin d₁) (Fin d₁) ℂ)
   ext i j
   simp only [partialTrace₂_apply, Matrix.mul_apply, kronecker_apply]
   rw [Finset.sum_comm, ← (finProdEquiv d₁ d₂).sum_comp, Fintype.sum_prod_type]
-  simp only [Equiv.symm_apply_apply, one_apply, mul_ite, mul_one, mul_zero, ite_mul,
+  simp only [Equiv.symm_apply_apply, Matrix.one_apply, mul_ite, mul_one, mul_zero, ite_mul,
     zero_mul, Finset.sum_ite_eq', Finset.mem_univ, ite_true, Finset.mul_sum]
 
 /-- `tr₂(X (B ⊗ I)) = tr₂(X) B`. -/
@@ -180,7 +180,7 @@ theorem partialTrace₂_mul_kronecker_one (X : Matrix (Fin (d₁ * d₂)) (Fin (
   ext i j
   simp only [partialTrace₂_apply, Matrix.mul_apply, kronecker_apply]
   rw [Finset.sum_comm, ← (finProdEquiv d₁ d₂).sum_comp, Fintype.sum_prod_type]
-  simp only [Equiv.symm_apply_apply, one_apply, mul_ite, mul_one, mul_zero,
+  simp only [Equiv.symm_apply_apply, Matrix.one_apply, mul_ite, mul_one, mul_zero,
     Finset.sum_ite_eq, Finset.mem_univ, ite_true, Finset.sum_mul]
 
 /-- The traced register is cyclic: `tr₂((I ⊗ C) X) = tr₂(X (I ⊗ C))`. -/
@@ -192,7 +192,7 @@ theorem partialTrace₂_one_kronecker_mul_comm (C : Matrix (Fin d₂) (Fin d₂)
   simp only [partialTrace₂_apply, Matrix.mul_apply, kronecker_apply]
   have e : ∀ f : Fin (d₁ * d₂) → ℂ, ∑ l, f l = ∑ p : Fin d₁ × Fin d₂,
       f (finProdEquiv d₁ d₂ p) := fun f => ((finProdEquiv d₁ d₂).sum_comp f).symm
-  simp only [e, Fintype.sum_prod_type, Equiv.symm_apply_apply, one_apply, ite_mul,
+  simp only [e, Fintype.sum_prod_type, Equiv.symm_apply_apply, Matrix.one_apply, ite_mul,
     zero_mul, one_mul, mul_ite, mul_zero]
   simp only [Finset.sum_ite_irrel, Finset.sum_const_zero, Finset.sum_ite_eq,
     Finset.sum_ite_eq', Finset.mem_univ, ite_true]
@@ -208,7 +208,7 @@ theorem partialTrace₁_one_kronecker_mul (B : Matrix (Fin d₂) (Fin d₂) ℂ)
   simp only [partialTrace₁_apply, Matrix.mul_apply, kronecker_apply]
   have e : ∀ f : Fin (d₁ * d₂) → ℂ, ∑ l, f l = ∑ p : Fin d₁ × Fin d₂,
       f (finProdEquiv d₁ d₂ p) := fun f => ((finProdEquiv d₁ d₂).sum_comp f).symm
-  simp only [e, Fintype.sum_prod_type, Equiv.symm_apply_apply, one_apply, ite_mul,
+  simp only [e, Fintype.sum_prod_type, Equiv.symm_apply_apply, Matrix.one_apply, ite_mul,
     zero_mul, one_mul]
   simp only [Finset.sum_ite_irrel, Finset.sum_const_zero, Finset.sum_ite_eq,
     Finset.mem_univ, ite_true]
@@ -224,7 +224,7 @@ theorem partialTrace₁_mul_one_kronecker (X : Matrix (Fin (d₁ * d₂)) (Fin (
   simp only [partialTrace₁_apply, Matrix.mul_apply, kronecker_apply]
   have e : ∀ f : Fin (d₁ * d₂) → ℂ, ∑ l, f l = ∑ p : Fin d₁ × Fin d₂,
       f (finProdEquiv d₁ d₂ p) := fun f => ((finProdEquiv d₁ d₂).sum_comp f).symm
-  simp only [e, Fintype.sum_prod_type, Equiv.symm_apply_apply, one_apply, ite_mul,
+  simp only [e, Fintype.sum_prod_type, Equiv.symm_apply_apply, Matrix.one_apply, ite_mul,
     zero_mul, one_mul, mul_ite, mul_zero]
   simp only [Finset.sum_ite_irrel, Finset.sum_const_zero,
     Finset.sum_ite_eq', Finset.mem_univ, ite_true]
@@ -240,7 +240,7 @@ theorem partialTrace₁_kronecker_one_mul_comm (C : Matrix (Fin d₁) (Fin d₁)
   simp only [partialTrace₁_apply, Matrix.mul_apply, kronecker_apply]
   have e : ∀ f : Fin (d₁ * d₂) → ℂ, ∑ l, f l = ∑ p : Fin d₁ × Fin d₂,
       f (finProdEquiv d₁ d₂ p) := fun f => ((finProdEquiv d₁ d₂).sum_comp f).symm
-  simp only [e, Fintype.sum_prod_type, Equiv.symm_apply_apply, one_apply, ite_mul,
+  simp only [e, Fintype.sum_prod_type, Equiv.symm_apply_apply, Matrix.one_apply, ite_mul,
     zero_mul, mul_ite, mul_zero, mul_one]
   simp only [Finset.sum_ite_eq, Finset.sum_ite_eq', Finset.mem_univ, ite_true]
   rw [Finset.sum_comm]

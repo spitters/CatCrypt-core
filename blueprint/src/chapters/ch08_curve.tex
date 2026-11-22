@@ -346,16 +346,14 @@ The map is invariant under negation, since Montgomery negation changes only $y$.
   $p = 2^{255} - 19$.
 \end{definition}
 
-\begin{definition}[Base-field primality (AUCurves bridge, taken as an axiom)]
+\begin{theorem}[Base-field primality]
   \label{def:curve25519-prime-prime}
   \uses{def:curve25519-prime}
   \lean{CatCrypt.Crypto.ECC.curve25519Prime_prime}
   \leanok
-  $\mathsf{Nat.Prime}\,(2^{255} - 19)$. Proving this in Lean needs a costly
-  Pocklington/Pratt certificate; it is discharged in the Rocq AUCurves
-  development and imported across the Rocq$\leftrightarrow$Lean boundary as
-  an axiom. It unlocks $\mathsf{Field}\,\mathbb{F}_p$.
-\end{definition}
+  $\mathsf{Nat.Prime}\,(2^{255} - 19)$, proved from a primality certificate.
+  It gives $\mathsf{Field}\,\mathbb{F}_p$.
+\end{theorem}
 
 \begin{definition}[Concrete Curve25519 point group]
   \label{def:curve25519-point}
@@ -395,7 +393,7 @@ The map is invariant under negation, since Montgomery negation changes only $y$.
   \ref{thm:ladder-fold-correct}.
 \end{theorem}
 
-\section{The subgroup order and the base point (AUCurves bridges)}
+\section{The subgroup order and the base point}
 
 \begin{definition}[Curve25519 subgroup order]
   \label{def:curve25519-suborder}
@@ -405,37 +403,33 @@ The map is invariant under negation, since Montgomery negation changes only $y$.
   Curve25519's prime-order subgroup and of the RFC~7748 base point.
 \end{definition}
 
-\begin{definition}[Subgroup order primality (AUCurves bridge, taken as an axiom)]
+\begin{theorem}[Subgroup order primality]
   \label{def:curve25519-suborder-prime}
   \uses{def:curve25519-suborder}
   \lean{CatCrypt.Crypto.ECC.curve25519SubgroupOrder_prime}
   \leanok
-  $\mathsf{Nat.Prime}\,\ell$. Bridged from the AUCurves development
-  ($E/E[4]$ has prime order $\ell$); imported as an axiom exactly as
-  \ref{def:curve25519-prime-prime}. This underpins the cyclic-subgroup
-  argument that $n\cdot B \neq 0$ for $0 < n < \ell$.
-\end{definition}
+  $\mathsf{Nat.Prime}\,\ell$, proved from a primality certificate. The
+  cyclic-subgroup argument that $n\cdot B \neq 0$ for $0 < n < \ell$ uses it.
+\end{theorem}
 
-\begin{definition}[Curve25519 base point (AUCurves bridge, taken as an axiom)]
+\begin{definition}[Curve25519 base point]
   \label{def:curve25519-basepoint}
   \uses{def:curve25519-point}
   \lean{CatCrypt.Crypto.ECC.curve25519_basepoint}
   \leanok
-  A concrete $\mathsf{Curve25519Point}$ standing for the RFC~7748 base
-  point $u = 9$. Bridged from AUCurves and taken as an axiom; only its
-  additive order is constrained (see \ref{def:curve25519-basepoint-addorder}),
-  so downstream results hold for any order-$\ell$ point.
+  The point $B = (9, v_9)$ of RFC~7748, as an element of
+  $\mathsf{Curve25519Point}$.
 \end{definition}
 
-\begin{definition}[Base-point order (AUCurves bridge, taken as an axiom)]
+\begin{theorem}[Base-point order]
   \label{def:curve25519-basepoint-addorder}
   \uses{def:curve25519-basepoint, def:curve25519-suborder}
   \lean{CatCrypt.Crypto.ECC.curve25519_basepoint_addOrder}
   \leanok
-  $\mathsf{addOrderOf}\,B = \ell$: the base point has additive order equal
-  to the subgroup order ($E\_basepoint\_order$, AUCurves). Bridged and
-  taken as an axiom.
-\end{definition}
+  $\mathsf{addOrderOf}\,B = \ell$. The proof evaluates the $x$-only ladder
+  over the bits of $\ell$ at $B$, which gives $\ell \cdot B = 0$; $\ell$ is
+  prime and $B \neq 0$.
+\end{theorem}
 
 \section{Ladder nondegeneracy and the capstone}
 
@@ -504,10 +498,7 @@ predicate supplies.
 
 This is Theorem~\ref{thm:x25519-ladder-correct} with its $\mathsf{LadderNondeg}$ side
 condition discharged by Theorem~\ref{thm:curve25519-basepoint-laddernondeg}, so it
-carries no nondegeneracy hypothesis over the RFC~7748 scalar range $k < \ell$. It
-depends on five Lean axioms carried across from the AUCurves Rocq development: the
-primality of the base field (\ref{def:curve25519-prime-prime}), the primality of the
-subgroup order (\ref{def:curve25519-suborder-prime}), the base point
-(\ref{def:curve25519-basepoint}), and the two facts $\ell \cdot B = 0$ and $B \neq 0$,
-from which the order of the base point (\ref{def:curve25519-basepoint-addorder}) is
-proved.
+carries no nondegeneracy hypothesis over the scalars $k < \ell$. It uses the two
+primality theorems (\ref{def:curve25519-prime-prime},
+\ref{def:curve25519-suborder-prime}) and the order of the base point
+(\ref{def:curve25519-basepoint-addorder}).

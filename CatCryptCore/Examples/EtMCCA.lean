@@ -16,7 +16,7 @@ a decryption oracle on every ciphertext except the challenge. Following Rosulek,
 *The Joy of Cryptography*, §10 (authenticated encryption), and Bellare &
 Namprempre, *Authenticated Encryption: Relations among Notions*.
 
-## A reduction, not perfect security
+## The bound at the one-bit XOR instance
 
 The natural hope is that Encrypt-then-MAC achieves *perfect* IND-CCA (advantage
 `0`) because "a MAC that rejects forged ciphertexts makes the decryption oracle
@@ -38,20 +38,19 @@ artifacts:
    forgeable, and `BoolEtM` is *not* IND-CCA secure. (Advantage `0` holds only
    degenerately, when `m₀ = m₁`.)
 
-The correct, non-vacuous statement is therefore the standard
-**confidentiality + integrity** decomposition: the IND-CCA advantage is bounded
-by the IND-CPA advantage plus the decryption-oracle authenticity gaps. This is
-`SecurityDefs.INDCCA_reduces_to_INDCPA`, which holds for *any* scheme. For the
-XOR instantiation the IND-CPA contribution collapses to exactly `0`
-(`boolEtM_perfect_indcpa`), leaving only the two integrity gaps — the
-MAC-unforgeability terms.
+The IND-CCA advantage of any scheme is bounded by the IND-CPA advantage plus
+the decryption-oracle authenticity gaps (`SecurityDefs.INDCCA_reduces_to_INDCPA`).
+For the XOR instantiation the IND-CPA contribution is exactly `0`
+(`boolEtM_perfect_indcpa`), leaving the two gaps. The challenge `(c, t)` reveals
+the MAC key `t ⊕ c`, so for `m₀ ≠ m₁` one decryption query wins, and for that
+adversary the sum of the two gaps is at least `1`.
 
 ## Main result
 
 * `boolEtM_indcca_reduces` — `BoolEtM`'s IND-CCA advantage is bounded by its two
   decryption-oracle authenticity gaps alone; the confidentiality (IND-CPA)
-  contribution is exactly `0`. This is "authenticated encryption =
-  (perfect) confidentiality + integrity" for the XOR one-time pad.
+  contribution is exactly `0`. The bound is at least `1` for the adversary above,
+  so it is no security statement for `BoolEtM`.
 
 ## References
 
@@ -71,18 +70,17 @@ open CatCrypt.Examples.EncryptThenMAC
 
 open scoped ENNReal
 
-/-- **Encrypt-then-MAC IND-CCA reduces to its decryption-oracle integrity, with a
-zero confidentiality term.** For the XOR / one-time-pad instantiation `BoolEtM`,
+/-- **The IND-CCA advantage of the one-bit XOR Encrypt-then-MAC scheme is at most its
+two decryption-oracle gaps.** For the XOR / one-time-pad instantiation `BoolEtM`,
 the IND-CCA advantage of every (oracle-using) adversary is bounded by the two
 *authenticity gaps* — the advantage of telling the real decryption oracle apart
 from the always-reject oracle in each world.
 
 The general reduction `INDCCA_reduces_to_INDCPA` supplies a middle IND-CPA term;
 here it is exactly `0` by `boolEtM_perfect_indcpa`, the perfect IND-CPA security
-of the one-time pad. What remains is pure ciphertext integrity: the adversary can
-only gain from the decryption oracle by forging, and this bound isolates that
-gain. The bound is not `0`: over a single-bit tag the XOR MAC is forgeable, so
-both gaps are strictly positive — `BoolEtM` is not IND-CCA secure. -/
+of the one-time pad. The challenge ciphertext reveals the key of the XOR MAC, so
+for `m₀ ≠ m₁` an adversary wins with one decryption query, and the right-hand
+side is at least `1` for it: `BoolEtM` is not IND-CCA secure. -/
 theorem boolEtM_indcca_reduces (m₀ m₁ : Bool)
     (A : (BoolEtM.Ciphertext → SPComp (Option BoolEtM.Plaintext)) →
          BoolEtM.Ciphertext → SPComp Bool) :

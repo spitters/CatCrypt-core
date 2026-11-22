@@ -1,0 +1,52 @@
+3
+multiline=10
+ascii=0
+named_def=1
+named_use=5
+exists=0
+sdist_named=3
+nested=1
+nested_use=0
+point_mass=1
+point_mass_use=0
+same_body=0
+free_witness=0
+returned_arg=0
+sites=single
+sites=multiline
+sites=ascii
+sites=named_def
+sites=named_use
+sites=exists
+sites=sdist_named
+sites=nested
+sites=nested_use
+sites=point_mass
+sites=point_mass_use
+sites=same_body
+sites=free_witness
+sites=returned_arg
+site	single	CatCryptCore/Crypto/EasyCryptBridge.lean	(h : ∀ (A : α → SPComp Bool), AdvantageA (f ()) (g ()) A ≤ ε) :
+site	single	CatCryptCore/Crypto/SDist.lean	(hAdv : ∀ a (D : β → SPComp Bool), AdvantageA (f a) (g a) D ≤ ε) :
+site	single	CatCryptCore/Relational/Approx.lean	(h : ∀ i < n, ∀ A : α → SPComp Bool, AdvantageA (G i) (G (i + 1)) A ≤ δ i) :
+site	multiline	CatCryptCore/Crypto/BadEvent.lean	advantageA_le_of_noFail_distinguishers: ∀ A : α → SPComp Bool, (∀ a, SPComp.NoFail (A a)) → AdvantageA G₀ G₁ A ≤ ε
+site	multiline	CatCryptCore/Crypto/BadEvent.lean	flagDemo_advantage: ∀ D : Bool → SPComp Bool, AdvantageA (SPComp.sample Bool) ((SPComp.sample Bool).bind fun _ => SPComp.pure false) D ≤ 2⁻¹
+site	multiline	CatCryptCore/Examples/UniversalHash.lean	IsUniversal: ∀ m₁ m₂, m₁ ≠ m₂ → ∀ A, AdvantageA (collision_game H m₁ m₂) (SPComp.pure false) A ≤ H.epsilon
+site	multiline	CatCryptCore/Relational/Approx.lean	rHoareApprox_emptyPre_iff_advantageA: ∀ A, AdvantageA G₀ G₁ A ≤ ε
+site	multiline	CatCryptCore/Relational/Approx.lean	rHoareApprox_of_advantage: ∀ A : Bool → SPComp Bool, Advantage (SPComp.bind G₀ A) (SPComp.bind G₁ A) ≤ ε
+site	multiline	CatCryptCore/Relational/Approx.lean	rHoareApprox_of_advantageA: ∀ A : α → SPComp Bool, AdvantageA G₀ G₁ A ≤ ε
+site	multiline	CatCryptCore/Relational/Approx.lean	∀ A : α → SPComp Bool, AdvantageA (G 0) (G n) A ≤ ∑ i ∈ Finset.range n, δ i
+site	multiline	CatCryptCore/Relational/Approx.lean	∀ A : α → SPComp Bool, AdvantageA G₀ G₁ A ≤ ε₁
+site	multiline	CatCryptCore/Relational/Approx.lean	∀ A : α → SPComp Bool, AdvantageA G₀ G₂ A ≤ ε₁ + ε₂
+site	multiline	CatCryptCore/Relational/Approx.lean	∀ A : α → SPComp Bool, AdvantageA G₁ G₂ A ≤ ε₂
+site	named_def	CatCryptCore/Examples/UniversalHash.lean	IsUniversal
+site	named_use	CatCryptCore/Crypto/Signatures/Threshold.lean	thresholdAdvantage_le: (sim : ShareSimulator
+site	named_use	CatCryptCore/Crypto/Signatures/Threshold.lean	thresholdRed.erase_timed: (sim : ShareSimulator
+site	named_use	CatCryptCore/Crypto/Signatures/Threshold.lean	thresholdRed.timeBound_timed: (sim : ShareSimulator
+site	named_use	CatCryptCore/Crypto/Signatures/Threshold.lean	thresholdRed.timed: (sim : ShareSimulator
+site	named_use	CatCryptCore/Crypto/Signatures/Threshold.lean	thresholdRed: (sim : ShareSimulator
+site	sdist_named	CatCryptCore/Crypto/OT/DualModeOT.lean	dualOT_reduction: (hb0 : ∀ m, sdist (fun _ : Unit => SPComp.bind (SPComp.sample gp.Scalar) (fun r => SPComp.pure (dualEnc gp crs.pk₀ m r))) (fun _ : Unit => SPComp.sample gp.G) ≤ ε)
+site	sdist_named	CatCryptCore/Crypto/OT/DualModeOT.lean	dualOT_reduction: (hb1 : ∀ m, sdist (fun _ : Unit => SPComp.bind (SPComp.sample gp.Scalar) (fun r => SPComp.pure (dualEnc gp crs.pk₁ m r))) (fun _ : Unit => SPComp.sample gp.G) ≤ ε)
+site	sdist_named	CatCryptCore/Crypto/Signatures/Threshold.lean	ShareSimulator.sign_close: sign_close : ∀ k, sdist (T.sign (shares k)) (simSign S simView (sk k) (state k)) ≤ δ
+site	nested	CatCryptCore/Quantum/ClassicalLiftReflect.lean	quc_liftQSys_iff: ∀ (ζ : Type) (Z : Env (Strat ζ E O) ζ), StratPure Z.input → adv S I Z ≤ ε
+site	point_mass	CatCryptCore/Crypto/Advantage.lean	advantage_sample_vs_pure_false

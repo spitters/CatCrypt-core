@@ -71,8 +71,10 @@ Rothmann and Kreuzer.
   \uses{lem:kzg-witness, def:tsdh}
   \lean{CatCrypt.Examples.Commitments.KZG.KnowledgeSoundness_Game_Full, CatCrypt.Examples.Commitments.KZG.KZG_knowledge_sound, CatCrypt.Examples.Commitments.KZG.honestAGMOutput_checks}
   \leanok
-  For every algebraic adversary, the probability of a valid evaluation proof that
-  does not match the extracted polynomial is at most $(t + 1)$ times the $t$-SDH
-  advantage of an explicit reduction. The honest committer's output passes the
-  game's representation and pairing checks.
+  For every algebraic adversary that receives the $G_1$ powers of the reference
+  string and not the verification key in $G_2$, the probability of a valid
+  evaluation proof that does not match the extracted polynomial is at most
+  $(t + 1)$ times the advantage of an explicit reduction in the $t$-SDH game on
+  the $G_1$ powers. The honest committer's output passes the game's representation
+  and pairing checks.
 \end{theorem}

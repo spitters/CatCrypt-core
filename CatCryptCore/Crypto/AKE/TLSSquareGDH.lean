@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.AKE.TLSSquareSigned
 public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
+public import CatCryptCore.Crypto.OracleFlagCount
 
 /-!
 # The TLS 1.3 handshake square under the gap Diffie–Hellman assumption
@@ -346,39 +347,13 @@ theorem run_flagWhen_le_count {σ D R α : Type} (O : σ → D → PMF (R × σ)
     (hM : Ψ s + n ≤ M) :
     (OracleAdv.run (OracleAdv.flagWhen bad O) A (s, false)).toOuterMeasure
       {y | y.2.2 = true} ≤ n * (M * ε) := by
-  induction A generalizing s n with
-  | ret a => simp [PMF.toOuterMeasure_pure_apply]
-  | rand p k ih =>
-    rw [OracleAdv.run_rand, PMF.toOuterMeasure_bind_apply]
-    calc _ ≤ ∑' b, p b * (n * (M * ε)) :=
-          ENNReal.tsum_le_tsum fun b => by gcongr; exact ih b n (hA b) s hs hM
-      _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
-  | query d k ih =>
-    cases n with
-    | zero => exact hA.elim
-    | succ n =>
-    rw [OracleAdv.run_query, OracleAdv.flagWhen, PMF.bind_map, PMF.toOuterMeasure_bind_apply]
-    calc _ ≤ ∑' x, O s d x * ((if bad s d x then 1 else 0) + n * (M * ε)) := by
-          refine ENNReal.tsum_le_tsum fun x => ?_
-          by_cases hx : x ∈ (O s d).support
-          · gcongr
-            by_cases hb : bad s d x
-            · simp only [Function.comp_apply, hb, decide_true, Bool.false_or, ite_true]
-              exact ((MeasureTheory.measure_mono (Set.subset_univ _)).trans_eq
-                ((PMF.toOuterMeasure_apply_eq_one_iff _ _).mpr (Set.subset_univ _))).trans
-                le_self_add
-            · simp only [Function.comp_apply, hb, decide_false, Bool.false_or, ite_false,
-                zero_add]
-              obtain ⟨hIx, hΨx⟩ := hI s d hs x hx
-              exact ih x.1 n (hA x.1) x.2 hIx (by omega)
-          · simp [(PMF.apply_eq_zero_iff _ _).2 hx]
-      _ = (O s d).toOuterMeasure {x | bad s d x} + n * (M * ε) := by
-          simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul,
-            PMF.toOuterMeasure_eq_tsum_ite]
-      _ ≤ M * ε + n * (M * ε) := by
-          gcongr
-          exact (hbad s d hs).trans (by gcongr; exact_mod_cast (by omega : Ψ s ≤ M))
-      _ = (n + 1 : ℕ) * (M * ε) := by push_cast; ring
+  refine (OracleAdv.run_flagWhen_le_sum_of_inv O bad I Ψ 1 (fun L => (L : ℝ≥0∞) * ε)
+    (fun _ _ h => by dsimp only; gcongr) hI hbad A n hA s hs).trans ?_
+  calc _ ≤ ∑ _i ∈ Finset.range n, (M : ℝ≥0∞) * ε := Finset.sum_le_sum fun i hi => by
+        have := Finset.mem_range.mp hi
+        gcongr
+        exact_mod_cast (by omega : Ψ s + i * 1 ≤ M)
+    _ = n * (M * ε) := by simp
 
 /-- A set with at most one element has uniform probability at most `1 / |S|`. -/
 theorem uniform_le_of_subsingleton {S : Type} [Fintype S] [Nonempty S] (T : Set S)

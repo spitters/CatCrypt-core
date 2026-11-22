@@ -20,10 +20,15 @@ public import CatCryptCore.Hax.ReprBridge
 
 Wraps an X25519 scalar multiplication `sm` and base-point function `bp`, with the libcrux-specs
 ML-KEM-768, HKDF-SHA256 and Ed25519, into the dependency record `Pqxdh.PqxdhDeps` of the
-extracted PQXDH code (`pqxdhDepsOf sm bp`) and derives the bound and the key agreement of the
-extracted handshake from the passive model. The instance `defaultPqxdhDeps` takes the opaque
-libcrux functions `x25519_scalarmult`, `x25519_base`, and `specPqxdhDeps` the RFC 7748
-specification `Spec.x25519_spec`, `Spec.x25519_base_spec`.
+extracted PQXDH code (`pqxdhDepsOf sm bp`) and derives, from the passive model, the bound of one
+honest session of the extracted handshake against a passive distinguisher, and its key agreement
+under perfect correctness of ML-KEM-768. The extracted `initiate` returns a key whatever the
+results of the two signature verifications, which are outputs that the games drop (the PQXDH
+specification requires an abort), and the extracted functions check no public key. The KDF of the
+instance is a tree of two-input HKDF extracts, in place of the one HKDF of the specification on
+the prefixed concatenation of the Diffie-Hellman values and the KEM secret. The instance
+`defaultPqxdhDeps` takes the opaque libcrux functions `x25519_scalarmult`, `x25519_base`, and
+`specPqxdhDeps` the RFC 7748 specification `Spec.x25519_spec`, `Spec.x25519_base_spec`.
 
 ## Architecture
 
@@ -57,10 +62,11 @@ operation of the extraction to the model (`pqxdhHomOf`, at libcrux `defaultPqxdh
   `x25519_base`, `x25519_scalarmult` and `concreteDDH_X25519`).
 - KEM: ML-KEM-768 (`mlkem768_keygen`, `mlkem768_encaps`, `mlkem768_decaps`).
 - KDF: `pqxdhKdf`, a tree of HKDF-SHA256 extracts (`concreteHKDF.extract`) on the four
-  Diffie-Hellman values and the KEM secret.
-- `sign`, `verify`: Ed25519 (`EdDSA_Bridge.x3dh_sign`, `EdDSA_Bridge.x3dh_verify`).
-- `kem_pk_encode`: `kemPkDigest`, SHA-256 of the encoded ML-KEM-768 public key, the message
-  the second signature of the bundle signs.
+  Diffie-Hellman values and the KEM secret, which differs from the KDF of the specification.
+- `sign`, `verify`: Ed25519 (`EdDSA_Bridge.x3dh_sign`, `EdDSA_Bridge.x3dh_verify`); the results of
+  `verify` do not affect the key.
+- `kem_pk_encode`: `kemPkDigest`, an opaque function that stands for SHA-256 of the encoded
+  ML-KEM-768 public key, the message the second signature of the bundle signs.
 
 ## Security Bound
 
@@ -76,6 +82,10 @@ reduction, at the KI adversary of the distinguisher precomposed with the encodin
 Diffie-Hellman inputs of the KDF) (`CatCryptCore.Crypto.AKE.PQXDHPassiveKeygen`,
 `CatCryptCore.Crypto.AKE.PQXDH.PassiveG25519`; time certificates in `PQXDHPassiveHopsTimed`).
 The statement is an advantage bound between two distributions, not a UC emulation.
+
+The key agreement `pqxdh_extracted_agree` has the hypothesis `toPassiveParams.KemCorrect`,
+correctness of the KEM at every seed and message. ML-KEM-768 of FIPS 203 has a nonzero
+decryption-failure probability and is not expected to satisfy it.
 
 ## References
 
@@ -117,9 +127,10 @@ noncomputable instance instSampleableTypeV32Pair : SampleableType (V32 × V32) w
 
 /-! ## Surface KDF -/
 
-/-- PQXDH KDF: combine the 4 DH shared secrets via a tree of HKDF-Extract
-operations, then absorb the ML-KEM shared secret. Models
-`HKDF(DH1 || DH2 || DH3 || DH4 || KEM_SS)` as a composition tree. -/
+/-- The PQXDH KDF of the instances: combine the 4 DH shared secrets via a tree of HKDF-Extract
+operations, then absorb the ML-KEM shared secret. It is another function than the KDF of the
+PQXDH specification, one HKDF on `F || DH1 || DH2 || DH3 || DH4 || KEM_SS` with the prefix
+`F`. -/
 noncomputable def pqxdhKdf
     (dhs : V32 × V32 × V32 × V32) (kem_ss : V32) : V32 :=
   let ⟨dh1, dh2, dh3, dh4⟩ := dhs
@@ -294,8 +305,10 @@ of order `ℓ` (`X25519HomOf sm bp B`), the advantage of every distinguisher `D`
 session computed by the extracted `create_bundle` and `initiate` of `pqxdh-hax` at
 `pqxdhDepsOf sm bp` and the encoded ideal session is at most
 `pqxdhG25519Bound B (toPassiveParamsOf sm bp)` at the KI adversary of `D` precomposed with the
-encoding, plus `24 * Δ25519`. Delegates to `ExtractedCorrespondence.pqxdh_extracted_eq` at
-`pqxdhHomOf` and `G25519.pqxdh_advantage_le_G25519_of_hom`. -/
+encoding, plus `24 * Δ25519`. The statement is about one honest session, which drops the results
+of the signature verifications, with the HKDF tree `pqxdhKdf` in place of the KDF of the
+specification. Delegates to `ExtractedCorrespondence.pqxdh_extracted_eq` at `pqxdhHomOf` and
+`G25519.pqxdh_advantage_le_G25519_of_hom`. -/
 theorem pqxdh_extracted_e2e_secure_of_hom {B : Curve25519Point}
     [Fact (addOrderOf B = curve25519SubgroupOrder)] {sm : V32 → V32 → V32} {bp : V32 → V32}
     (hX : X25519HomOf sm bp B) (D : Array Int × ExtractedTranscript → SPComp Bool) :
@@ -323,7 +336,8 @@ plus `24 * Δ25519`: the ML-KEM-768 advantage of the KEM reduction, the standard
 in `G25519 B` of the four hop reductions composed with the encoding of the triple, the
 advantage against `pqxdhKdf` on the encodings of four uniform subgroup elements and a uniform
 KEM secret of the KDF reduction, and the statistical distance of clamped scalars from uniform
-exponents at each of the twenty-four exponent draws.
+exponents at each of the twenty-four exponent draws. The statement is about one honest session,
+which drops the results of the signature verifications.
 
 The theorem is `pqxdh_extracted_e2e_secure_of_hom` at `X25519Hom B`. -/
 theorem pqxdh_extracted_e2e_secure {B : Curve25519Point}
@@ -358,10 +372,11 @@ theorem pqxdh_spec_e2e_secure (D : Array Int × ExtractedTranscript → SPComp B
           (D ∘ encOut libcruxEnc)) + 24 * Δ25519 :=
   pqxdh_extracted_e2e_secure_of_hom X25519HomOf.spec_B9 D
 
-/-- **Key agreement of the extracted handshake.** Given X25519 Diffie-Hellman correctness and
-ML-KEM-768 correctness on seeds and messages (`toPassiveParams.KemCorrect`), the responder's
-key computed by the extracted `respond` from the bundle's KEM secret key and the initiator's
-message is the initiator's key. -/
+/-- **Key agreement of the extracted handshake under perfect KEM correctness.** Given X25519
+Diffie-Hellman correctness and correctness of the KEM at every seed and message
+(`toPassiveParams.KemCorrect`, which ML-KEM-768 with its nonzero decryption-failure probability
+is not expected to satisfy), the responder's key computed by the extracted `respond` from the
+bundle's KEM secret key and the initiator's message is the initiator's key. -/
 theorem pqxdh_extracted_agree (hX : X25519Commutes) (hK : toPassiveParams.KemCorrect)
     (a e b s o m : V32) (sd : V32 × V32) :
     Pqxdh.respond (vecToArrayInt b) (vecToArrayInt s) (vecToArrayInt o)

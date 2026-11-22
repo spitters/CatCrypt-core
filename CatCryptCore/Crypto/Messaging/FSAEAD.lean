@@ -298,8 +298,9 @@ section FSInt
 variable {Sa W Ct AD : Type} [SampleableType W] [SampleableType Ct] [DecidableEq W]
   [DecidableEq Ct] [DecidableEq AD]
 
-/-- The key at the position `j` of the chain from the state `sa` of the chain generator `G`. -/
-def chainKey (G : PRGDef Sa (W × Sa)) (sa : Sa) (j : ℕ) : W :=
+/-- The key at the position `j` of the chain from the state `sa` of the chain generator `G`,
+with keys in `Kt`. -/
+def chainKey {Kt : Type} (G : PRGDef Sa (Kt × Sa)) (sa : Sa) (j : ℕ) : Kt :=
   (G.stretch ((fun s => (G.stretch s).2)^[j] sa)).1
 
 /-- The queries of the FS-AEAD integrity adversary, with plaintexts in `W`, ciphertexts in `Ct`
@@ -348,7 +349,8 @@ decryption): `enc m` encrypts under the next key `(G cur).1`, logs the ciphertex
 position and moves the state to `(G cur).2`; `dec j ad c` decrypts under the key at the position
 `j` of the chain from the initial state (`ideal = false`) or from the log (`ideal = true`), and
 is refused after a corruption; `corrupt` returns the current state of the sender. -/
-noncomputable def fsIntOracle (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool)
+noncomputable def fsIntOracle {Kt : Type} (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
+    (ideal : Bool)
     (s : FSIntSt Sa W Ct AD) :
     FSIntQuery W Ct AD → PMF (FSIntAns Sa Ct W × FSIntSt Sa W Ct AD)
   | .enc m =>
@@ -363,14 +365,15 @@ variable [Fintype Sa] [Nonempty Sa]
 
 /-- **The FS-AEAD integrity game**: a uniform initial state of the epoch, and the run of the
 adversary against `fsIntOracle`. -/
-noncomputable def fsaead_int_game (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+noncomputable def fsaead_int_game {Kt : Type} (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (ideal : Bool) (A : OracleAdv (FSIntQuery W Ct AD) (FSIntAns Sa Ct W) Bool) : SPComp Bool :=
   liftPMF ((PMF.uniformFintype Sa).bind fun sa =>
     (OracleAdv.run (fsIntOracle G D ideal) A ⟨sa, sa, [], false⟩).map Prod.fst)
 
 /-- **FS-AEAD integrity advantage** of the adversary `A`: real decryption against decryption
 from the log. -/
-noncomputable def FSAEAD_Int_Advantage (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+noncomputable def FSAEAD_Int_Advantage {Kt : Type} (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct AD Kt)
     (A : OracleAdv (FSIntQuery W Ct AD) (FSIntAns Sa Ct W) Bool) : ℝ≥0∞ :=
   Advantage (fsaead_int_game G D false A) (fsaead_int_game G D true A)
 

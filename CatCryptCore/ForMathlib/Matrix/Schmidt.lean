@@ -104,8 +104,8 @@ theorem exists_unitary_mulVec_eq {K : Type*} [Fintype K] [DecidableEq K] (b b' :
     ext l l'
     have := orthonormal_iff_ite.mp γ.orthonormal l l'
     rw [EuclideanSpace.inner_eq_star_dotProduct] at this
-    rw [one_apply, ← this]
-    simp [mul_apply, star_apply, dotProduct, mul_comm]
+    rw [Matrix.one_apply, ← this]
+    simp [Matrix.mul_apply, star_apply, dotProduct, mul_comm]
   have hB : B ∈ unitaryGroup n ℂ := mem_unitaryGroup_iff'.mpr (hunit β)
   have hB' : B' ∈ unitaryGroup n ℂ := mem_unitaryGroup_iff'.mpr (hunit β')
   refine ⟨B' * star B, Submonoid.mul_mem _ hB' (Unitary.star_mem hB), fun k => ?_⟩
@@ -149,7 +149,7 @@ omit [Fintype m] [DecidableEq m] [DecidableEq n] in
 /-- A row of `R` with `(R Rᴴ) k k = 0` vanishes. -/
 theorem row_eq_zero_of_mul_conjTranspose_diag_eq_zero {R : Matrix m n ℂ} {k : m}
     (h : (R * Rᴴ) k k = 0) : R k = 0 := by
-  rw [mul_apply] at h
+  rw [Matrix.mul_apply] at h
   have : R k ⬝ᵥ star (R k) = 0 := by
     rw [← h]; simp [dotProduct, conjTranspose_apply]
   exact dotProduct_self_star_eq_zero.mp this
@@ -175,7 +175,7 @@ theorem exists_schmidt (M : Matrix m n ℂ) :
       if k = l then (hH.eigenvalues k : ℂ) else 0 := by
     intro k l
     have := congrFun (congrFun hRR k) l
-    simpa [mul_apply, conjTranspose_apply, diagonal_apply] using this
+    simpa [Matrix.mul_apply, conjTranspose_apply, diagonal_apply] using this
   have hzero : ∀ k, hH.eigenvalues k = 0 → R k = 0 := by
     intro k hk
     apply row_eq_zero_of_mul_conjTranspose_diag_eq_zero
@@ -194,7 +194,7 @@ theorem exists_schmidt (M : Matrix m n ℂ) :
   · intro k l
     have hUU : star U * U = 1 := Unitary.coe_star_mul_self _
     have := congrFun (congrFun hUU (e.symm k : m)) (e.symm l : m)
-    simp only [mul_apply, star_apply, one_apply] at this
+    simp only [Matrix.mul_apply, star_apply, Matrix.one_apply] at this
     simp only [dotProduct, Pi.star_apply, this, Subtype.coe_inj, e.symm.injective.eq_iff]
   · intro k l
     simp only [dotProduct, Pi.star_apply, star_div₀, Complex.star_def, Complex.conj_ofReal]
@@ -237,7 +237,7 @@ theorem normalizedRows_orthonormal (R : Matrix m n ℂ) (lam : m → ℝ)
   have hRRe : ∀ k l, ∑ j, R k j * star (R l j) = if k = l then (lam k : ℂ) else 0 := by
     intro k l
     have := congrFun (congrFun hRR k) l
-    simpa [mul_apply, conjTranspose_apply, diagonal_apply] using this
+    simpa [Matrix.mul_apply, conjTranspose_apply, diagonal_apply] using this
   simp only [dotProduct, Pi.star_apply, star_div₀, Complex.star_def, Complex.conj_ofReal]
   have h1 : ∀ j, (starRingEnd ℂ) (R k j) / (Real.sqrt (lam k) : ℂ) *
       (R l j / (Real.sqrt (lam l) : ℂ)) =
@@ -284,7 +284,7 @@ theorem exists_unitary_eq_mul_of_mul_conjTranspose_eq (M N : Matrix m n ℂ)
       ← transpose_mul, ← star_eq_conjTranspose, hWW, transpose_one]
   · have hRV : R' = R * Wᵀ := by
       ext k j
-      rw [mul_apply]
+      rw [Matrix.mul_apply]
       simp only [transpose_apply]
       by_cases hk : hH.eigenvalues k = 0
       · rw [hzero R' hRR' k hk, hzero R hRR k hk]; simp

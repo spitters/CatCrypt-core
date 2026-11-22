@@ -15,10 +15,11 @@ import CatCryptCore.ForMathlib.PMFSupport
 `PQXDHSquareGDH` splits the bad event `PQHit` of the PQXDH square into its KEM part `PQHitKem`
 (a session whose encapsulation the adversary did not create, `HonestEnc`) and its
 Diffie–Hellman part, and bounds both by gap Diffie–Hellman advantages. This module bounds the
-KEM part by the IND-CCA security of the KEM, without any Diffie–Hellman assumption: a session
-whose shared secret comes from an encapsulation of an honest party is secure against an
-adversary that computes discrete logarithms (security against harvest-now-decrypt-later
-attacks), and the bound of the square becomes a minimum over the two routes.
+part of the KEM part at matched sessions by the IND-CCA security of the KEM, without any
+Diffie–Hellman assumption (`partBad_kem_le`). The rest of the bad event is bounded by the gap
+Diffie–Hellman sum, so the bound `minBoundP` of the square is that sum plus the minimum of that
+sum and the KEM bound. It is at least `gdhBoundP`, and `pqxdh_realizesSim_min` needs the gap
+Diffie–Hellman assumption.
 
 **The IND-CCA game.** The game is that of `CatCryptCore.Crypto.KEM.Games`: `indccaGame` and
 `indccaAdvantage` over `Scheme PK SK SS C`, the KEM interface of the PQXDH square, in
@@ -98,7 +99,8 @@ adversary that computes discrete logarithms makes the bad event hold with probab
 * `symP`, `liftD`, `newVal`, `yO`, `iSim`, `Good`: the world of the reduction, its
   interpretation and its invariant.
 * `stepRedQ`, `kemStep`, `kemRedRun`, `kemRed`: the IND-CCA reduction.
-* `kemBound`, `minBoundP`: the KEM bound and the bound of the square with the minimum.
+* `kemBound`, `minBoundP`: the KEM bound, and the bound of the square, the gap Diffie–Hellman sum
+  plus the minimum of that sum and the KEM bound.
 
 ## Main results
 
@@ -109,8 +111,10 @@ adversary that computes discrete logarithms makes the bad event hold with probab
 * `indccaGame_false_le`, `flagEG_le_indcca`: the random case and the KEM part at a guess.
 * `partBad_kem_le`: `partBad P G (PQHitKemM P G) B ≤ kemBound P G I N B hB`, the sum over the
   guesses of `I × N × N` of `indccaAdvantage P (kemRed P G g B hB) + P.corrErr + q / |SS|`.
-* `badGame_le_min`, `badGame_le_gapDH_min`: the bad event with the minimum over the two routes.
-* `pqxdh_realizesSim_min`: PQXDH realizes `F_AKE` behind `pqxdhSim` with the bound `minBoundP`.
+* `badGame_le_min`, `badGame_le_gapDH_min`: the bad event is at most its part at unmatched
+  sessions, resp. the gap Diffie–Hellman sum, plus the minimum of that sum and the KEM bound.
+* `pqxdh_realizesSim_min`: PQXDH realizes `F_AKE` behind `pqxdhSim` with the bound `minBoundP`,
+  which is at least the bound of `pqxdh_realizesSim_gapDH`.
 
 ## References
 
@@ -2157,7 +2161,7 @@ theorem partBad_kem_le [DecidableEq PK] (I : Finset SessionId) (N : Finset Party
     (Finset.sum_le_sum fun g _ => flagEG_le_indcca P G g B hB)
 
 open Classical in
-/-- **The bad event of the PQXDH square with the minimum over the two routes.** For an oracle
+/-- **The bad event of the PQXDH square with the KEM route at matched sessions.** For an oracle
 adversary `B` that names only parties of `N`, starts sessions only with session identifiers of
 `I`, and asks at most `q` queries, the bad event is at most its part at unmatched sessions, which
 only the route of Diffie–Hellman bounds, plus the minimum of the gap Diffie–Hellman sum and the
@@ -2185,7 +2189,7 @@ theorem badGame_le_gapDH_min [DecidableEq PK] (I : Finset SessionId) (N : Finset
   (badGame_le_min P G I N B hN hS hB).trans (by gcongr; exact (partBadM_le_gapDH P G N B hN).2)
 
 open Classical in
-/-- The bound of the PQXDH square with the minimum over the two routes at the oracle adversary
+/-- The bound of the PQXDH square with the KEM route at matched sessions at the oracle adversary
 `B`: the gap Diffie–Hellman sum plus the minimum of the gap Diffie–Hellman sum and the KEM bound,
 when `B` names only parties of `N`, starts sessions only with session identifiers of `I` and
 asks at most `q` queries, and `⊤` otherwise. -/
@@ -2197,9 +2201,10 @@ noncomputable def minBoundP [DecidableEq PK] (I : Finset SessionId) (N : Finset 
         (kemBound P G I N B h.2.2)
   else ⊤
 
-/-- **PQXDH realizes `F_AKE` behind `pqxdhSim` with the minimum over the two routes.** For every
-finite set of session identifiers `I`, finite set of parties `N` and query bound `q`, and every
-environment `Z` whose oracle reduction names only parties of `N`, starts sessions only with
+/-- **PQXDH realizes `F_AKE` behind `pqxdhSim` with gap Diffie–Hellman plus the minimum of gap
+Diffie–Hellman and the KEM route.** The bound is at least that of `pqxdh_realizesSim_gapDH`. For
+every finite set of session identifiers `I`, finite set of parties `N` and query bound `q`, and
+every environment `Z` whose oracle reduction names only parties of `N`, starts sessions only with
 session identifiers of `I` and asks at most `q` queries, the distance between the real PQXDH
 protocol and the simulator running with `F_AKE` is at most the gap Diffie–Hellman sum plus the
 minimum of the gap Diffie–Hellman sum and the KEM bound `kemBound`; the bound is `⊤` for the other

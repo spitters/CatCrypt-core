@@ -29,6 +29,8 @@ extracted functions are decoded by `decW`, `decC` and `decSS`:
   ephemeral key and the encoded encapsulation; its key is `k.derive` at the session context and
   the decoded arguments of the key derivation of `Pqxdh.respond` (`respKdfInp`, `respond_key`);
 * a query of the adversary to the key derivation is `k.query`.
+The results of the two signature verifications of `Pqxdh.initiate` are dropped, and the extracted
+functions check no public key: a key is returned whatever the bundle or message is.
 
 `extGame P coins encS encW encPK encSK encC encSS encM decW decC decSS decK` is the game at the
 fixed key derivation `extKDF`, the extracted `Pqxdh.kdf` at encoded inputs decoded by `decK`.
@@ -42,7 +44,10 @@ behind `pqxdhSim P G` with the gap Diffie–Hellman bound of the square model
 (`extSysK_lazy_realizesSim_gapDH`). With `decK` a left inverse of `encK`, `extKDF` is `H`
 (`extKDF_eq`), so `extGame` is `realGameK P (fixedKDF H) G` (`extGame_eq`, `extSys_eq`), and its
 session keys are the decoded keys of `Pqxdh.initiate` and `Pqxdh.respond` (`extKDF_initKdfInp`,
-`extKDF_respKdfInp`).
+`extKDF_respKdfInp`). These hypotheses exclude X25519, where `encW` is the u-coordinate, which has
+no left inverse. The session context in the argument of `k` is supplied by the game: the
+extracted `Pqxdh.kdf` takes none, and under the hom record `H` does not depend on it when `encK`
+is injective, whereas the random function of `lazyKDF` separates the sessions by it.
 
 ## Main definitions
 

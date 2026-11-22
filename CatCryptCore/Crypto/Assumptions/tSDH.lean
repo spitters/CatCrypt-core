@@ -11,8 +11,10 @@ public import CatCryptCore.Crypto.Advantage
 /-!
 # t-Strong Diffie-Hellman Assumption
 
-This file defines the t-SDH (t-Strong Diffie-Hellman) assumption, which is the
-core hardness assumption for KZG polynomial commitments.
+This file defines the t-SDH (t-Strong Diffie-Hellman) game on which the KZG
+theorems of the library are based. The adversary of `tSDH_Game` receives the
+powers in `G₁` only; the game of Boneh-Boyen and Kate et al., in which it also
+receives `(g₂, g₂^α)`, is `tSDH_Game_ext`.
 
 ## Main definitions
 
@@ -24,7 +26,7 @@ core hardness assumption for KZG polynomial commitments.
 
 | Property | This file | Paper |
 |----------|-----------|-------|
-| Challenge | `srs₁ α t` = `[g₁^{α⁰}, ..., g₁^{αᵗ}]` | KZG §3.1 |
+| Challenge | `srs₁ α t` = `[g₁^{α⁰}, ..., g₁^{αᵗ}]` | the same with `(g₂, g₂^α)` |
 | Verification | `e(h, g₂^{α+c}) = e(g₁, g₂)` | Boneh-Boyen Def. 3 |
 | Advantage | `prTrue(tSDH_Game)` | `Pr[t-SDH]` |
 

@@ -52,12 +52,12 @@ open scoped ENNReal
 
 section FSIntRed
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct Kt : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [DecidableEq W] [DecidableEq Ct]
 
-/-- The queries of the FS-AEAD game with corruption as queries of the integrity game: the
-challenge is an encryption. -/
-def fsIntQ : FSQuery W → FSIntQuery W Ct
+/-- The queries of the FS-AEAD game with corruption as queries of the integrity game, at
+associated data in `AD`: the challenge is an encryption. -/
+def fsIntQ {AD : Type} : FSQuery W AD → FSIntQuery W Ct AD
   | .enc m => .enc m
   | .chall m => .enc m
   | .corrupt => .corrupt
@@ -74,16 +74,20 @@ def fsIntDecOf : FSIntAns Sa Ct W → Option W
   | _ => none
 
 /-- The state of the FS-AEAD game with corruption with the chain of a state of the integrity
-game and the challenge flag `d`. -/
-def fsStOfInt (d : Bool) (u : FSIntSt Sa W Ct) : FSSt Sa := ⟨u.cur, u.init, d, u.corr⟩
+game, with associated data in `AD`, and the challenge flag `d`. -/
+def fsStOfInt {AD : Type} (d : Bool) (u : FSIntSt Sa W Ct AD) : FSSt Sa :=
+  ⟨u.cur, u.init, d, u.corr⟩
 
 /-- The challenge of party `p` at the challenge epoch `t` in the simulator of the integrity hop:
 on the chain of the epoch `k`, held by the integrity game, an encryption of the integrity game;
-on a chain of the simulator, the real encryption. -/
-noncomputable def smAuthFSChall (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (t : ℕ)
-    (x : FSSim Sc Msg RK Sa) (p : CKAParty) (m : W × W) :
-    OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
-  if x.sndX p then (smFSChall (W := W) (Ct := Ct) t x p m).mapQueryAnswer fsIntQ fsIntA
+on a chain of the simulator, the real encryption, for the AEAD `D` whose associated data have
+the type `AD`. -/
+noncomputable def smAuthFSChall {AD : Type} (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
+    (t : ℕ) (x : FSSim Sc Msg RK Sa) (p : CKAParty) (m : W × AD) :
+    OracleAdv (FSIntQuery W Ct AD) (FSIntAns Sa Ct W)
+      (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+  if x.sndX p then
+    (smFSChall (W := W) (AD := AD) (Ct := Ct) t x p m).mapQueryAnswer fsIntQ fsIntA
   else
     match x.s.loc.snd p with
     | some sa =>
@@ -95,17 +99,21 @@ noncomputable def smAuthFSChall (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (t 
 
 /-- The simulator of the secure-messaging queries in the integrity hop at the epoch `k` with the
 challenge epoch `t`: the simulator `smFSImplOf` of the FS-AEAD hop at the epoch `k`, relabelled
-to the integrity game, with the challenge at the epoch `t` and the corruption gate of `t`. -/
-noncomputable def smAuthFSImplAt (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS t k : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (q : SMQuery W) :
-    OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+to the integrity game, with the challenge at the epoch `t` and the corruption gate of `t`, for
+the AEAD `D` whose associated data have the type `AD`. -/
+noncomputable def smAuthFSImplAt {AD : Type} (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
+    (ΔFS ΔPCS t k : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (q : SMQuery W AD) :
+    OracleAdv (FSIntQuery W Ct AD) (FSIntAns Sa Ct W)
+      (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
   match q with
-  | .ratchet p => (smFSRatchet (W := W) (Ct := Ct) C R k rkS x p).mapQueryAnswer fsIntQ fsIntA
-  | .recv p => (smFSRecv (W := W) (Ct := Ct) C rkS x p).mapQueryAnswer fsIntQ fsIntA
+  | .ratchet p =>
+    (smFSRatchet (W := W) (AD := AD) (Ct := Ct) C R k rkS x p).mapQueryAnswer fsIntQ fsIntA
+  | .recv p => (smFSRecv (W := W) (AD := AD) (Ct := Ct) C rkS x p).mapQueryAnswer fsIntQ fsIntA
   | .send p m => (smFSSend G D x p m).mapQueryAnswer fsIntQ fsIntA
   | .chall p m => smAuthFSChall G D t x p m
-  | .corrupt p => (smFSCorr (W := W) (Ct := Ct) ΔFS ΔPCS t x p).mapQueryAnswer fsIntQ fsIntA
+  | .corrupt p =>
+    (smFSCorr (W := W) (AD := AD) (Ct := Ct) ΔFS ΔPCS t x p).mapQueryAnswer fsIntQ fsIntA
 
 /-- A query of the truncated hybrid in the simulator of the integrity hop: a query of the
 corruption game is answered by `smAuthFSImplAt` and logged, and by a rejection when the epoch `k`
@@ -113,7 +121,7 @@ leaves the safe epochs; a delivery is answered from the log and by a decryption 
 the receiving chain, and the flag of a forgery is raised, from the `dec` oracle of the integrity
 game for a delivery into the epoch `k` on the chain it holds. -/
 noncomputable def smAuthFSStep (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (rkS : RK) (σ : (FSSim Sc Msg RK Sa × SMAuthAux W Ct) × Bool) :
     SMAuthQuery W Ct → OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W)
       (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W × ((FSSim Sc Msg RK Sa × SMAuthAux W Ct) × Bool))
@@ -135,7 +143,7 @@ noncomputable def smAuthFSStep (C : CKADef Sc Msg Key) [CKACoins C Rand]
 /-- **The simulator of the integrity hop of the forgery event at the epoch `k`**:
 `smAuthFSStep` while the epoch `k` is safe, a rejection otherwise. -/
 noncomputable def smAuthFSImpl (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (rkS : RK) (σ : (FSSim Sc Msg RK Sa × SMAuthAux W Ct) × Bool)
     (d : SMAuthQuery W Ct) :
     OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W)
@@ -148,7 +156,8 @@ draws the challenge epoch `t` from `tStar`, the CKA initialisation from `initP`,
 key and a uniform root key `rkS` of the epoch `k`, runs the adversary against the simulator
 `smAuthFSImpl` and outputs the flag of a forgery. -/
 noncomputable def smAuthFSTree (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fintype RK]
-    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS k : ℕ) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
     (play : ℕ → Msg → OracleAdv (SMAuthQuery W Ct) (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W) Bool) :
     OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool :=
@@ -161,7 +170,8 @@ noncomputable def smAuthFSTree (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fintyp
 /-- **The FS-AEAD integrity reduction of the forgery event at the epoch `k`**: the tree
 `smAuthFSTree` at the challenge-epoch distribution and the interaction of `A`. -/
 noncomputable def smAuthFSRed (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fintype RK]
-    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS k : ℕ) (initP : PMF (Msg × Sc × Sc)) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     OracleAdv (FSIntQuery W Ct) (FSIntAns Sa Ct W) Bool :=
   smAuthFSTree C R G D ΔFS ΔPCS k initP A.tStar A.play
@@ -172,16 +182,19 @@ end FSIntRed
 
 section FSIntSim
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [DecidableEq W] [DecidableEq Ct]
+variable {Sc Msg Key Rand RK Sa W Ct Kt : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct] [DecidableEq Ct]
 
 /-- At an opening, a receive and a send, the simulator of the integrity hop against the
 integrity game, with the integrity state read as a state of the FS-AEAD game with corruption, is
-the simulator `smFSImplOf` of the FS-AEAD hop at the epoch `k` against the real FS-AEAD game. -/
-theorem smAuthFSImplAt_rel (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (ΔFS ΔPCS t k : ℕ) (rkS : RK) (b d : Bool) (x : FSSim Sc Msg RK Sa) (u : FSIntSt Sa W Ct)
-    (q : SMQuery W) (hq : ∀ p m, q ≠ .chall p m) (hq' : ∀ p, q ≠ .corrupt p) :
+the simulator `smFSImplOf` of the FS-AEAD hop at the epoch `k` against the real FS-AEAD game,
+for the AEAD `D` whose associated data have the type `AD`. -/
+theorem smAuthFSImplAt_rel {AD : Type} [DecidableEq AD] (C : CKADef Sc Msg Key)
+    [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct AD Kt)
+    (ΔFS ΔPCS t k : ℕ) (rkS : RK) (b d : Bool) (x : FSSim Sc Msg RK Sa)
+    (u : FSIntSt Sa W Ct AD) (q : SMQuery W AD) (hq : ∀ p m, q ≠ .chall p m)
+    (hq' : ∀ p, q ≠ .corrupt p) :
     (OracleAdv.simOracle (smAuthFSImplAt C R G D ΔFS ΔPCS t k rkS) (fsIntOracle G D b)
         (x, u) q).map (fun y => (y.1, (y.2.1, fsStOfInt d y.2.2))) =
       OracleAdv.simOracle (smFSImplOf C R G D ΔFS ΔPCS k rkS) (fsOracle G D false)
@@ -205,27 +218,31 @@ theorem smAuthFSImplAt_rel (C : CKADef Sc Msg Key) [CKACoins C Rand]
   | corrupt p => exact absurd rfl (hq' p)
 
 /-- The secure-messaging state that a state of the simulator of the integrity hop and a state
-of the integrity game stand for: `fsAbs` at the chain of the integrity game. -/
-def fsIntAbs (rkS : RK) (x : FSSim Sc Msg RK Sa) (u : FSIntSt Sa W Ct) : SMSt Sc Msg RK Sa :=
+of the integrity game, with associated data in `AD`, stand for: `fsAbs` at the chain of the
+integrity game. -/
+def fsIntAbs {AD : Type} (rkS : RK) (x : FSSim Sc Msg RK Sa) (u : FSIntSt Sa W Ct AD) :
+    SMSt Sc Msg RK Sa :=
   fsAbs rkS (x, fsStOfInt false u)
 
 /-- **The simulator of the secure-messaging queries is the oracle of the truncated hybrid.**
 Under the invariant of the FS-AEAD simulation at the epoch `k`, each call of `smAuthFSImplAt`
 against the integrity game, mapped by `fsIntAbs`, is the call of `smOracleOfAt` with the root
 output `(rkS, sa)` at the epoch `k`, at every query other than a corruption allowed at the
-challenge epoch `t` with the epoch `k` in its window. -/
-theorem smAuthFSImplAt_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+challenge epoch `t` with the epoch `k` in its window, for the AEAD `D` whose associated data
+have the type `AD`. -/
+theorem smAuthFSImplAt_step {AD : Type} [DecidableEq AD] (C : CKADef Sc Msg Key)
+    [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa))
+    (D : AEADDef W Ct AD Kt)
     {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (t k : ℕ) (rkS : RK) (sa : Sa) (b : Bool)
-    (x : FSSim Sc Msg RK Sa) (u : FSIntSt Sa W Ct)
-    (hx : FSInv k sa (x, fsStOfInt x.s.loc.done u)) (q : SMQuery W)
+    (x : FSSim Sc Msg RK Sa) (u : FSIntSt Sa W Ct AD)
+    (hx : FSInv k sa (x, fsStOfInt x.s.loc.done u)) (q : SMQuery W AD)
     (hq : ∀ p, q = .corrupt p → ckaAllowCorr ΔFS ΔPCS t x.s.ck p = true →
       ckaAllowCorr ΔFS ΔPCS k x.s.ck p = true) :
     (OracleAdv.simOracle (smAuthFSImplAt C R G D ΔFS ΔPCS t k rkS) (fsIntOracle G D b)
         (x, u) q).map (Prod.map id fun z => fsIntAbs rkS z.1 z.2) =
       smOracleOfAt C R G D ΔFS ΔPCS t k false (constRoot (Key := Key) (rkS, sa))
         (fsIntAbs rkS x u) q := by
-  have key : ∀ q : SMQuery W, (∀ p m, q ≠ .chall p m) → (∀ p, q ≠ .corrupt p) →
+  have key : ∀ q : SMQuery W AD, (∀ p m, q ≠ .chall p m) → (∀ p, q ≠ .corrupt p) →
       (OracleAdv.simOracle (smAuthFSImplAt C R G D ΔFS ΔPCS t k rkS) (fsIntOracle G D b)
         (x, u) q).map (Prod.map id fun z => fsIntAbs rkS z.1 z.2) =
       smOracleOf C R G D ΔFS ΔPCS k false (constRoot (Key := Key) (rkS, sa))
@@ -300,16 +317,17 @@ end FSIntSim
 
 section FSIntInv
 
-variable {Sc Msg RK Sa W Ct : Type} [DecidableEq W] [DecidableEq Ct]
+variable {Sc Msg RK Sa W Ct AD Kt : Type} [DecidableEq AD] [DecidableEq Ct]
 
 /-- The invariant of the simulation of the integrity hop at the epoch `k` with the initial state
-`sa` of the integrity game: the invariant `FSInv` of the FS-AEAD simulation at the epoch `k`; the
-log of the integrity game is the log of the honest ciphertexts of the epoch `k` (its length and
-its decryption); the root output in transit to a party that receives the epoch `k` is held by
-the integrity game; a party that receives in the epoch `k` holds the chain of the integrity
-game, unless `k = 0`, where it holds no chain; and at `k = 0` the integrity game is not used. -/
+`sa` of the integrity game, at associated data in `AD`: the invariant `FSInv` of the FS-AEAD
+simulation at the epoch `k`; the log of the integrity game is the log of the honest ciphertexts
+of the epoch `k` (its length and its decryption); the root output in transit to a party that
+receives the epoch `k` is held by the integrity game; a party that receives in the epoch `k`
+holds the chain of the integrity game, unless `k = 0`, where it holds no chain; and at `k = 0`
+the integrity game is not used. -/
 structure AuthFSInv (k : ℕ) (sa : Sa)
-    (z : ((FSSim Sc Msg RK Sa × SMAuthAux W Ct) × Bool) × FSIntSt Sa W Ct) : Prop where
+    (z : ((FSSim Sc Msg RK Sa × SMAuthAux W Ct AD) × Bool) × FSIntSt Sa W Ct AD) : Prop where
   fs : FSInv k sa (z.1.1.1, fsStOfInt z.1.1.1.s.loc.done z.2)
   len : z.2.log.length = z.1.1.2.nextIdx k
   dec : ∀ j ad c, z.2.logDec j ad c = z.1.1.2.logDec k j ad c
@@ -319,13 +337,14 @@ structure AuthFSInv (k : ℕ) (sa : Sa)
   zero : k = 0 → (∀ p, z.1.1.1.sndX p = false) ∧ z.2.log = []
 
 /-- The invariant does not depend on the flag of a forgery. -/
-theorem AuthFSInv.flag {k : ℕ} {sa : Sa} {x : FSSim Sc Msg RK Sa} {a : SMAuthAux W Ct} {f : Bool}
-    {u : FSIntSt Sa W Ct} (h : AuthFSInv k sa (((x, a), f), u)) (f' : Bool) :
+theorem AuthFSInv.flag {k : ℕ} {sa : Sa} {x : FSSim Sc Msg RK Sa} {a : SMAuthAux W Ct AD}
+    {f : Bool} {u : FSIntSt Sa W Ct AD} (h : AuthFSInv k sa (((x, a), f), u)) (f' : Bool) :
     AuthFSInv k sa (((x, a), f'), u) :=
   ⟨h.fs, h.len, h.dec, h.outk, h.rcvk, h.zero⟩
 
 /-- A ciphertext logged in an epoch other than `k` leaves the log of the epoch `k`. -/
-theorem SMAuthAux.record_ne (x : SMAuthAux W Ct) {e k : ℕ} (h : e ≠ k) (m : W × W) (c : Ct) :
+theorem SMAuthAux.record_ne (x : SMAuthAux W Ct AD) {e k : ℕ} (h : e ≠ k) (m : W × AD)
+    (c : Ct) :
     (x.record e m c).nextIdx k = x.nextIdx k ∧
       ∀ j ad c', (x.record e m c).logDec k j ad c' = x.logDec k j ad c' := by
   refine ⟨?_, fun j ad c' => ?_⟩
@@ -334,12 +353,12 @@ theorem SMAuthAux.record_ne (x : SMAuthAux W Ct) {e k : ℕ} (h : e ≠ k) (m : 
 
 /-- An encryption of the integrity game and the logging of its ciphertext in the epoch `k` keep
 the log of the integrity game the log of the epoch `k`. -/
-theorem fsIntSt_record (u : FSIntSt Sa W Ct) (x : SMAuthAux W Ct) (k : ℕ)
+theorem fsIntSt_record (u : FSIntSt Sa W Ct AD) (x : SMAuthAux W Ct AD) (k : ℕ)
     (hl : u.log.length = x.nextIdx k) (hd : ∀ j ad c, u.logDec j ad c = x.logDec k j ad c)
-    (cur : Sa) (m : W × W) (c : Ct) :
+    (cur : Sa) (m : W × AD) (c : Ct) :
     ((u.log.length, m.1, m.2, c) :: u.log).length = (x.record k m c).nextIdx k ∧
       ∀ j ad c', ({ u with cur := cur, log := (u.log.length, m.1, m.2, c) :: u.log } :
-        FSIntSt Sa W Ct).logDec j ad c' = (x.record k m c).logDec k j ad c' := by
+        FSIntSt Sa W Ct AD).logDec j ad c' = (x.record k m c).logDec k j ad c' := by
   refine ⟨?_, fun j ad c' => ?_⟩
   · simp [SMAuthAux.record, SMAuthAux.nextIdx, hl]
   · have := hd j ad c'
@@ -355,21 +374,21 @@ end FSIntInv
 
 section FSIntInvStep
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
-  [SampleableType Ct] [DecidableEq W] [DecidableEq Ct]
+variable {Sc Msg Key Rand RK Sa W Ct AD Kt : Type} [Fintype Rand] [Nonempty Rand]
+  [SampleableType W] [SampleableType Ct] [DecidableEq AD] [DecidableEq Ct]
 
 /-- **The invariant of the simulation is kept by the secure-messaging queries**, with the log
 of the honest ciphertexts updated by the answer, against the real and the ideal integrity
-game. -/
+game, for the AEAD `D` whose associated data have the type `AD`. -/
 theorem smAuthFSImplAt_inv (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (ΔFS ΔPCS t k : ℕ) (rkS : RK) (sa : Sa) (b : Bool) (x : FSSim Sc Msg RK Sa)
-    (aux : SMAuthAux W Ct) (f : Bool) (u : FSIntSt Sa W Ct)
-    (hx : AuthFSInv k sa (((x, aux), f), u)) (q : SMQuery W) (y)
+    (aux : SMAuthAux W Ct AD) (f : Bool) (u : FSIntSt Sa W Ct AD)
+    (hx : AuthFSInv k sa (((x, aux), f), u)) (q : SMQuery W AD) (y)
     (hy : y ∈ (OracleAdv.simOracle (smAuthFSImplAt C R G D ΔFS ΔPCS t k rkS)
       (fsIntOracle G D b) (x, u) q).support) (f' : Bool) :
     AuthFSInv k sa (((y.2.1, aux.upd (ckaShadow x.s.ck) q y.1.toScheme), f'), y.2.2) := by
-  have hfsR : ∀ q : SMQuery W, (∀ p m, q ≠ .chall p m) → (∀ p, q ≠ .corrupt p) →
+  have hfsR : ∀ q : SMQuery W AD, (∀ p m, q ≠ .chall p m) → (∀ p, q ≠ .corrupt p) →
       ∀ y ∈ (OracleAdv.simOracle (smAuthFSImplAt C R G D ΔFS ΔPCS t k rkS)
         (fsIntOracle G D b) (x, u) q).support,
         FSInv k sa (y.2.1, fsStOfInt y.2.1.s.loc.done y.2.2) := by
@@ -634,7 +653,7 @@ end FSIntInvStep
 
 section FSIntHop
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct Kt : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [DecidableEq W] [DecidableEq Ct]
 
 /-- The state of the truncated hybrid that a state of the simulator of the integrity hop and a
@@ -648,7 +667,7 @@ omit [SampleableType Ct] in
 the query of `smAuthFSImplAt`, logged, with the rejection of the transitions into an unsafe
 state. -/
 theorem smAuthFSImpl_simOracle (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (rkS : RK) {U : Type} (O' : U → FSIntQuery W Ct → PMF (FSIntAns Sa Ct W × U))
     (σ : (FSSim Sc Msg RK Sa × SMAuthAux W Ct) × Bool) (u : U) (q : SMQuery W)
     (hs : σ.1.2.safe ΔFS ΔPCS k = true) :
@@ -671,7 +690,7 @@ hybrid.** Under the invariant `AuthFSInv`, each call of `smAuthFSImpl` against t
 integrity game, mapped by `fsIntAbsA`, is the call of the truncated hybrid with the root output
 `(rkS, sa)` at the epoch `k`. -/
 theorem smAuthFS_step (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (t k : ℕ) (rkS : RK) (sa : Sa)
     (z : ((FSSim Sc Msg RK Sa × SMAuthAux W Ct) × Bool) × FSIntSt Sa W Ct)
     (hz : AuthFSInv k sa z) (d : SMAuthQuery W Ct) :
@@ -775,7 +794,7 @@ theorem smAuthCut_snd {Pub Leak S' : Type} (ΔFS ΔPCS k : ℕ)
 /-- **The invariant of the simulation is kept** by every call of `smAuthFSImpl` against the
 real and the ideal integrity game. -/
 theorem smAuthFS_inv (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (rkS : RK) (sa : Sa) (b : Bool)
     (z : ((FSSim Sc Msg RK Sa × SMAuthAux W Ct) × Bool) × FSIntSt Sa W Ct)
     (hz : AuthFSInv k sa z) (d : SMAuthQuery W Ct) (y)
@@ -812,7 +831,7 @@ omit [SampleableType Ct] in
 a state with the flag cleared, every call of `smAuthFSImpl` against the ideal integrity game
 leaves the flag cleared. -/
 theorem smAuthFS_ideal_flag (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) (rkS : RK) (sa : Sa)
     (z : ((FSSim Sc Msg RK Sa × SMAuthAux W Ct) × Bool) × FSIntSt Sa W Ct)
     (hz : AuthFSInv k sa z) (hf : z.1.2 = false) (d : SMAuthQuery W Ct) (y)
@@ -881,14 +900,14 @@ end FSIntHop
 
 section FSIntGame
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct Kt : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [DecidableEq W] [DecidableEq Ct] [Fintype RK] [Nonempty RK] [Fintype Sa]
   [Nonempty Sa]
 
 /-- **Eager sampling of the root output at the epoch `k`.** The run of the truncated hybrid with
 a uniform root output at the epoch `k` is the run with the root output drawn in advance. -/
 theorem smAuthHop_run_eager_unif (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS t k : ℕ) {α : Type}
     (A : OracleAdv (SMAuthQuery W Ct) (SMAuthAns Msg Ct (SMPartySt Sc RK Sa) W) α)
     (s : (SMSt Sc Msg RK Sa × SMAuthAux W Ct) × Bool) :
@@ -931,7 +950,7 @@ omit [SampleableType Ct] [Fintype Sa] [Nonempty Sa] in
 /-- Running the FS-AEAD integrity reduction against an oracle is running the adversary against
 the composed oracle from the drawn initial state, with the flag of a forgery as output. -/
 theorem smAuthFSRed_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS k : ℕ) (initP : PMF (Msg × Sc × Sc)) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa))
     {U : Type} (O' : U → FSIntQuery W Ct → PMF (FSIntAns Sa Ct W × U)) (u : U) :
     (OracleAdv.run O' (smAuthFSRed C R G D ΔFS ΔPCS k initP A) u).map Prod.fst =
@@ -947,13 +966,14 @@ theorem smAuthFSRed_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
   simp [PMF.map_bind, PMF.bind_map, Function.comp_def, PMF.pure_map]
   rfl
 
-omit [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK] [Fintype Sa]
-  [Nonempty Sa] in
-/-- The invariant holds at the initial state of the simulation. -/
-theorem authFSInv_init (k : ℕ) (rk : RK) (i : Msg × Sc × Sc) (sa : Sa) :
+omit [SampleableType W] [SampleableType Ct] [DecidableEq W] [Fintype RK] [Nonempty RK]
+  [Fintype Sa] [Nonempty Sa] in
+/-- The invariant holds at the initial state of the simulation, at associated data in `AD`. -/
+theorem authFSInv_init {AD : Type} [DecidableEq AD] (k : ℕ) (rk : RK) (i : Msg × Sc × Sc)
+    (sa : Sa) :
     AuthFSInv k sa ((((⟨smInit i rk, fun _ => false, fun _ => false, false⟩ :
-      FSSim Sc Msg RK Sa), (SMAuthAux.init : SMAuthAux W Ct)), false),
-        (⟨sa, sa, [], false⟩ : FSIntSt Sa W Ct)) where
+      FSSim Sc Msg RK Sa), (SMAuthAux.init : SMAuthAux W Ct AD)), false),
+        (⟨sa, sa, [], false⟩ : FSIntSt Sa W Ct AD)) where
   fs := fsInv_init k rk i sa
   len := rfl
   dec _ _ _ := by simp [FSIntSt.logDec, SMAuthAux.logDec, SMAuthAux.init]
@@ -967,7 +987,7 @@ initialisation that is the lift of `initP`, the real FS-AEAD integrity game of `
 the game `smAuthRootIdealGame` after the root hop. -/
 theorem smAuthFS_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (k : ℕ)
     (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     fsaead_int_game G D false (smAuthFSRed C R G D ΔFS ΔPCS k initP A) =
@@ -1016,7 +1036,7 @@ theorem smAuthFS_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
 /-- **The ideal side of the integrity hop.** Against the integrity game with decryption from its
 log, the reduction `smAuthFSRed` never outputs `true`. -/
 theorem smAuthFS_ideal_eq_zero (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     (ΔFS ΔPCS k : ℕ) (initP : PMF (Msg × Sc × Sc)) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     prTrue (fsaead_int_game G D true (smAuthFSRed C R G D ΔFS ΔPCS k initP A)) Heap.empty = 0 := by
   unfold fsaead_int_game
@@ -1039,7 +1059,7 @@ the epoch `k` in `smAuthRootIdealGame` is at most the FS-AEAD integrity advantag
 at the reduction `smAuthFSRed C R G D ΔFS ΔPCS k initP A`. -/
 theorem smAuthRootIdealGame_le_fsint (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt)
     {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (k : ℕ)
     (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     prTrue (smAuthRootIdealGame C R G D ΔFS ΔPCS k A) Heap.empty ≤
@@ -1053,7 +1073,7 @@ end FSIntGame
 
 section FSIntMain
 
-variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+variable {Sc Msg Key Rand RK Sa W Ct Kt : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [DecidableEq W] [DecidableEq Ct] [Fintype RK] [Nonempty RK] [Fintype Key]
   [Nonempty Key] [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq Key]
 
@@ -1068,7 +1088,7 @@ theorem acdAuthSM_truncGame_le_fsint (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct W Kt) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
     (hPCS : 1 ≤ ΔPCS) (k : ℕ) (A : SMAuthAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     prTrue (smAuthTruncGame (acdAuthSM C R G D) ΔFS ΔPCS k A) Heap.empty ≤
       CKA_Corrupt_Advantage C ΔFS ΔPCS (smAuthCKARed R G D ΔFS ΔPCS k A) +

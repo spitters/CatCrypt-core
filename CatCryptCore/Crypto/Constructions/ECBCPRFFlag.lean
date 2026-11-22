@@ -93,7 +93,7 @@ theorem toOuterMeasure_eq_of_subset_false {α σ : Type} (p₁ p₂ : PMF (α ×
 theorem toOuterMeasure_add_compl {α : Type} (p : PMF α) (S : Set α) :
     p.toOuterMeasure S + p.toOuterMeasure Sᶜ = 1 := by
   simp only [PMF.toOuterMeasure_apply]
-  rw [← ENNReal.tsum_add]
+  rw [← tsum_add]
   simp only [Set.indicator_self_add_compl_apply, PMF.tsum_coe]
 
 /-- Two distributions that agree on every outcome with the flag cleared give the
@@ -121,7 +121,7 @@ theorem toOuterMeasure_le_add_flag {α σ : Type} (p₁ p₂ : PMF (α × (σ ×
       p₂.toOuterMeasure {x | x.1 ∈ A} + p₂.toOuterMeasure {x | x.2.2 = true} := by
   refine (MeasureTheory.measure_le_inter_add_sdiff p₁.toOuterMeasure {x | x.1 ∈ A}
     {x | x.2.2 = false}).trans (add_le_add ?_ ?_)
-  · rw [toOuterMeasure_eq_of_subset_false p₁ p₂ h _ fun x hx => hx.2]
+  · rw [toOuterMeasure_eq_of_subset_false p₁ p₂ h _ fun x hx => Set.mem_of_mem_inter_right hx]
     exact MeasureTheory.measure_mono Set.inter_subset_left
   · rw [← toOuterMeasure_flag_eq p₁ p₂ h]
     refine MeasureTheory.measure_mono fun x hx => ?_

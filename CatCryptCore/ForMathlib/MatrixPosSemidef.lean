@@ -5,6 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
+public import Mathlib.Analysis.Matrix.PosDef
 public import Mathlib.LinearAlgebra.Matrix.PosDef
 public import Mathlib.Topology.Instances.Matrix
 public import Mathlib.Analysis.Complex.Basic
@@ -21,6 +22,8 @@ belongs in `Mathlib/Analysis/Complex/Norm.lean`.
 
 * `Matrix.isClosed_posSemidef` — the positive semidefinite `d × d` complex
   matrices form a closed set.
+* `Matrix.PosSemidef.eq_zero_of_trace_re_eq_zero` — a positive semidefinite matrix whose trace
+  has zero real part is zero.
 * `Complex.re_le_sqrt_of_normSq_le` — `Re z ≤ √c` whenever `|z|² ≤ c`.
 -/
 
@@ -43,6 +46,13 @@ theorem isClosed_posSemidef {d : ℕ} :
   exact (isClosed_eq continuous_id.matrix_conjTranspose continuous_id).inter
     (isClosed_iInter fun x => isClosed_le continuous_const
       (continuous_const.dotProduct (continuous_id.matrix_mulVec continuous_const)))
+
+/-- A positive semidefinite complex matrix whose trace has zero real part is zero. -/
+theorem PosSemidef.eq_zero_of_trace_re_eq_zero {n : Type*} [Fintype n]
+    {A : Matrix n n ℂ} (hA : A.PosSemidef) (h : A.trace.re = 0) : A = 0 := by
+  refine hA.trace_eq_zero_iff.mp (Complex.ext ?_ ?_)
+  · simpa using h
+  · simpa using (Complex.nonneg_iff.mp hA.trace_nonneg).2.symm
 
 end Matrix
 

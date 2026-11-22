@@ -47,7 +47,6 @@ Chapter numbers follow the online edition of the book.
 | 10 | MACs | `MAC` | `bijMAC_euf_cma_adv_of_isQueryBound_zero`, `boolXorMAC_euf_cma_adv_of_isQueryBound_zero` | Bijection-family MAC: EUF-CMA advantage without tag queries exactly `1/\|Tag\|` |
 | 10 | MAC from a PRF | `PRFMAC` | `prfMAC_euf_cma_adv_le`, `mac_forgery_advantage_le_half` | For every adaptive EUF-CMA forger `A`, the forgery probability against the MAC `m ↦ F k m` is at most the PRF advantage of the reduction `prfMacRed A` plus one over the number of tags; over `Bool`, a single forgery on an unqueried message has advantage at most 1/2 |
 | 12 | Encrypt-then-MAC | `EncryptThenMAC` | `EtM_correct`, `boolEtM_perfect_indcpa` | Generic EtM combinator preserves correctness; perfect IND-CPA of the XOR instance |
-| 12 | Encrypt-then-MAC under CCA | `EtMCCA` | `boolEtM_indcca_reduces` | IND-CCA advantage of the XOR instance equals its MAC-integrity gaps (the IND-CPA term is 0) |
 | 12 | Universal hashing | `UniversalHash` | `boolPairwiseHash_is_universal`, `boolPairwiseHash_mac_security` | A 1/2-universal family over `Bool`; one-time forgery advantage ≤ 1/2 |
 | 13 | Signatures | `Schnorr` | `schnorr_special_soundness`, `fork_success_ge`, `dlFromForking_correct` | Schnorr: special soundness; fork success ≥ `acc² − acc/p` by the core forking lemma; extraction returns the discrete log |
 | 14 | Diffie–Hellman | `DiffieHellman` | `ka_advantage_eq_ddh` | Key-indistinguishability advantage equals the DDH advantage of an explicit reduction |
@@ -80,15 +79,14 @@ OWF, PRP, RSA and others) are defined in `Crypto/Assumptions/`.
 |---|---|---|---|
 | Basic Hash (RFID protocol) | `BasicHash` | `auth_zero_advantage_xor`, `unlink_real_always_true`, `unlink_ideal_not_always_true` | Perfect authentication for a bijection-family hash; for the XOR hash the two unlinkability games are distinguishable |
 | Commitments | `Commitment` | `maskComm_perfect_hiding`, `idComm_perfectly_binding` | A perfectly hiding and a perfectly binding commitment over `Bool` |
-| Σ-protocols | `SigmaProtocol` | `simpleSigma_shvzk`, `simpleSigma_special_sound`, `simpleSigma_hiding`, `simpleSigma_binding` | Completeness, perfect SHVZK and special soundness; the derived commitment is hiding and binding |
+| Σ-protocols | `Sigma` | `simpleSigma_completeness`, `simpleSigma_shvzk`, `simpleSigma_special_sound`, `simpleSigma_binding` | Completeness, perfect SHVZK and special soundness; two openings of the derived commitment under different challenges determine a witness |
 | Σ-protocols with prover state | `Sigma` | `simpleSigma_shvzk_given`, `simpleSigma_shvzk`, `simpleSigma_special_sound` | The same properties for a stateful prover, with a fixed or a sampled challenge |
 | Chaum–Pedersen | `ChaumPedersen`, `GroupParam` | `chaumPedersen_SHVZK_visible`, `chaumPedersen_special_soundness`, `chaumPedersen_uc_secure` | Equality of discrete logarithms: SHVZK, special soundness, UC emulation with error 0 |
 | Oblivious transfer | `OT` | `otEnc_message_independent`, `ot_sender_secure`, `receiver_security` | Naor–Pinkas: per-instance sender privacy when `d ≠ ab`; sender privacy of the whole transcript ≤ `1/\|Exp\|` (the probability of `c = ab`); receiver privacy ≤ two DDH advantages |
 | Coin tossing | `CoinToss` | `coinToss_eq` | The sum of two uniform elements of `ZMod p` is uniform |
 | Pedersen commitments | `Commitments/Pedersen`, `Commitments/CommitmentScheme` | `pedersen_perfect_hiding`, `pedersen_binding_le_dlog`, `pedersen_hiding_uc` | Perfect hiding; binding ≤ DL advantage of an explicit reduction; UC hiding with error 0 |
-| KZG commitments | `Commitments/KZG/*`, `Commitments/PolyCommitScheme` | `KZG_knowledge_sound`, `honestAGMOutput_checks` | Knowledge soundness in the algebraic group model: ≤ `(t + 1)` · t-SDH advantage of an explicit reduction |
+| KZG commitments | `Commitments/KZG/*`, `Commitments/PolyCommitScheme` | `KZG_knowledge_sound`, `honestAGMOutput_checks` | Knowledge soundness in the algebraic group model against adversaries that receive the G₁ powers and not the verification key: ≤ `(t + 1)` · advantage of an explicit reduction in the t-SDH game on the G₁ powers |
 | Nested hybrids | `PKE/*` | `Adv_MT_CPA_OT`, `Adv_MI_MT_CPA_nested` | Larsen–Schürmann (CSF 2025): many-time ≤ `q·ε`, multi-instance ≤ `n·q·ε`, from per-step hypotheses on the SLIDE adversaries |
-| Cryptobox (NaCl `crypto_box`) | `Cryptobox/*` | `pkae_game_hopping`, `cryptobox_security_full` | PKAE ≤ `2·ε_pkey + ε_nike + ε_ae`; the PKEY hops are proved, the NIKE and AE hop bounds are hypotheses |
 | Hybrid argument | `DeepHybrid` | `two_instance_advantage_bound`, `three_instance_triangle` | Hybrid ladders of shallow games for XOR encryption |
 
 ## Proof-ladders benchmark
@@ -100,7 +98,6 @@ fixed set of challenges. The modules above cover the following.
 |---|---|---|---|
 | Symmetric | PRF cascade | `PRF` | `cascade_prf_bound`: two adaptive PRF advantages of explicit reductions plus `q(q−1)/2N` (switching lemma), no hypotheses |
 | Symmetric | PRG triple | `PRG` | `triple_prg_bound`: two PRG advantages of explicit reductions, no hypotheses |
-| Symmetric | Encrypt-then-MAC | `EtMCCA` | `boolEtM_indcca_reduces`: IND-CCA reduced to MAC integrity |
 | Asymmetric | KEM-DEM | `KEMDEM` | `pke_security`: three explicit reductions, no hypotheses |
 | Protocol | Basic Hash | `BasicHash` | Perfect authentication and the unlinkability counterexample |
 

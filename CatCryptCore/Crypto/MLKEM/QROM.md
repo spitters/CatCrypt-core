@@ -2,9 +2,10 @@
 
 This document describes the machine-checked proof that ML-KEM-512 (FIPS 203) is
 IND-CCA secure against quantum adversaries in the quantum random-oracle model
-(QROM). Every term of the bound is either a proved number or the advantage of an
-explicit reduction against quantum module-LWE. The proof uses the three standard
-Lean axioms.
+(QROM). The bound is an expression in the query counts, proved numbers, the
+correctness error δ of the scheme and the advantages of explicit reductions
+against quantum module-LWE and extended module-LWE. The proof uses the three
+standard Lean axioms.
 
 ## 1. The theorems
 
@@ -58,9 +59,10 @@ The terms are as follows.
 - **Correctness.** `δ` is [`corrWorst`](../PKE/Games.lean), the scheme's
   decryption-failure probability: the expectation over key pairs of the largest
   failure probability over messages, the δ-correctness of
-  Hofheinz–Hövelmanns–Kiltz. It is a defined quantity of the scheme. FIPS 203
-  quotes `2^-139` for it, computed by numerical convolution of the noise
-  distributions.
+  Hofheinz–Hövelmanns–Kiltz. It stays in the theorem as a defined quantity of
+  the scheme and enters as `√δ` times the query count. The value `2^-139` that
+  FIPS 203 quotes for it, computed by numerical convolution of the noise
+  distributions, is not part of the proof.
 - **Coin collision.** `2^-137` bounds the key-averaged probability that two
   independent encryption seeds produce the same ciphertext (§3).
 - **Implicit-rejection key.** `2^-256` is the probability of guessing the

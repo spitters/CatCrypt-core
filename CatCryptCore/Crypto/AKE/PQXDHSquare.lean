@@ -49,14 +49,15 @@ the game `simGame G P` (`simWorld_realizes`). The square is the oracle-game boun
 bound, at the environment `Z`, the advantage of the oracle adversary
 `OProt.oracle.reduction Z` between `realGame G P` and `simGame G P`.
 
-The hops that bound this advantage take one of two routes per session. The route of X3DH: when
+The hops that bound this advantage use two routes. The route of X3DH: when
 the session's party and peer are honest, the Diffie–Hellman values of its input are not
 computable by the adversary under the gap Diffie–Hellman assumption on `G`, so its input is not
 queried to the key derivation and the key is uniform. The route of the KEM: when the responder's
 KEM key pair is honest, the shared secret of the initiator's encapsulation is indistinguishable
 from a uniform one under the IND-CCA security of `P` (`KEM.Games.indccaAdvantage`; the
 decapsulation oracle answers the responder's decapsulations of other encapsulations), so the
-input is again unqueried. Either route bounds the distance at a session.
+input is again unqueried. The route of X3DH bounds every such session. The route of the KEM
+bounds only matched sessions, so a bound of the square contains the gap Diffie–Hellman term.
 
 ## Main definitions
 

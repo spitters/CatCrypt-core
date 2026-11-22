@@ -9,7 +9,7 @@ public import CatCryptCore.Crypto.Messaging.TripleRatchetPQXDH
 public import CatCryptCore.Crypto.AKE.PQXDHSquareKEM
 
 /-!
-# The post-quantum bounds of the PQXDH Signal stack
+# The PQXDH Signal stack with the KEM route at matched sessions
 
 The triple ratchet of this module is the root-mixed product ratchet (the Diffie–Hellman and KEM
 CKAs combined in one root step through a dual PRF). The Triple Ratchet of Dodis, Jost,
@@ -26,12 +26,15 @@ sum and the KEM bound `kemBound`. The bad event at matched sessions, whose encap
 from the partner, is bounded by the IND-CCA advantage of explicit reductions, the correctness
 error of the KEM and the number of queries over the number of shared secrets, without any
 Diffie–Hellman assumption; the bad event at unmatched sessions stays on the gap Diffie–Hellman
-route. The compositions are `stack_realizes_FSC_of` and `stack_realizes_FSM_of` at
-`pqxdh_realizesSim_min`.
+route. Because the gap Diffie–Hellman sum is outside the minimum, `minBoundP` is at least the
+bound `gdhBoundP` of the gap Diffie–Hellman statements, and the theorems of this module need the
+gap Diffie–Hellman assumption. The bounds also contain the probability that a key is read twice,
+which is `1` when both partners of an unexposed session always read their key. The compositions
+are `stack_realizes_FSC_of` and `stack_realizes_FSM_of` at `pqxdh_realizesSim_min`.
 
 ## Main definitions
 
-* `pqxdhStackBoundMin`: the bound of the PQXDH Signal stack with the minimum over the two routes.
+* `pqxdhStackBoundMin`: the bound of the PQXDH Signal stack at `minBoundP`.
 * `pqxdhFsmBoundMin`: `fsmBoundOf` at the bound `minBoundP`.
 
 ## Main results
@@ -77,7 +80,7 @@ variable {S W K PK SK SS C V : Type} [Field S] [Fintype S] [SampleableType W] [F
   [Nonempty K] [Inhabited K] [DecidableEq SS] [Fintype SS] [Nonempty SS] [DecidableEq C]
   [DecidableEq PK] (P : Scheme PK SK SS C) (G : DHGroup S W)
 
-/-- The bound of the PQXDH Signal stack with the minimum over the two routes at an environment
+/-- The bound of the PQXDH Signal stack with the KEM route at matched sessions at an environment
 `Z`: the bound `minBoundP` of the PQXDH square at the environment reduced through the key layer,
 and `scBound` at the environment reduced through the simulator. -/
 noncomputable def pqxdhStackBoundMin (I : Finset SessionId) (N : Finset PartyId) (q : ℕ)
@@ -89,8 +92,8 @@ noncomputable def pqxdhStackBoundMin (I : Finset SessionId) (N : Finset PartyId)
         (keyLayer_noFail fun k => (hR k).2)).reduceEnv Z)) +
     scBound realV idealV ((simSCOver (simProt (K := K) P G) pqFwd).reduceEnv (.inr .idle) Z)
 
-/-- **The PQXDH Signal stack realizes the ideal secure channel, with the minimum over the two
-routes** (genuine UC).
+/-- **The PQXDH Signal stack realizes `F_SC`, with gap Diffie–Hellman plus the minimum of gap
+Diffie–Hellman and the KEM route** (genuine UC).
 
 *Ideal functionality.* `F_SC realV idealV`, as in `pqxdh_stack_realizes_FSC`.
 
@@ -126,7 +129,7 @@ variable {S W RK PKp SKp SSp Cp Sst Pub Rand Wd Ct Leak V : Type} [Field S] [Fin
   [SampleableType W] [Fintype RK] [Nonempty RK] [Inhabited RK] [DecidableEq SSp]
   [Fintype SSp] [Nonempty SSp] [DecidableEq Cp] [DecidableEq PKp] [Fintype Rand] [Nonempty Rand]
 
-/-- **The bound of PQXDH followed by the ratchet layer with the minimum over the two routes**:
+/-- **The bound of PQXDH followed by the ratchet layer with the KEM route at matched sessions**:
 `fsmBoundOf` at the bound `minBoundP` of the PQXDH square and the PQXDH simulator with the
 forwarding data `pqFwd`. -/
 noncomputable def pqxdhFsmBoundMin (KP : Scheme PKp SKp SSp Cp) (G : DHGroup S W)
@@ -137,8 +140,8 @@ noncomputable def pqxdhFsmBoundMin (KP : Scheme PKp SKp SSp Cp) (G : DHGroup S W
   fsmBoundOf (fun _ Z => minBoundP KP G I N q (OProt.oracle.reduction Z))
     (simProt (K := RK) KP G) pqFwd M ini hini Sch t n ΔFS ΔPCS ζ Z
 
-/-- **PQXDH followed by the ratchet layer realizes secure messaging with corruption, with the
-minimum over the two routes** (genuine UC).
+/-- **PQXDH followed by the ratchet layer realizes `F_SM`, with gap Diffie–Hellman plus the
+minimum of gap Diffie–Hellman and the KEM route** (genuine UC).
 
 *Ideal functionality.* `F_SM M ini Sch t n ΔFS ΔPCS`, as in `pqxdh_realizes_FSM`.
 
@@ -177,8 +180,9 @@ variable {S W : Type} [Field S] [Fintype S] [SampleableType W] (G : DHGroup S W)
   [Inhabited K] [Fintype Rk] [Nonempty Rk] [SampleableType Wd]
   [SampleableType Ct] [Fintype RK] [Nonempty RK] [Inhabited RK]
 
-/-- **PQXDH followed by the triple ratchet realizes secure messaging with corruption, with the
-minimum over the two routes** (genuine UC): `pqxdh_realizes_FSM_min` at the triple ratchet
+/-- **PQXDH followed by the triple ratchet realizes `F_SM`, with gap Diffie–Hellman plus the
+minimum of gap Diffie–Hellman and the KEM route** (genuine UC): `pqxdh_realizes_FSM_min` at the
+triple ratchet
 `acdSM (prodCKA (dhCKA Gc) (kemCKA KEM)) R Ch D` keyed through `acdIni`, for a ratchet KEM whose
 key generation and encapsulation neither touch the heap nor fail.
 
@@ -191,8 +195,8 @@ triple ratchet, with the PQXDH session key as the first root key.
 *Simulator.* `chanSim (simProt KP G) pqFwd`, the PQXDH channel simulator.
 
 *Bound.* `pqxdhFsmBoundMin` over the triple ratchet: the bound `minBoundP` of the PQXDH square,
-whose matched sessions are bounded through the IND-CCA security of the PQXDH KEM `KP` and whose
-unmatched sessions through gap Diffie–Hellman, and the corruption advantages of the triple
+which is the gap Diffie–Hellman sum for the unmatched sessions plus, for the matched sessions,
+the minimum of that sum and the KEM bound of `KP`, and the corruption advantages of the triple
 ratchet at the reductions `smHopRed i j`, plus the probability that a key is read twice. -/
 theorem pqxdh_tripleRatchet_realizes_FSM_min (KP : Scheme PKp SKp SSp Cp) (I : Finset SessionId)
     (N : Finset PartyId) (q : ℕ)

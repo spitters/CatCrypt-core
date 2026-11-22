@@ -210,7 +210,7 @@ omit [DecidableEq ι] in
 private theorem conjTranspose_mul_mul_diag_eq_quadForm
     (U N : Matrix ι ι ℂ) (i : ι) :
     (Uᴴ * N * U) i i = star (fun k => U k i) ⬝ᵥ N.mulVec (fun k => U k i) := by
-  simp only [mul_apply, conjTranspose_apply, mulVec, dotProduct, Pi.star_apply]
+  simp only [Matrix.mul_apply, conjTranspose_apply, mulVec, dotProduct, Pi.star_apply]
   simp_rw [Finset.sum_mul, Finset.mul_sum]
   rw [Finset.sum_comm]
   congr 1; ext k; congr 1; ext j; ring

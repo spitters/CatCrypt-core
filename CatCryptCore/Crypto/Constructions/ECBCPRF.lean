@@ -91,7 +91,7 @@ theorem uniform_prob_fresh_le (X : (D → R) → Prop) (p : (D → R) → D)
   set E : Finset (D → R) := Finset.univ.filter fun f => X f ∧ f (p f) ∈ V f with hE
   have hcardE : Fintype.card ↥{f : D → R | X f ∧ f (p f) ∈ V f} = E.card := by
     rw [hE, ← Fintype.card_subtype]
-    rfl
+    exact Fintype.card_congr (Equiv.refl _)
   set T : Finset ((D → R) × R) := Finset.univ.filter fun x => X x.1 ∧ x.2 ∈ V x.1 with hT
   have hET : E.card * Fintype.card R ≤ T.card * 1 := by
     refine Finset.card_mul_le_card_mul (fun g x => Function.update x.1 (p x.1) x.2 = g) ?_ ?_

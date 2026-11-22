@@ -45,7 +45,7 @@ takes
 the X3DH simulator as a parameter, so that its `start` step is a costed binder and its costed
 form is that of `X3DHSquareTimed.lean`.
 
-No module imports this file.
+Only the leaf `AKE/TLSStack.lean` imports this file, for the costed form of `simSCOver`.
 
 ## Main results
 

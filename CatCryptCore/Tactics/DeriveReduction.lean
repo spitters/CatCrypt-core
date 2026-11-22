@@ -2733,7 +2733,7 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
           return acc ++ (← CatCrypt.Tactics.DeriveTimed.sumInductsOf fd.fty)
         let sumOpt := " ".intercalate (sums.toList.map (·.toString (escape := false)))
         withTheReader Core.Context
-          (fun ctx => { ctx with options := ctx.options.set `derive_timed.sumInducts sumOpt })
+          (fun ctx => ctx.setOptions (ctx.options.set `derive_timed.sumInducts sumOpt))
           do
         -- The costed forms of the trees at the plain interface, and the assembly.
         let plainPath : TermElabM Unit := do

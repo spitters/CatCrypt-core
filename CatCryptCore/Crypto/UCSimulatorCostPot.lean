@@ -393,19 +393,19 @@ noncomputable def ofIndexed (Inv : ℕ → σ → Prop) (h0 : Inv 0 A.init)
     (hE : ∀ e, 1 ≤ gE e) (hO : ∀ o, 1 ≤ gO o) : A.PotentialBound gE gO 0 0 a b :=
   ofZero (fun s => ∃ i, Inv i s) (fun s => sInf {i | Inv i s}) ⟨0, h0⟩
     (fun s e hs => by
-      obtain ⟨ht, hr⟩ := hstart _ s e (Nat.sInf_mem hs)
+      obtain ⟨ht, hr⟩ := hstart _ s e (Nat.sInf_mem (show Set.Nonempty {i | Inv i s} from hs))
       refine ⟨ht, SPTree.Timed.allRet_mono (fun y hy => ⟨⟨_, hy⟩, ?_⟩) _ hr⟩
       have := Nat.sInf_le (show sInf {i | Inv i s} + 1 ∈ {i | Inv i y.1} from hy)
       have := hE e
       omega)
     (fun s o hs => by
-      obtain ⟨ht, hr⟩ := hresume _ s o (Nat.sInf_mem hs)
+      obtain ⟨ht, hr⟩ := hresume _ s o (Nat.sInf_mem (show Set.Nonempty {i | Inv i s} from hs))
       refine ⟨ht, SPTree.Timed.allRet_mono (fun y hy => ⟨⟨_, hy⟩, ?_⟩) _ hr⟩
       have := Nat.sInf_le (show sInf {i | Inv i s} + 1 ∈ {i | Inv i y.1} from hy)
       have := hO o
       omega)
     (fun s o hs => by
-      obtain ⟨ht, hr⟩ := hfinish _ s o (Nat.sInf_mem hs)
+      obtain ⟨ht, hr⟩ := hfinish _ s o (Nat.sInf_mem (show Set.Nonempty {i | Inv i s} from hs))
       refine ⟨ht, SPTree.Timed.allRet_mono (fun y hy => ⟨⟨_, hy⟩, ?_⟩) _ hr⟩
       have := Nat.sInf_le (show sInf {i | Inv i s} + 1 ∈ {i | Inv i y.1} from hy)
       have := hO o

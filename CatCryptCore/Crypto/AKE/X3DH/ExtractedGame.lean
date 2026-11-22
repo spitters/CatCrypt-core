@@ -28,7 +28,8 @@ the group elements by `encW`, and the results of the extracted functions are dec
   key is `k.derive` at the decoded arguments of the key derivation of `X3dh.respond_checked`
   (`respKdfInp`, `respond_checked_key`);
 * a query of the adversary to the key derivation is `k.query`.
-A rejection of the input check leaves the session without key.
+A rejection of the input check leaves the session without key. The result of the signature
+verification of `X3dh.initiate` is dropped: a key is returned whatever it is.
 
 `extGame encCtx encS encW decW decK` is the game at the fixed key derivation `extKDF`, the
 extracted `X3dh.kdf` at encoded inputs decoded by `decK`.
@@ -41,7 +42,9 @@ gap Diffie–Hellman bound of the square model (`extSysK_lazy_realizesSim_gapDH`
 left inverse of `encK`, `extKDF` is `H` (`extKDF_eq`), so the game `extGame` is
 `realGameK (fixedKDF H) (x3dhAlg G)` (`extGame_eq`, `extSys_eq`), and its session keys are the
 decoded keys of `X3dh.initiate_checked` and `X3dh.respond_checked` (`extKDF_initKdfInp`,
-`extKDF_respKdfInp`).
+`extKDF_respKdfInp`). These hypotheses exclude X25519, where `encW` is the u-coordinate: it
+identifies `T` and `-T`, so it has no left inverse, and no clamped scalar has the neutral element
+as public key, which `X3dhSquareHom.dh_pub` requires at the scalar `0`.
 
 ## Main definitions
 

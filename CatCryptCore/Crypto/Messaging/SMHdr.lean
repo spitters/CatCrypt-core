@@ -102,12 +102,13 @@ def SMHdrSt.join {Sc RK Sa Msg : Type} (tr : CKAParty → SMHdrData Msg)
 section Construction
 
 variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand]
-  [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
+  [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK] {Kt : Type}
+  [SampleableType Kt]
 
 /-- The ACD construction at the header data `h`: `acdSMAD` with associated data
 `hdrAD ad h.hdr` of the AEAD. -/
 noncomputable def acdHdrBase (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (hdrAD : W → (Msg × ℕ) × ℕ → AD) (h : SMHdrData Msg) :
     SMScheme (SMPartySt Sc RK Sa) Msg Rand W Ct (SMPartySt Sc RK Sa) :=
   acdSMAD C R G D fun _ ad => hdrAD ad h.hdr
@@ -119,7 +120,7 @@ sets `N` to `0`; receiving is the receiving of `acdSMAD`; sending from header da
 sending of `acdSMAD` with associated data `hdrAD ad h.hdr` of the AEAD, and advances `N`; a
 corruption reveals the state with the header data. -/
 noncomputable def acdHdrSM (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (hdrAD : W → (Msg × ℕ) × ℕ → AD) :
     SMScheme (SMHdrSt Sc RK Sa Msg) Msg Rand W Ct (SMHdrSt Sc RK Sa Msg) where
   init := SPComp.bind C.init fun i => SPComp.bind (SPComp.sample RK) fun rk =>
@@ -247,13 +248,15 @@ end Join
 section Game
 
 variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand]
-  [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
+  [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK] {Kt : Type}
+  [SampleableType Kt]
 
+omit [SampleableType Kt] in
 /-- **The oracle over the construction with headers at a joined state** is the oracle over the
 ACD construction at the header data of the party of the query, with the corruption answer
 completed by the header data and the header data of the party stepped by the answer. -/
 theorem smSchemeOracle_acdHdrSM_join (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (hdrAD : W → (Msg × ℕ) × ℕ → AD) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
     (tr : CKAParty → SMHdrData Msg) (σ : SMSchemeSt (SMPartySt Sc RK Sa) Msg)
     (d : SMQuery W) :
@@ -313,11 +316,11 @@ theorem smSchemeOracle_acdHdrSM_join (C : CKADef Sc Msg Key) [CKACoins C Rand]
     · simp only [hc, Bool.false_eq_true, ↓reduceIte, SMSchemeAns.map, SMHdrData.step,
         Function.update_eq_self]
 
-omit [Fintype RK] [Nonempty RK] in
+omit [Fintype RK] [Nonempty RK] [SampleableType Kt] in
 /-- The composite oracle of the wrapper against the oracle of `sm_corrupt_game` asks the query
 with the associated data of the header of its party. -/
 theorem simOracle_smHdrImpl (C : CKADef Sc Msg Key) [CKACoins C Rand]
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (hdrAD : W → (Msg × ℕ) × ℕ → AD) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
     (tr : CKAParty → SMHdrData Msg) (s : SMSt Sc Msg RK Sa) (d : SMQuery W) :
     OracleAdv.simOracle (smHdrImpl hdrAD) (smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R))
@@ -330,10 +333,11 @@ theorem simOracle_smHdrImpl (C : CKADef Sc Msg Key) [CKACoins C Rand]
     PMF.map_bind, PMF.pure_map]
   rfl
 
+omit [SampleableType Kt] in
 /-- **The step of the reduction.** Under `ACDInv`, each call of the composite oracle of the
 wrapper, with the state joined, is the call of the oracle over `acdHdrSM`. -/
 theorem acdHdr_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (hdrAD : W → (Msg × ℕ) × ℕ → AD)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (hdrAD : W → (Msg × ℕ) × ℕ → AD)
     (J : Sc → Sc → Prop) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
     (x : (CKAParty → SMHdrData Msg) × SMSt Sc Msg RK Sa) (hs : ACDInv C R J x.2)
     (d : SMQuery W) :
@@ -360,6 +364,7 @@ theorem smHdr_join_init (i : Msg × Sc × Sc) (rk : RK) :
   funext q
   cases q <;> rfl
 
+omit [SampleableType Kt] in
 /-- **The corruption game over `acdHdrSM` is `sm_corrupt_game` at the wrapper.** For a CKA `C`
 correct along `J`, with an initialisation that is the lift of `initP` and initial states related
 by `J`, the corruption game over the ACD construction with headers against `A` is the game
@@ -367,7 +372,7 @@ by `J`, the corruption game over the ACD construction with headers against `A` i
 theorem smCorruptGame_acdHdr (C : CKADef Sc Msg Key) [CKACoins C Rand] {J : Sc → Sc → Prop}
     (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (hdrAD : W → (Msg × ℕ) × ℕ → AD)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (hdrAD : W → (Msg × ℕ) × ℕ → AD)
     (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : SMSchemeAdv Msg W Ct (SMHdrSt Sc RK Sa Msg)) :
     smCorruptGame (acdHdrSM C R G D hdrAD) ΔFS ΔPCS ideal A =
       sm_corrupt_game C R G D ΔFS ΔPCS ideal (A.toHdr hdrAD) := by
@@ -392,12 +397,13 @@ theorem smCorruptGame_acdHdr (C : CKADef Sc Msg Key) [CKACoins C Rand] {J : Sc �
   rw [OracleAdv.mapQueryAnswer_id_id] at h
   exact h
 
+omit [SampleableType Kt] in
 /-- **The advantage of an adversary against `acdHdrSM`** is the advantage of the wrapper
 adversary `A.toHdr hdrAD` in `sm_corrupt_game` with associated data in `AD`. -/
 theorem acdHdrSM_corruptAdvantage_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     {J : Sc → Sc → Prop} (hJ : CKACorrect C J) (initP : PMF (Msg × Sc × Sc))
     (hinit : C.init = liftPMF initP) (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (hdrAD : W → (Msg × ℕ) × ℕ → AD) (ΔFS ΔPCS : ℕ)
     (A : SMSchemeAdv Msg W Ct (SMHdrSt Sc RK Sa Msg)) :
     (acdHdrSM C R G D hdrAD).corruptAdvantage ΔFS ΔPCS A =
@@ -411,7 +417,7 @@ section Prim
 
 variable {Sc Msg Key Rand RK Sa W Ct AD : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key] [Fintype Sa]
-  [Nonempty Sa] [DecidableEq RK] [DecidableEq Key] [DecidableEq AD]
+  [Nonempty Sa] [DecidableEq RK] [DecidableEq Key] [DecidableEq AD] {Kt : Type} [SampleableType Kt]
 
 /-- **The ACD construction with message headers from CKA, PRF-PRNG, PRG and AEAD security.**
 For a CKA correct along `J` with a sound explicit-randomness sending algorithm, `2 ≤ ΔFS`,
@@ -423,7 +429,7 @@ theorem acdHdrSM_corruptAdvantage_le_prim (C : CKADef Sc Msg Key) [CKACoins C Ra
     (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (hdrAD : W → (Msg × ℕ) × ℕ → AD)
+    (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (hdrAD : W → (Msg × ℕ) × ℕ → AD)
     {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS)
     (A : SMSchemeAdv Msg W Ct (SMHdrSt Sc RK Sa Msg)) (q : ℕ)
     (hA : ∀ t T, (A.play t T).IsQueryBound q) :

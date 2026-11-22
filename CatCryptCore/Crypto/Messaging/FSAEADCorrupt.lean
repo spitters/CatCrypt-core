@@ -14,7 +14,7 @@ public import CatCryptCore.Crypto.HybridArgument
 # FS-AEAD with corruption from PRG and AEAD security
 
 The FS-AEAD game with corruption `fsaead_corrupt_game` (Alwen, Coretti and Dodis, §4.3) gives
-the adversary encryptions under the keys of the chain of the generator `G : PRGDef Sa (W × Sa)`
+the adversary encryptions under the keys of the chain of the generator `G : PRGDef Sa (Kt × Sa)`
 from a uniform state, one challenge (real or uniform ciphertext) at an adaptively chosen
 position, and the current state of the chain on corruption; a challenge after a corruption is
 refused, and a corruption after the challenge is answered.
@@ -67,6 +67,7 @@ open scoped ENNReal
 section Lazy
 
 variable {Sa W Ct AD : Type} [SampleableType W] [SampleableType Ct] [Fintype Sa] [Nonempty Sa]
+  {Kt : Type} [SampleableType Kt]
 
 /-- The state of the lazy FS-AEAD oracle: the current state of the chain (`none` for a uniform
 state that the adversary has not seen), the position of the next key, and the flags of the
@@ -90,46 +91,46 @@ noncomputable def fsCurDist : Option Sa → PMF Sa
   | some s => PMF.pure s
 
 /-- A step of the generator `G` from the current state. -/
-noncomputable def fsGStep (G : PRGDef Sa (W × Sa)) (h : FSLzSt Sa) : PMF (W × FSLzSt Sa) :=
+noncomputable def fsGStep (G : PRGDef Sa (Kt × Sa)) (h : FSLzSt Sa) : PMF (Kt × FSLzSt Sa) :=
   (fsCurDist h.cur).map fun s =>
     ((G.stretch s).1, { h with cur := some (G.stretch s).2, pos := h.pos + 1 })
 
 /-- An ideal step: a uniform key, and the next state unseen. -/
-noncomputable def fsUStep (h : FSLzSt Sa) : PMF (W × FSLzSt Sa) :=
-  (PMF.uniformFintype W).map fun k => (k, { h with cur := none, pos := h.pos + 1 })
+noncomputable def fsUStep (h : FSLzSt Sa) : PMF (Kt × FSLzSt Sa) :=
+  (PMF.uniformFintype Kt).map fun k => (k, { h with cur := none, pos := h.pos + 1 })
 
 /-- The step of the hybrid `i`: ideal from an unseen state at a position below `i`, a step of
 `G` otherwise. -/
-noncomputable def fsHybStep (G : PRGDef Sa (W × Sa)) (i : ℕ) (h : FSLzSt Sa) :
-    PMF (W × FSLzSt Sa) :=
+noncomputable def fsHybStep (G : PRGDef Sa (Kt × Sa)) (i : ℕ) (h : FSLzSt Sa) :
+    PMF (Kt × FSLzSt Sa) :=
   if h.cur.isNone && decide (h.pos < i) then fsUStep h else fsGStep G h
 
 /-- The step of the PRG reduction of the position `i` with the challenge `y`: from an unseen
 state at the position `i` the key `y.1` and the next state `y.2`; the step of the hybrid `i`
 otherwise. -/
-noncomputable def fsRedStep (G : PRGDef Sa (W × Sa)) (i : ℕ) (y : W × Sa) (h : FSLzSt Sa) :
-    PMF (W × FSLzSt Sa) :=
+noncomputable def fsRedStep (G : PRGDef Sa (Kt × Sa)) (i : ℕ) (y : Kt × Sa) (h : FSLzSt Sa) :
+    PMF (Kt × FSLzSt Sa) :=
   if h.cur.isNone && h.pos == i then PMF.pure (y.1, { h with cur := some y.2, pos := h.pos + 1 })
   else fsHybStep G i h
 
 /-- The step of the PRG reduction of the position `i` at a uniform challenge. -/
-noncomputable def fsHybStepU (G : PRGDef Sa (W × Sa)) (i : ℕ) (h : FSLzSt Sa) :
-    PMF (W × FSLzSt Sa) :=
-  (PMF.uniformFintype (W × Sa)).bind fun y => fsRedStep G i y h
+noncomputable def fsHybStepU (G : PRGDef Sa (Kt × Sa)) (i : ℕ) (h : FSLzSt Sa) :
+    PMF (Kt × FSLzSt Sa) :=
+  (PMF.uniformFintype (Kt × Sa)).bind fun y => fsRedStep G i y h
 
 /-- The encryption step of the final hybrid: ideal from an unseen state, `G` otherwise. -/
-noncomputable def fsFinStep (G : PRGDef Sa (W × Sa)) (h : FSLzSt Sa) : PMF (W × FSLzSt Sa) :=
+noncomputable def fsFinStep (G : PRGDef Sa (Kt × Sa)) (h : FSLzSt Sa) : PMF (Kt × FSLzSt Sa) :=
   if h.cur.isNone then fsUStep h else fsGStep G h
 
 /-- The step with the fixed key `key` and the next state unseen. -/
-noncomputable def fsFixStep (key : W) (h : FSLzSt Sa) : PMF (W × FSLzSt Sa) :=
+noncomputable def fsFixStep (key : Kt) (h : FSLzSt Sa) : PMF (Kt × FSLzSt Sa) :=
   PMF.pure (key, { h with cur := none, pos := h.pos + 1 })
 
 /-- The lazy FS-AEAD oracle with the encryption step `stE` and the challenge step `stC`: `enc m`
 encrypts under the key of `stE`; `chall m`, once and before a corruption, gives the challenge
 ciphertext under the key of `stC`; `corrupt` draws the current state and reveals it. -/
-noncomputable def fsStepOracle (D : AEADDef W Ct AD) (ideal : Bool)
-    (stE stC : FSLzSt Sa → PMF (W × FSLzSt Sa)) (h : FSLzSt Sa) :
+noncomputable def fsStepOracle (D : AEADDef W Ct AD Kt) (ideal : Bool)
+    (stE stC : FSLzSt Sa → PMF (Kt × FSLzSt Sa)) (h : FSLzSt Sa) :
     FSQuery W AD → PMF (FSAns Sa Ct × FSLzSt Sa)
   | .enc m => (stE h).map fun x => (.ct (D.encrypt x.1 m.1 m.2), x.2)
   | .chall m =>
@@ -139,14 +140,14 @@ noncomputable def fsStepOracle (D : AEADDef W Ct AD) (ideal : Bool)
   | .corrupt => (fsCurDist h.cur).map fun s => (.state s, { h with cur := some s, corr := true })
 
 /-- The output distribution of the hybrid `i`. -/
-noncomputable def fsHyb (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool) (i : ℕ)
+noncomputable def fsHyb (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (ideal : Bool) (i : ℕ)
     (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) : PMF Bool :=
   (OracleAdv.run (fsStepOracle D ideal (fsHybStep G i) (fsHybStep G i)) A fsLzInit).map
     Prod.fst
 
 /-- The output distribution of the final hybrid: every step from an unseen state and every
 challenge has a uniform key. -/
-noncomputable def fsFin (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool)
+noncomputable def fsFin (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (ideal : Bool)
     (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) : PMF Bool :=
   (OracleAdv.run (fsStepOracle D ideal (fsFinStep G) fsUStep) A fsLzInit).map Prod.fst
 
@@ -167,17 +168,18 @@ end Lazy
 section Red
 
 variable {Sa W Ct AD : Type} [SampleableType W] [SampleableType Ct] [Fintype Sa] [Nonempty Sa]
+  {Kt : Type} [SampleableType Kt]
 
 /-- **The PRG reduction of the position `i`.** On the challenge `y` of the PRG game it runs `A`
 against the lazy oracle whose step at the position `i` from an unseen state is `y`. -/
-noncomputable def fsCorrPRGRed (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool)
-    (i : ℕ) (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) : PRG_Adversary (W × Sa) :=
+noncomputable def fsCorrPRGRed (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (ideal : Bool)
+    (i : ℕ) (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) : PRG_Adversary (Kt × Sa) :=
   fun y => liftPMF ((OracleAdv.run (fsStepOracle D ideal (fsRedStep G i y) (fsRedStep G i y))
     A fsLzInit).map Prod.fst)
 
 /-- The simulator of the AEAD reduction: encryptions and corruptions as in the final hybrid,
 and the challenge as the encryption query of the authenticated-encryption game. -/
-noncomputable def fsCorrAEADImpl (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+noncomputable def fsCorrAEADImpl (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (h : FSLzSt Sa) : FSQuery W AD →
       OracleAdv (AEAD_CCA_Query W Ct AD) (AEAD_CCA_Answer W Ct) (FSAns Sa Ct × FSLzSt Sa)
   | .enc m => .rand (fsFinStep G h) fun x => .ret (.ct (D.encrypt x.1 m.1 m.2), x.2)
@@ -191,7 +193,7 @@ noncomputable def fsCorrAEADImpl (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     .rand (fsCurDist h.cur) fun s => .ret (.state s, { h with cur := some s, corr := true })
 
 /-- **The AEAD reduction**: `A` run against `fsCorrAEADImpl`. -/
-noncomputable def fsCorrAEADRed (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+noncomputable def fsCorrAEADRed (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) : AEAD_CCA_Adversary W Ct AD :=
   (OracleAdv.simulate (fsCorrAEADImpl G D) A fsLzInit).bind fun x => .ret x.1
 
@@ -210,6 +212,7 @@ end Red
 section Hops
 
 variable {Sa W Ct AD : Type} [SampleableType W] [SampleableType Ct] [Fintype Sa] [Nonempty Sa]
+  {Kt : Type} [SampleableType Kt]
 
 omit [SampleableType W] in
 /-- A seen current state is kept by `fsLift`. -/
@@ -237,10 +240,11 @@ theorem fsLift_done (n : ℕ) (h : FSLzSt Sa) :
   unfold fsLift
   split_ifs <;> simp [PMF.map_comp, Function.comp_def, PMF.pure_map]
 
+omit [SampleableType Kt] in
 /-- **Lifting along the lazy oracle.** If the steps of two lazy oracles are related by
 `fsLift n`, so are their runs. -/
-theorem fsStepOracle_lift (D : AEADDef W Ct AD) (ideal : Bool) (n : ℕ)
-    (stE stC stE' stC' : FSLzSt Sa → PMF (W × FSLzSt Sa))
+theorem fsStepOracle_lift (D : AEADDef W Ct AD Kt) (ideal : Bool) (n : ℕ)
+    (stE stC stE' stC' : FSLzSt Sa → PMF (Kt × FSLzSt Sa))
     (hE : ∀ h, (fsLift n h).bind stE' =
       (stE h).bind fun x => (fsLift n x.2).map fun h' => (x.1, h'))
     (hC : ∀ h, (fsLift n h).bind stC' =
@@ -276,10 +280,10 @@ theorem fsStepOracle_lift (D : AEADDef W Ct AD) (ideal : Bool) (n : ℕ)
       simp [fsStepOracle, fsLift, hn, Function.comp_def, fsCurDist, PMF.map]
 
 /-- The game is the hybrid `0`. -/
-theorem fsaead_corrupt_game_eq (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool)
+theorem fsaead_corrupt_game_eq (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (ideal : Bool)
     (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) :
     fsaead_corrupt_game G D ideal A = liftPMF (fsHyb G D ideal 0 A) := by
-  have h0 : fsHybStep (W := W) G 0 = fsGStep G := funext fun h => by simp [fsHybStep]
+  have h0 : fsHybStep (Kt := Kt) G 0 = fsGStep G := funext fun h => by simp [fsHybStep]
   have hA : ∀ sa : Sa, (OracleAdv.run (fsOracle G D ideal) A ⟨sa, sa, false, false⟩).map
       Prod.fst = (OracleAdv.run (fsStepOracle D ideal (fsHybStep G 0) (fsHybStep G 0)) A
         ⟨some sa, 0, false, false⟩).map Prod.fst := fun sa => by
@@ -307,9 +311,10 @@ def fsUses (i : ℕ) (h : FSLzSt Sa) : FSQuery W AD → Prop
   | .chall _ => h.cur = none ∧ h.pos = i ∧ (!h.done && !h.corr) = true
   | .corrupt => False
 
+omit [SampleableType Kt] in
 /-- The lazy oracle with steps that advance the position never moves the position back. -/
-theorem fsStepOracle_pos_le (D : AEADDef W Ct AD) (ideal : Bool)
-    (st : FSLzSt Sa → PMF (W × FSLzSt Sa))
+theorem fsStepOracle_pos_le (D : AEADDef W Ct AD Kt) (ideal : Bool)
+    (st : FSLzSt Sa → PMF (Kt × FSLzSt Sa))
     (hst : ∀ h, ∀ x ∈ (st h).support, x.2.pos = h.pos + 1) (h : FSLzSt Sa) (d : FSQuery W AD)
     (z : FSAns Sa Ct × FSLzSt Sa) (hz : z ∈ (fsStepOracle D ideal st st h d).support) :
     h.pos ≤ z.2.pos := by
@@ -334,12 +339,13 @@ theorem fsStepOracle_pos_le (D : AEADDef W Ct AD) (ideal : Bool)
     obtain ⟨s, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hz
     exact le_rfl
 
+omit [SampleableType Kt] in
 /-- **Eager draw of the step at the position `i`.** Let the steps `st₂ y` agree with `st` except
 from an unseen state at the position `i`, where `st` is `st₂ y` for `y` drawn from `ν`. From a
 state at a position at most `i`, a run against the lazy oracle of `st` is the run against the
 lazy oracle of `st₂ y` for `y` drawn from `ν` first. -/
-theorem fsStepOracle_eager {Y : Type} (D : AEADDef W Ct AD) (ideal : Bool) (i : ℕ) (ν : PMF Y)
-    (st : FSLzSt Sa → PMF (W × FSLzSt Sa)) (st₂ : Y → FSLzSt Sa → PMF (W × FSLzSt Sa))
+theorem fsStepOracle_eager {Y : Type} (D : AEADDef W Ct AD Kt) (ideal : Bool) (i : ℕ) (ν : PMF Y)
+    (st : FSLzSt Sa → PMF (Kt × FSLzSt Sa)) (st₂ : Y → FSLzSt Sa → PMF (Kt × FSLzSt Sa))
     (hno : ∀ y h, ¬ (h.cur = none ∧ h.pos = i) → st₂ y h = st h)
     (huse : ∀ h, h.cur = none → h.pos = i → st h = ν.bind fun y => st₂ y h)
     (hst : ∀ h, ∀ x ∈ (st h).support, x.2.pos = h.pos + 1)
@@ -391,22 +397,22 @@ theorem fsStepOracle_eager {Y : Type} (D : AEADDef W Ct AD) (ideal : Bool) (i : 
   · intro h d hh hu
     cases d <;> simp_all [fsUses]
 
-omit [SampleableType W] in
+omit [SampleableType W] [SampleableType Kt] in
 /-- A step of `G` advances the position. -/
-theorem fsGStep_pos (G : PRGDef Sa (W × Sa)) (h : FSLzSt Sa) :
+theorem fsGStep_pos (G : PRGDef Sa (Kt × Sa)) (h : FSLzSt Sa) :
     ∀ x ∈ (fsGStep G h).support, x.2.pos = h.pos + 1 := fun x hx => by
   obtain ⟨s, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
   rfl
 
 omit [Fintype Sa] [Nonempty Sa] in
 /-- An ideal step advances the position. -/
-theorem fsUStep_pos (h : FSLzSt Sa) : ∀ x ∈ (fsUStep (W := W) h).support, x.2.pos = h.pos + 1 :=
-  fun x hx => by
+theorem fsUStep_pos (h : FSLzSt Sa) :
+    ∀ x ∈ (fsUStep (Kt := Kt) h).support, x.2.pos = h.pos + 1 := fun x hx => by
   obtain ⟨s, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
   rfl
 
 /-- A step of the hybrid advances the position. -/
-theorem fsHybStep_pos (G : PRGDef Sa (W × Sa)) (i : ℕ) (h : FSLzSt Sa) :
+theorem fsHybStep_pos (G : PRGDef Sa (Kt × Sa)) (i : ℕ) (h : FSLzSt Sa) :
     ∀ x ∈ (fsHybStep G i h).support, x.2.pos = h.pos + 1 := fun x hx => by
   unfold fsHybStep at hx
   split_ifs at hx
@@ -414,7 +420,7 @@ theorem fsHybStep_pos (G : PRGDef Sa (W × Sa)) (i : ℕ) (h : FSLzSt Sa) :
   · exact fsGStep_pos G h x hx
 
 /-- A step of the PRG reduction advances the position. -/
-theorem fsRedStep_pos (G : PRGDef Sa (W × Sa)) (i : ℕ) (y : W × Sa) (h : FSLzSt Sa) :
+theorem fsRedStep_pos (G : PRGDef Sa (Kt × Sa)) (i : ℕ) (y : Kt × Sa) (h : FSLzSt Sa) :
     ∀ x ∈ (fsRedStep G i y h).support, x.2.pos = h.pos + 1 := fun x hx => by
   unfold fsRedStep at hx
   split_ifs at hx
@@ -425,7 +431,7 @@ theorem fsRedStep_pos (G : PRGDef Sa (W × Sa)) (i : ℕ) (y : W × Sa) (h : FSL
 
 /-- Off the step at the position `i` from an unseen state, the step of the PRG reduction is the
 step of the hybrid `i`. -/
-theorem fsRedStep_of_not (G : PRGDef Sa (W × Sa)) (i : ℕ) (y : W × Sa) (h : FSLzSt Sa)
+theorem fsRedStep_of_not (G : PRGDef Sa (Kt × Sa)) (i : ℕ) (y : Kt × Sa) (h : FSLzSt Sa)
     (hh : ¬ (h.cur = none ∧ h.pos = i)) : fsRedStep G i y h = fsHybStep G i h := by
   unfold fsRedStep
   split_ifs with h'
@@ -435,8 +441,8 @@ theorem fsRedStep_of_not (G : PRGDef Sa (W × Sa)) (i : ℕ) (y : W × Sa) (h : 
   · rfl
 
 /-- The hybrid `i` is the PRG reduction of the position `i` at a real challenge. -/
-theorem fsHyb_eq_prgReal (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool) (i : ℕ)
-    (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) :
+theorem fsHyb_eq_prgReal (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (ideal : Bool)
+    (i : ℕ) (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) :
     fsHyb G D ideal i A = (PMF.uniformFintype Sa).bind fun s =>
       (OracleAdv.run (fsStepOracle D ideal (fsRedStep G i (G.stretch s))
         (fsRedStep G i (G.stretch s))) A fsLzInit).map Prod.fst := by
@@ -448,9 +454,9 @@ theorem fsHyb_eq_prgReal (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal 
     simp [fsHybStep, fsRedStep, fsGStep, hc, hp, fsCurDist, PMF.map, Function.comp_def]
 
 /-- The hybrid `i + 1` is the PRG reduction of the position `i` at a uniform challenge. -/
-theorem fsHyb_succ_eq_prgIdeal (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool)
+theorem fsHyb_succ_eq_prgIdeal (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (ideal : Bool)
     (i : ℕ) (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) :
-    fsHyb G D ideal (i + 1) A = (PMF.uniformFintype (W × Sa)).bind fun y =>
+    fsHyb G D ideal (i + 1) A = (PMF.uniformFintype (Kt × Sa)).bind fun y =>
       (OracleAdv.run (fsStepOracle D ideal (fsRedStep G i y) (fsRedStep G i y)) A
         fsLzInit).map Prod.fst := by
   have hoff : ∀ h : FSLzSt Sa, ¬ (h.cur = none ∧ h.pos = i) →
@@ -464,7 +470,7 @@ theorem fsHyb_succ_eq_prgIdeal (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (
     (fsHybStepU G i) (fsHybStepU G i) (fun h => ?_) (fun h => ?_) A fsLzInit
   · rw [fsHyb, ← hlift, show fsLift (i + 1) (fsLzInit : FSLzSt Sa) = PMF.pure fsLzInit by
       simp [fsLift, fsLzInit], PMF.pure_bind, fsStepOracle_eager D ideal i
-      (PMF.uniformFintype (W × Sa)) (fsHybStepU G i) (fsRedStep G i)
+      (PMF.uniformFintype (Kt × Sa)) (fsHybStepU G i) (fsRedStep G i)
       (fun y h hh => (fsRedStep_of_not G i y h hh).trans (hoff h hh).symm) (fun h _ _ => rfl) hst
       (fsRedStep_pos G i) A fsLzInit (Nat.zero_le _)]
   all_goals
@@ -486,7 +492,7 @@ theorem fsHyb_succ_eq_prgIdeal (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (
       simp [fsLift, fsHybStep, fsGStep, fsCurDist, PMF.map, Function.comp_def]
 
 /-- A hybrid step is the PRG game of `fsCorrPRGRed`. -/
-theorem advantage_fsHyb_succ (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool)
+theorem advantage_fsHyb_succ (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (ideal : Bool)
     (i : ℕ) (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) :
     Advantage (liftPMF (fsHyb G D ideal i A)) (liftPMF (fsHyb G D ideal (i + 1) A)) =
       PRG_Advantage G (fsCorrPRGRed G D ideal i A) := by
@@ -498,19 +504,19 @@ theorem advantage_fsHyb_succ (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (id
 
 /-- Below the position `q`, the step of the hybrid `q` is the encryption step of the final
 hybrid. -/
-theorem fsHybStep_eq_fsFinStep (G : PRGDef Sa (W × Sa)) (q : ℕ) (h : FSLzSt Sa) (hq : h.pos < q) :
-    fsHybStep G q h = fsFinStep G h := by
+theorem fsHybStep_eq_fsFinStep (G : PRGDef Sa (Kt × Sa)) (q : ℕ) (h : FSLzSt Sa)
+    (hq : h.pos < q) : fsHybStep G q h = fsFinStep G h := by
   unfold fsHybStep fsFinStep
   cases h.cur <;> simp [hq]
 
 /-- A call of the final hybrid advances the position by the cost of the query, and keeps the
 current state unseen until a corruption. -/
-theorem fsFin_support (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool)
+theorem fsFin_support (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (ideal : Bool)
     (h : FSLzSt Sa) (d : FSQuery W AD) (hinv : h.cur.isSome → h.corr = true)
     (z : FSAns Sa Ct × FSLzSt Sa)
     (hz : z ∈ (fsStepOracle D ideal (fsFinStep G) fsUStep h d).support) :
     (z.2.pos = h.pos + fsCost d ∨ z.2 = h) ∧ (z.2.cur.isSome → z.2.corr = true) := by
-  have hU : ∀ x ∈ (fsUStep (W := W) h).support,
+  have hU : ∀ x ∈ (fsUStep (Kt := Kt) h).support,
       x.2.pos = h.pos + 1 ∧ x.2.cur = none ∧ x.2.corr = h.corr := fun x hx => by
     obtain ⟨k, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
     exact ⟨rfl, rfl, rfl⟩
@@ -543,7 +549,7 @@ theorem fsFin_support (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : B
 /-- **Runs of the hybrid `q` and the final hybrid.** From a state at a position `p` whose current
 state is seen only after a corruption, an adversary with encryption and challenge queries of
 total cost at most `n`, with `p + n ≤ q`, has the same runs against both oracles. -/
-theorem fsHyb_run_eq_fsFin (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool)
+theorem fsHyb_run_eq_fsFin (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (ideal : Bool)
     (q : ℕ) (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) (n : ℕ) (h : FSLzSt Sa)
     (hA : A.IsQueryBoundBy fsCost n) (hn : h.pos + n ≤ q) (hinv : h.cur.isSome → h.corr = true) :
     OracleAdv.run (fsStepOracle D ideal (fsHybStep G q) (fsHybStep G q)) A h =
@@ -584,24 +590,24 @@ theorem fsHyb_run_eq_fsFin (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (idea
 
 /-- For an adversary with at most `q` encryption and challenge queries, the hybrid `q` is the
 final hybrid. -/
-theorem fsHyb_eq_fsFin (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) (ideal : Bool) (q : ℕ)
+theorem fsHyb_eq_fsFin (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) (ideal : Bool) (q : ℕ)
     (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) (hA : A.IsQueryBoundBy fsCost q) :
     fsHyb G D ideal q A = fsFin G D ideal A := by
   unfold fsHyb fsFin
   rw [fsHyb_run_eq_fsFin G D ideal q A q fsLzInit hA (by simp [fsLzInit]) (by simp [fsLzInit])]
 
 /-- The real final hybrid is the real authenticated-encryption game of `fsCorrAEADRed`. -/
-theorem fsFin_false_eq (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+theorem fsFin_false_eq (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) :
     liftPMF (fsFin G D false A) = AEAD_CCA_Game_Real D (fsCorrAEADRed G D A) := by
-  have hE := OracleAdv.run_eager (PMF.uniformFintype W)
+  have hE := OracleAdv.run_eager (PMF.uniformFintype Kt)
     (fsStepOracle D false (fsFinStep G) fsUStep)
     (fun key => fsStepOracle D false (fsFinStep G) (fsFixStep key))
     (fun h : FSLzSt Sa => h.done = false)
     (fun h d => match d with
       | .chall _ => (!h.done && !h.corr) = true
       | _ => False) ?_ ?_ ?_ ?_ ?_ A fsLzInit rfl
-  · have hK : ∀ key : W, (OracleAdv.run (fsStepOracle D false (fsFinStep G) (fsFixStep key)) A
+  · have hK : ∀ key : Kt, (OracleAdv.run (fsStepOracle D false (fsFinStep G) (fsFixStep key)) A
         fsLzInit).map Prod.fst =
         (OracleAdv.run (aeadRealOracle D key) (fsCorrAEADRed G D A) ()).map Prod.fst := by
       intro key
@@ -672,7 +678,7 @@ theorem fsFin_false_eq (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
     cases d <;> simp_all
 
 /-- The ideal final hybrid is the ideal authenticated-encryption game of `fsCorrAEADRed`. -/
-theorem fsFin_true_eq (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) [DecidableEq AD]
+theorem fsFin_true_eq (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt) [DecidableEq AD]
     (A : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool) :
     liftPMF (fsFin G D true A) = AEAD_CCA_Game_Ideal (fsCorrAEADRed G D A) := by
   let N : FSLzSt Sa × List ((W × AD) × Ct) → Prop := fun s => s.1.done = false → s.2 = []
@@ -750,7 +756,7 @@ theorem fsFin_true_eq (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD) [Decidable
 advantages of the reductions `fsCorrPRGRed G D b i B` at the positions `i < q`, for the real
 (`b = false`) and the ideal (`b = true`) challenge, plus the authenticated-encryption advantage
 of the reduction `fsCorrAEADRed G D B`. -/
-theorem fsaead_corrupt_advantage_le (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct AD)
+theorem fsaead_corrupt_advantage_le (G : PRGDef Sa (Kt × Sa)) (D : AEADDef W Ct AD Kt)
     [DecidableEq AD] (q : ℕ) (B : OracleAdv (FSQuery W AD) (FSAns Sa Ct) Bool)
     (hB : B.IsQueryBoundBy fsCost q) :
     FSAEAD_Corrupt_Advantage G D B ≤

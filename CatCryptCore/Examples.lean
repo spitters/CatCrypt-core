@@ -81,6 +81,7 @@ public import CatCryptCore.Examples.ElGamalDDHKeyMsgTimed
 public import CatCryptCore.Examples.EncodedMask
 public import CatCryptCore.Examples.GroupParamCommGroup
 public import CatCryptCore.Examples.SigmaCompositions
+public import CatCryptCore.Examples.SigmaWitness
 
 /-! # CatCrypt Core examples
 

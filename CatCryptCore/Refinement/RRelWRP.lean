@@ -142,7 +142,7 @@ theorem rrelPT_iff_refines {α α' ε ε' AProg CProg AE CE : Type} [Assertion A
       funext fun a0 => ULift.ext (propext (hA Q E a0))
     have t2 := t ⟨by simp only [top_apply, top_prop_eq], by rw [hw] at hs; exact hs⟩
     rw [hC]
-    refine WP.wp_consequence_econs c _ _ _ _ ?_ hE s t2
+    refine WP.wp_monotone (x := c) ?_ hE s t2
     intro cv s' hp
     obtain ⟨av, hR, hγ⟩ := (Concretization.post_apply ..).1 hp
     exact hQ hR s' hγ

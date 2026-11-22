@@ -72,7 +72,7 @@ omit [DecidableEq Q] in
 theorem sum_conj_apply (U : K → Matrix Q Q ℂ) (M : Matrix Q Q ℂ) (i i' : Q) :
     (∑ c, U c * M * (U c)ᴴ) i i' =
       ∑ j, ∑ j', M j j' * ∑ c, U c i j * star (U c i' j') := by
-  simp only [Matrix.sum_apply, mul_apply, conjTranspose_apply, Finset.sum_mul, Finset.mul_sum]
+  simp only [Matrix.sum_apply, Matrix.mul_apply, conjTranspose_apply, Finset.sum_mul, Finset.mul_sum]
   rw [Finset.sum_comm]
   refine (Finset.sum_congr rfl fun j' _ => Finset.sum_comm).trans ?_
   rw [Finset.sum_comm]
@@ -99,7 +99,7 @@ theorem one_kronecker_conj_apply (U : Matrix Q Q ℂ) (X : Matrix (R × Q) (R ×
     (r r' : R) (i i' : Q) :
     (((1 : Matrix R R ℂ) ⊗ₖ U) * X * ((1 : Matrix R R ℂ) ⊗ₖ U)ᴴ) (r, i) (r', i') =
       (U * X.submatrix (r, ·) (r', ·) * Uᴴ) i i' := by
-  simp only [mul_apply, kroneckerMap_apply, one_apply, ite_mul, one_mul, zero_mul,
+  simp only [Matrix.mul_apply, kroneckerMap_apply, Matrix.one_apply, ite_mul, one_mul, zero_mul,
     Fintype.sum_prod_type, Finset.sum_ite_irrel, Finset.sum_const_zero, Finset.sum_ite_eq,
     Finset.mem_univ, ↓reduceIte, conjTranspose_apply, RCLike.star_def, submatrix_apply,
     apply_ite (starRingEnd ℂ), map_zero, mul_ite, mul_zero]
@@ -157,9 +157,10 @@ theorem piOp_mul_conjTranspose {U : K → Matrix Q Q ℂ} (hU : ∀ c, U c * (U 
   ext i i'
   have h (l : ι) : ∑ q, U (k l) (i l) q * star (U (k l) (i' l) q) =
       if i l = i' l then 1 else 0 := by
-    simpa [mul_apply, one_apply] using congrFun (congrFun (hU (k l)) (i l)) (i' l)
-  simp only [mul_apply, conjTranspose_apply, piOp_apply, star_prod,
-    ← Finset.prod_mul_distrib, one_apply]
+    simpa [Matrix.mul_apply, Matrix.one_apply] using
+      congrFun (congrFun (hU (k l)) (i l)) (i' l)
+  simp only [Matrix.mul_apply, conjTranspose_apply, piOp_apply, star_prod,
+    ← Finset.prod_mul_distrib, Matrix.one_apply]
   rw [← Fintype.prod_sum (fun l q => U (k l) (i l) q * star (U (k l) (i' l) q))]
   simp only [h]
   rw [Finset.prod_ite_zero]
@@ -171,9 +172,10 @@ theorem conjTranspose_mul_piOp {U : K → Matrix Q Q ℂ} (hU : ∀ c, (U c)ᴴ 
   ext i i'
   have h (l : ι) : ∑ q, star (U (k l) q (i l)) * U (k l) q (i' l) =
       if i l = i' l then 1 else 0 := by
-    simpa [mul_apply, one_apply] using congrFun (congrFun (hU (k l)) (i l)) (i' l)
-  simp only [mul_apply, conjTranspose_apply, piOp_apply, star_prod,
-    ← Finset.prod_mul_distrib, one_apply]
+    simpa [Matrix.mul_apply, Matrix.one_apply] using
+      congrFun (congrFun (hU (k l)) (i l)) (i' l)
+  simp only [Matrix.mul_apply, conjTranspose_apply, piOp_apply, star_prod,
+    ← Finset.prod_mul_distrib, Matrix.one_apply]
   rw [← Fintype.prod_sum (fun l q => star (U (k l) q (i l)) * U (k l) q (i' l))]
   simp only [h]
   rw [Finset.prod_ite_zero]
@@ -198,13 +200,13 @@ theorem isTwirlFamily_pauli : IsTwirlFamily (fun c : Fin 2 × Fin 2 => pauli c.1
 theorem pauli_mul_conjTranspose (a b : Fin 2) : pauli a b * (pauli a b)ᴴ = 1 := by
   ext i i'
   fin_cases a <;> fin_cases b <;> fin_cases i <;> fin_cases i' <;>
-    simp [pauli, mul_apply, one_apply]
+    simp [pauli, Matrix.mul_apply, Matrix.one_apply]
 
 /-- `X^a Z^b` is unitary. -/
 theorem conjTranspose_mul_pauli (a b : Fin 2) : (pauli a b)ᴴ * pauli a b = 1 := by
   ext i i'
   fin_cases a <;> fin_cases b <;> fin_cases i <;> fin_cases i' <;>
-    simp [pauli, mul_apply, one_apply]
+    simp [pauli, Matrix.mul_apply, Matrix.one_apply]
 
 /-- The one-qubit Pauli twirl: `∑ a, ∑ b, X^a Z^b M (X^a Z^b)ᴴ = 2 tr M • 1`. -/
 theorem pauli_twirl (M : Matrix (Fin 2) (Fin 2) ℂ) :

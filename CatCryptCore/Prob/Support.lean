@@ -173,11 +173,6 @@ theorem bind_none_le {d : SDistr α} {k : α → SDistr β} {ε₁ ε₂ : ℝ�
 
 /-! ## Pointwise reasoning helpers -/
 
-/-- In ENNReal, if the sum of f is ≤ sum of g pointwise, then tsum f ≤ tsum g. -/
-theorem ENNReal_tsum_le_of_pointwise {f g : α → ℝ≥0∞} (h : ∀ a, f a ≤ g a) :
-    ∑' a, f a ≤ ∑' a, g a :=
-  ENNReal.tsum_le_tsum h
-
 /-- Conditional sum is bounded by unconditional sum. -/
 theorem tsum_ite_le (P : α → Prop) [DecidablePred P] (f : α → ℝ≥0∞) :
     ∑' a, (if P a then f a else 0) ≤ ∑' a, f a := by
@@ -197,15 +192,10 @@ theorem tsum_ite_add_compl (P : α → Prop) [DecidablePred P] (f : α → ℝ�
 
 /-! ## Product type tsum splitting -/
 
-/-- Split a tsum over `α × β` into nested tsums. -/
-theorem tsum_prod_eq {f : α × β → ℝ≥0∞} :
-    ∑' p : α × β, f p = ∑' a, ∑' b, f (a, b) :=
-  ENNReal.tsum_prod'
-
 /-- Split a tsum over `Bool × β` into true and false parts. -/
 theorem tsum_bool_prod_eq {f : Bool × β → ℝ≥0∞} :
     ∑' p : Bool × β, f p = (∑' b, f (true, b)) + (∑' b, f (false, b)) := by
-  rw [tsum_prod_eq, tsum_bool]
+  rw [tsum_prod', tsum_bool]
   exact add_comm _ _
 
 end CatCrypt.Prob

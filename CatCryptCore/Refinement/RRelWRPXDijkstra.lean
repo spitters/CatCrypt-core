@@ -114,7 +114,7 @@ theorem refines_of_wpHom
   change H.preMap _ ⊑ (XCoreWP.wp (θ c) : XCorePT Pred₂ EPred₂ G₂ α).apply _ _
   rw [H.transfer]
   exact H.toConc.pred_mono
-    (WP.wp_consequence_econs c _ _ _ _ (hpost Qa Ea).1 (hpost Qa Ea).2)
+    (WP.wp_monotone (x := c) (hpost Qa Ea).1 (hpost Qa Ea).2)
 
 end Hom
 
@@ -264,7 +264,7 @@ theorem refines_thetaX {α : Type} (P : XAssertion (.graded G (.arg σ (.except 
       eps (thetaX x) x eqRel := by
   refine refines_of_wpHom _ P x eqRel eps fun Qa Ea => ⟨?_, ?_⟩
   · intro v
-    exact le_iSup_of_le v (le_meet _ _ _ (le_ofProp _ _ rfl) PartialOrder.rel_refl)
+    exact le_iSup_of_le v (le_meet _ _ _ (CompleteLattice.le_ofProp _ _ rfl) PartialOrder.rel_refl)
   · exact PartialOrder.rel_refl
 
 end BaseChange
