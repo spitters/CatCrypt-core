@@ -62,6 +62,50 @@ are relative to `CatCryptCore/`.
 | Quantum random oracles | `Quantum/QROM/*` — semi-classical one-way to hiding for every mixed initial state (`O2HTheorem.o2h_semiclassical_mixed`) and for multi-round adversaries whose local operations are arbitrary completely positive trace-preserving maps (`O2HGeneral.o2h_semiclassical_gen`, through a unitary dilation that keeps the acceptance probability), completely positive instruments (`Quantum/CPInstrument`), measure-and-reprogram for a single reprogrammed point (`MeasureReprogram.measure_reprogram`), Zhandry's compressed oracle with equality of output probabilities against the standard oracle and at most `q` database entries after `q` queries (`CompressedOracle.prOut_compressed_eq`, `CompressedOracleLocal.runCmp_database_le`), the search bound, quantum KEM games with classical decapsulation queries, normal form of adversaries, and the game hops of the Fujisaki–Okamoto proof with implicit rejection |
 | ML-KEM | `Crypto/MLKEM/*` — the FIPS 203 specification over `Z/3329Z` with its NTT (`Spec/`, `Crypto/Lattice/*`), the module-LWE PKE, and IND-CCA security of ML-KEM-512 against quantum adversaries in the QROM, with a bound in the query counts, proved numbers, the correctness error δ of the scheme (a defined quantity, which enters as `√δ` times the query count) and quantum module-LWE and extended module-LWE advantages of explicit reductions ([proof structure](CatCryptCore/Crypto/MLKEM/QROM.md)) |
 
+## Refinement by weakest preconditions
+
+[Refinement](CatCryptCore/Refinement/README.md) between programs of different languages is the
+refinement weakest precondition of [refinement-wp](https://github.com/spitters/refinement-wp).
+
+A quantum channel has a weakest precondition on observations of states, the functions from
+positive semidefinite matrices to `ℝ≥0∞`, by
+[precomposition](CatCryptCore/Refinement/RRelWRPQuantum.lean). One channel refines another along
+the identity exactly when the two are equal
+([`channelRefines_iff`](CatCryptCore/Refinement/RRelWRPQuantum.lean)), and refinements compose by
+pasting ([`ChannelRefines.trans`](CatCryptCore/Refinement/RRelWRPQuantum.lean)). In the
+[CatCrypt compiler](https://github.com/spitters/catcrypt-compiler), a pass of the quantum optimizer
+that preserves channels is thereby a refinement in both directions. On expectations of effects,
+refinement up to an error ε composes additively
+([`ChannelRefinesUpTo.trans`](CatCryptCore/Refinement/RRelWRPQuantumUpTo.lean)), and two unitary
+channels whose matrices differ by at most ε in operator norm, up to a global phase, refine each
+other up to 2ε
+([`unitaryChannel_refinesUpTo_of_norm_sub_smul_le`](CatCryptCore/Refinement/RRelWRPQuantumUpTo.lean)),
+by the trace-norm bound
+[`traceNorm_mul_mul_conjTranspose_sub_le`](CatCryptCore/ForMathlib/Matrix/TraceNormConj.lean).
+
+## Separation logic for stateful programs
+
+A monad with a weakest precondition on predicates of total states has a separation logic over the
+heap propositions of [Iris-Lean](https://github.com/leanprover-community/iris-lean): the weakest
+precondition is lifted to partial states and closed under frames, in the frame-quantified style of
+Yang and O'Hearn, and the result satisfies the frame rule for every program
+([`ownFWP_frame`](CatCryptCore/Crypto/Bridges/IrisBridge/OwnWP.lean)). This applies to `StateT`
+over any such monad and to free monads of a polynomial functor through a handler
+([instances](CatCryptCore/Crypto/Bridges/IrisBridge/OwnWPInstances.lean)).
+
+For `SPComp` the construction gives [`slWP`](CatCryptCore/Crypto/Bridges/IrisBridge/SLWP.lean),
+whose frame rule [`slWP_frame`](CatCryptCore/Crypto/Bridges/IrisBridge/SLWP.lean) holds for every
+computation. It is of partial correctness: it constrains the outcomes in the support. Its total
+variant excludes failure
+([`slWPTotal_noFail`](CatCryptCore/Crypto/Bridges/IrisBridge/SLWP.lean)). The separating
+refinement [`swrp`](CatCryptCore/Crypto/Bridges/IrisBridge/SepWRP.lean) composes with frames
+([`swrp_frame`](CatCryptCore/Crypto/Bridges/IrisBridge/SepWRP.lean)). At return relations that do
+not read the heap, closed separating refinement is refinement in the sense of
+[refinement-wp](https://github.com/spitters/refinement-wp)
+([`emp_entails_swrp_iff_refines`](CatCryptCore/Crypto/Bridges/IrisBridge/SepWRP.lean)), and at
+persistent concretizations `swrp` entails `wrp`
+([`swrp_entails_wrp`](CatCryptCore/Crypto/Bridges/IrisBridge/SepWRP.lean)).
+
 ## Time certificates
 
 A concrete security theorem bounds the advantage of every adversary `A` by advantages of

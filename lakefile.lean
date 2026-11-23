@@ -56,8 +56,12 @@ require PolyFun from git
 
 -- refinement-wp: the refinement weakest precondition `wrp` over `Std.WP`, which
 -- `Refinement/RRelWRP.lean` relates to `RRelPT`.
+-- iris-lean, required by the IrisBridge modules; the same tag as nominal-lean requires.
+require iris from git
+  "https://github.com/spitters/iris-catcrypt" @ "v4.36.0-catcrypt.1" / "Iris"
+
 require «refinement-wp» from git
-  "https://github.com/spitters/refinement-wp" @ "ff0d84f818c3a1b81961e1ca4a63ad1345f23434"
+  "https://github.com/spitters/refinement-wp" @ "ce1fdfc002ad2ce0c804a7b14afd3f7d3ef67af8"
 
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.

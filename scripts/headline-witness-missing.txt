@@ -1,6 +1,6 @@
 # Headlines without a witness, most important first (scripts/headline-witness-gate.sh).
 # The list may shrink and never grows: lower the count with each removal.
-count=117
+count=96
 CatCrypt.Crypto.MLKEM.MLKEM512QROMNumeric.mlkem512_qindcca_fips_two_pow
 CatCrypt.Crypto.MLKEM.CollisionSpreadIdeal.mlkem512_qindcca_prf_two_pow
 CatCrypt.Examples.Commitments.KZG.KZG_knowledge_sound
@@ -38,9 +38,7 @@ CatCrypt.Examples.PRFMAC.mac_forgery_advantage_le_half
 CatCryptCore.Examples.UniversalHash.boolPairwiseHash_mac_security
 CatCrypt.Examples.DeepHybrid.two_instance_advantage_bound
 CatCrypt.Examples.DeepHybrid.three_instance_triangle
-CatCrypt.Crypto.ForkingLemma.fork_success_ge
 CatCrypt.Examples.Schnorr.dlFromForking_correct
-CatCrypt.Crypto.FiatShamirROM.forkExtractor_sound
 CatCrypt.Crypto.FiatShamirROM.ecost_forkExtractorTimed_le_timeBound
 CatCrypt.Quantum.QROM.prOut_compressed_eq
 CatCrypt.Quantum.QROM.runCmp_database_le
@@ -81,37 +79,18 @@ CatCrypt.Container.useBound_liftM_clocked
 CatCrypt.Container.Clocked.toDN_comp
 CatCrypt.Examples.ChaumPedersen.chaumPedersen_uc_secure
 CatCrypt.Examples.ChaumPedersen.chaumPedersen_SHVZK_visible
-CatCrypt.Examples.ChaumPedersen.chaumPedersen_special_soundness
-CatCrypt.Examples.Schnorr.schnorr_special_soundness
 CatCrypt.Examples.Commitments.KZG.honestAGMOutput_checks
-CatCrypt.Examples.Commitments.Pedersen.PedersenParams.pedersen_hiding_uc
-CatCrypt.Examples.Commitments.Pedersen.PedersenParams.pedersen_perfect_hiding
 CatCrypt.Examples.OTP.otp_uc
 CatCrypt.Examples.OTP.otp_nompkg_secure
-CatCrypt.Examples.OTP.otp_perfect_indcpa
 CatCrypt.Examples.ReflectTacticDemo.demo_otp_uc
 CatCrypt.Examples.ReflectTacticDemo.demo_otp_nompkg_secure
 CatCrypt.Examples.BasicHash.auth_zero_advantage_xor
 CatCrypt.Examples.BasicHash.unlink_real_always_true
 CatCrypt.Examples.BasicHash.unlink_ideal_not_always_true
 CatCryptCore.Examples.DetCPA.det_enc_xor_insecure
-CatCrypt.Examples.PRF.bijPRF_perfect
-CatCrypt.Examples.PRG.bijPRG_perfect
-CatCrypt.Examples.CPAFromPRF.bijCPA_perfect_indcpa
-CatCrypt.Examples.CBCMode.cbc_perfect_indcpa
-CatCrypt.Examples.CTRMode.ctr_perfect_indcpa
 CatCryptCore.Examples.INDCPA.perfect_indcpa_zero_advantage
 CatCrypt.Examples.EncryptThenMAC.boolEtM_perfect_indcpa
 CatCryptCore.Examples.HashedElGamal.heg_perfect_hash_security
-CatCrypt.Examples.Commitment.maskComm_perfect_hiding
-CatCrypt.Examples.Commitment.idComm_perfectly_binding
-CatCrypt.Examples.Sigma.simpleSigma_shvzk
-CatCrypt.Examples.Sigma.simpleSigma_shvzk_given
-CatCrypt.Examples.Sigma.simpleSigma_special_sound
-CatCrypt.Examples.Sigma.simpleSigma_binding
-CatCrypt.Examples.SecretSharing.ss_perfect_privacy
-CatCrypt.Examples.ShamirSecretSharing.shamir_perfect_privacy
-CatCrypt.Examples.OT.otEnc_message_independent
 CatCryptCore.Examples.UniversalHash.boolPairwiseHash_is_universal
 CatCryptCore.Examples.CoinToss.coinToss_eq
 CatCrypt.Examples.SecretSharing.shareXor_reconstruct

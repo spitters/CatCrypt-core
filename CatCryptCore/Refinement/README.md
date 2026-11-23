@@ -76,6 +76,18 @@ monad and a deep embedding. Composition holds for relational couplings of values
 and exceptions, given an assertion map that preserves existentials. Relational invariants, with a variant on pairs of states,
 relate two loops.
 
+## Quantum channels
+
+A quantum computation with one outcome is a predicate transformer on observations of states, by
+[precomposition](RRelWRPQuantum.lean). Observations are arbitrary functions from positive
+semidefinite matrices to `ℝ≥0∞`, so they separate states. A computation refines another along the
+identity, in the sense of [refinement-wp](https://github.com/spitters/refinement-wp), exactly when
+the two are equal ([`channelRefines_iff`](RRelWRPQuantum.lean)), and refinement in one direction
+gives the other ([`channelRefines_both_iff`](RRelWRPQuantum.lean)). Vertical pasting composes
+refinements along a chain of compiler passes ([`ChannelRefines.trans`](RRelWRPQuantum.lean)).
+
+## Parametricity
+
 The value relation `R` and the arrow relation are the parametricity relations of
 Trocq: ParamTransfer's `R_arrow` is `Relator.LiftFun`, and in the compiler
 `RRelParam` shows that ParamTransfer's Kleisli relations `RComp` and `RCompOk`

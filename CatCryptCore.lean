@@ -109,6 +109,7 @@ public import CatCryptCore.ForMathlib.Tactic.PositivityStar
 public import CatCryptCore.ForMathlib.Tactic.Spectral
 public import CatCryptCore.ForMathlib.Tactic.TraceNf
 public import CatCryptCore.ForMathlib.Tactic.TraceNfAttr
+public import CatCryptCore.ForMathlib.Matrix.TraceNormConj
 
 -- Non-uniform sampling and the unbounded loop
 public import CatCryptCore.NonUniform
@@ -223,6 +224,8 @@ public import CatCryptCore.XDijkstra.XPredCore
 public import CatCryptCore.XDijkstra.XPullback
 public import CatCryptCore.XDijkstra.XRelatorPMF
 public import CatCryptCore.XDijkstra.XStdWP
+public import CatCryptCore.Refinement.RRelWRPQuantum
+public import CatCryptCore.Refinement.RRelWRPQuantumUpTo
 
 -- Deep embedding
 public import CatCryptCore.Deep.RawCode
@@ -403,6 +406,7 @@ public import CatCryptCore.Crypto.NomPkgBridge
 public import CatCryptCore.Crypto.EasyCryptBridge
 public import CatCryptCore.Crypto.BadEvent
 public import CatCryptCore.Crypto.ForkingLemma
+public import CatCryptCore.Crypto.ForkingLemmaWitness
 public import CatCryptCore.Crypto.VerifierPair
 public import CatCryptCore.Crypto.GameReject
 public import CatCryptCore.Crypto.GeneralForkingLemma
@@ -1032,6 +1036,7 @@ public import CatCryptCore.Crypto.MLKEM.NegaConvAlgebra
 public import CatCryptCore.Crypto.MLKEM.CorrectnessNoiseLaw
 public import CatCryptCore.Crypto.MLKEM.CorrectnessTail
 public import CatCryptCore.Crypto.MLKEM.CorrectnessCompressed
+public import CatCryptCore.Crypto.MLKEM.CorrectnessCompressed512
 public import CatCryptCore.Crypto.MLKEM.CorrectnessUnion
 
 -- UC ideal functionalities (F_commit, F_ZK, F_OT)
@@ -1079,6 +1084,7 @@ public import CatCryptCore.Container.GodelFibration
 public import CatCryptCore.Container.GodelFibrationW
 public import CatCryptCore.Container.GodelFibrationWIter
 public import CatCryptCore.Container.DNLogicForking
+public import CatCryptCore.Container.DNLogicForkingWitness
 public import CatCryptCore.Container.DNLogicNeg
 public import CatCryptCore.Container.DNLogicMono
 public import CatCryptCore.Container.DNLogicMonoClassical
@@ -1266,6 +1272,13 @@ public import CatCryptCore.Crypto.OT.GamesTimed
 public import CatCryptCore.Crypto.OTExtension.IKNPWake
 public import CatCryptCore.Crypto.OTExtension.IKNPWakeShape
 public import CatCryptCore.Crypto.OTExtension.IKNPPVW
+public import CatCryptCore.Crypto.Bridges.IrisBridge.Embedding
+public import CatCryptCore.Crypto.Bridges.IrisBridge.HeapAlgebra
+public import CatCryptCore.Crypto.Bridges.IrisBridge.OwnWP
+public import CatCryptCore.Crypto.Bridges.IrisBridge.OwnWPInstances
+public import CatCryptCore.Crypto.Bridges.IrisBridge.SLWP
+public import CatCryptCore.Crypto.Bridges.IrisBridge.SepWRP
+public import CatCryptCore.Crypto.Bridges.IrisBridge.WPMonadBI
 
 /-! # CatCrypt Core — umbrella
 

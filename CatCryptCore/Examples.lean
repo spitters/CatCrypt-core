@@ -82,6 +82,16 @@ public import CatCryptCore.Examples.EncodedMask
 public import CatCryptCore.Examples.GroupParamCommGroup
 public import CatCryptCore.Examples.SigmaCompositions
 public import CatCryptCore.Examples.SigmaWitness
+public import CatCryptCore.Examples.ToyPairingGroup
+public import CatCryptCore.Examples.OneTimePadWitness
+public import CatCryptCore.Examples.SchnorrWitness
+public import CatCryptCore.Examples.ChaumPedersenWitness
+public import CatCryptCore.Examples.Commitments.PedersenWitness
+public import CatCryptCore.Examples.SecretSharingWitness
+public import CatCryptCore.Examples.ShamirSecretSharingWitness
+public import CatCryptCore.Examples.CommitmentWitness
+public import CatCryptCore.Examples.SigmaSoundnessWitness
+public import CatCryptCore.Examples.OTWitness
 
 /-! # CatCrypt Core examples
 

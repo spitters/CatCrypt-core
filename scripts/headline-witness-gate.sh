@@ -7,6 +7,9 @@
 # concrete parameters with every hypothesis discharged and, for a bound, proves
 # the bound below 1; for a conclusion with an existential body, frame map or
 # simulator, the witness is a function of the compiled bytes or a definition.
+# A computational bound keeps the advantages of its reductions as terms: its
+# witness proves the remainder, the sum of the terms that are not an adversary's
+# advantage, below 1.
 #
 # scripts/headline-witness.tsv has one row per theorem that the public documents
 # of the repository name, in the columns
