@@ -30,10 +30,10 @@
     {
       "configFile": "lakefile.toml",
       "inherited": false,
-      "inputRev": "ce1fdfc002ad2ce0c804a7b14afd3f7d3ef67af8",
+      "inputRev": "e8b8fa9563654a8e0b7bf35e05aa9e446ef0bf63",
       "manifestFile": "lake-manifest.json",
       "name": "«refinement-wp»",
-      "rev": "ce1fdfc002ad2ce0c804a7b14afd3f7d3ef67af8",
+      "rev": "e8b8fa9563654a8e0b7bf35e05aa9e446ef0bf63",
       "scope": "",
       "subDir": null,
       "type": "git",

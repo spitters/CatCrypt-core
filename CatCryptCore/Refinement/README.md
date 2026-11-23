@@ -76,15 +76,41 @@ monad and a deep embedding. Composition holds for relational couplings of values
 and exceptions, given an assertion map that preserves existentials. Relational invariants, with a variant on pairs of states,
 relate two loops.
 
+## Refinement squares as a double category
+
+The refinements of [refinement-wp](https://github.com/spitters/refinement-wp) are the squares of a
+thin double category. A level is a category of programs with a weakest-precondition functor into
+monotone predicate transformers over a Heyting lattice, strict on identities and composites
+([`CatLevel`](WRPLevels.lean)). Over a family of levels, horizontal arrows are the programs of one
+level, vertical arrows are a concretization that preserves suprema, binary meets, top and bottom
+together with an exception map and a relation between return values, and squares are refinements;
+they form a thin double category ([`WRPLevels.instThinDoubleCategoryObj`](WRPLevels.lean)).
+
+The weakest precondition is a thin double functor into the double category of predicate
+transformers ([`WRPTransformers.instThinDoubleCategoryObj`](WRPTransformers.lean)), full on
+squares: a square of programs holds exactly when its image holds
+([`wpDouble_sq_iff`](WRPLevels.lean)). In the transformer double category a side `(γ, R)` acts by
+`Q ↦ γ.post R Q`, and a square with top `u`, bottom `w` and sides `f`, `g` is the inequality
+`f* ∘ wp u ⊑ wp w ∘ g*`. Since `f*` preserves suprema, it has a right adjoint, and the square is
+equivalently `wp u ⊑ f*ʳ ∘ wp w ∘ g*`: the abstract program is below the concrete program between
+decoding and encoding ([`sq_iff_le_rightAdjoint_of_eq`](WRPDouble.lean)).
+
+Monads whose weakest precondition is exact at `pure` and bind are levels through their Kleisli
+categories ([`Level.toCatLevel`](WRPDouble.lean)); there a square is a family of refinements
+([`sq_iff_refines`](WRPDouble.lean)). At the trivial precondition a square is the data refinement
+of predicate transformers of Gardiner and Morgan
+([TCS 87, 1991](https://doi.org/10.1016/0304-3975(91)90029-2)).
+
 ## Quantum channels
 
 A quantum computation with one outcome is a predicate transformer on observations of states, by
 [precomposition](RRelWRPQuantum.lean). Observations are arbitrary functions from positive
 semidefinite matrices to `ℝ≥0∞`, so they separate states. A computation refines another along the
-identity, in the sense of [refinement-wp](https://github.com/spitters/refinement-wp), exactly when
-the two are equal ([`channelRefines_iff`](RRelWRPQuantum.lean)), and refinement in one direction
-gives the other ([`channelRefines_both_iff`](RRelWRPQuantum.lean)). Vertical pasting composes
-refinements along a chain of compiler passes ([`ChannelRefines.trans`](RRelWRPQuantum.lean)).
+identity exactly when the two are equal ([`channelRefines_iff`](RRelWRPQuantum.lean)), and
+refinement in one direction gives the other ([`channelRefines_both_iff`](RRelWRPQuantum.lean)).
+Vertical pasting composes refinements along a chain of compiler passes
+([`ChannelRefines.trans`](RRelWRPQuantum.lean)). The channels of one dimension are a level, with
+sequencing as composition ([`channelLevel`](WRPLevelsQuantum.lean)).
 
 ## Parametricity
 

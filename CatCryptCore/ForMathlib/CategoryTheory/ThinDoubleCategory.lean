@@ -32,6 +32,9 @@ families of examples:
   `f ; w ⊆ u ; g` in the bicategory of relations, i.e. the forward simulations of the
   interpretation of `w` by the interpretation of `u`.
 
+A `ThinDoubleFunctor` maps objects, vertical and horizontal arrows, preserving identities and
+composites, and sends squares to squares.
+
 Mathlib candidate for a new file `Mathlib/CategoryTheory/DoubleCategory/Thin.lean`.
 Mathlib has `CommSq`, the bicategory API and the category `RelCat`, but no double category.
 
@@ -284,6 +287,20 @@ abbrev ofRelSemantics (S : RelSemantics X) :
       rw [S.sem_id] at hid
       exact ⟨x, by rw [S.sem_id], hid ▸ hf⟩ }
 
+/-- A lax square whose top denotes a deterministic relation and whose bottom denotes a total
+one transposes: the bottom on top, the top at the bottom and the converses of the sides as
+the sides. -/
+theorem RelSemantics.laxSq_converse (S : RelSemantics X) {a b c d : C}
+    {u : Hor.of a ⟶ Hor.of b} {f : X a → X c → Prop} {g : X b → X d → Prop}
+    {w : Hor.of c ⟶ Hor.of d}
+    (hu : ∀ x x₁ x₂, S.sem u x x₁ → S.sem u x x₂ → x₁ = x₂)
+    (hw : ∀ y, ∃ y', S.sem w y y') (h : S.LaxSq u f g w) :
+    S.LaxSq w (fun y x => f x y) (fun y' x' => g x' y') u := by
+  intro y x x' hf hux
+  obtain ⟨y', hwy⟩ := hw y
+  obtain ⟨x'', hux', hg⟩ := h x y y' hf hwy
+  exact ⟨y', hwy, (hu x x' x'' hux hux') ▸ hg⟩
+
 /-- In `ofRelSemantics S`, a square is a lax square of relations. -/
 theorem ofRelSemantics_sq (S : RelSemantics X) {a b c d : C} (u : Hor.of a ⟶ Hor.of b)
     (f : X a → X c → Prop) (g : X b → X d → Prop) (w : Hor.of c ⟶ Hor.of d) :
@@ -291,5 +308,36 @@ theorem ofRelSemantics_sq (S : RelSemantics X) {a b c d : C} (u : Hor.of a ⟶ H
   Iff.rfl
 
 end ThinDoubleCategory
+
+section Functor
+
+universe u₁ u₂ v₁ v₂ w₁ w₂
+
+/-- A thin double functor: an object map with maps of vertical and of horizontal arrows, each
+preserving identities and composites, that sends squares to squares. -/
+structure ThinDoubleFunctor (C : Type u₁) [Category.{v₁} C] [Category.{w₁} (Hor C)]
+    [ThinDoubleCategory C] (D : Type u₂) [Category.{v₂} D] [Category.{w₂} (Hor D)]
+    [ThinDoubleCategory D] where
+  /-- The object map. -/
+  obj : C → D
+  /-- The map of vertical arrows. -/
+  mapV {a c : C} : (a ⟶ c) → (obj a ⟶ obj c)
+  /-- The map of horizontal arrows. -/
+  mapH {a b : C} : (Hor.of a ⟶ Hor.of b) → (Hor.of (obj a) ⟶ Hor.of (obj b))
+  /-- Vertical identities are preserved. -/
+  mapV_id (a : C) : mapV (𝟙 a) = 𝟙 (obj a)
+  /-- Vertical composites are preserved. -/
+  mapV_comp {a b c : C} (f : a ⟶ b) (g : b ⟶ c) : mapV (f ≫ g) = mapV f ≫ mapV g
+  /-- Horizontal identities are preserved. -/
+  mapH_id (a : C) : mapH (𝟙 (Hor.of a)) = 𝟙 (Hor.of (obj a))
+  /-- Horizontal composites are preserved. -/
+  mapH_comp {a b c : C} (u : Hor.of a ⟶ Hor.of b) (u' : Hor.of b ⟶ Hor.of c) :
+    mapH (u ≫ u') = mapH u ≫ mapH u'
+  /-- Squares are sent to squares. -/
+  map_sq {a b c d : C} {u : Hor.of a ⟶ Hor.of b} {f : a ⟶ c} {g : b ⟶ d}
+    {w : Hor.of c ⟶ Hor.of d} :
+    ThinDoubleCategory.Sq u f g w → ThinDoubleCategory.Sq (mapH u) (mapV f) (mapV g) (mapH w)
+
+end Functor
 
 end CategoryTheory

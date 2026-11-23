@@ -54,14 +54,14 @@ require QuantumFoundations from git
 require PolyFun from git
   "https://github.com/Verified-zkEVM/PolyFun" @ "528b3b1fda285487e55704409bd1b058dc18fcad"
 
--- refinement-wp: the refinement weakest precondition `wrp` over `Std.WP`, which
--- `Refinement/RRelWRP.lean` relates to `RRelPT`.
 -- iris-lean, required by the IrisBridge modules; the same tag as nominal-lean requires.
 require iris from git
   "https://github.com/spitters/iris-catcrypt" @ "v4.36.0-catcrypt.1" / "Iris"
 
+-- refinement-wp: the refinement weakest precondition `wrp` over `Std.WP`, which
+-- `Refinement/RRelWRP.lean` relates to `RRelPT`.
 require «refinement-wp» from git
-  "https://github.com/spitters/refinement-wp" @ "ce1fdfc002ad2ce0c804a7b14afd3f7d3ef67af8"
+  "https://github.com/spitters/refinement-wp" @ "e8b8fa9563654a8e0b7bf35e05aa9e446ef0bf63"
 
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.

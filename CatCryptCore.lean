@@ -226,6 +226,12 @@ public import CatCryptCore.XDijkstra.XRelatorPMF
 public import CatCryptCore.XDijkstra.XStdWP
 public import CatCryptCore.Refinement.RRelWRPQuantum
 public import CatCryptCore.Refinement.RRelWRPQuantumUpTo
+public import CatCryptCore.Refinement.WRPDouble
+public import CatCryptCore.Refinement.WRPTransformers
+public import CatCryptCore.Refinement.WRPLevels
+public import CatCryptCore.Refinement.WRPLevelsQuantum
+public import CatCryptCore.Refinement.WRPRelSemantics
+public import CatCryptCore.Refinement.WRPGraded
 
 -- Deep embedding
 public import CatCryptCore.Deep.RawCode
