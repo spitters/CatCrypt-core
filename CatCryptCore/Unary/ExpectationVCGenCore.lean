@@ -5,19 +5,17 @@ Authors: CatCrypt Contributors
 -/
 module
 
+public import CatCryptCore.ForMathlib.Order.LeanOrderENNReal
 public import CatCryptCore.Unary.ExpectationWP
 public import Std.Tactic.Do
 public import Std.WP
-
-@[expose] public section
-set_option autoImplicit false
 
 /-!
 # `Std.WP` weakest-precondition instances for `SPComp` at the expectation carrier
 
 Two instances of the toolchain's `Std.WP.WPMonad` class for `SPComp`, so that
 the `vcgen` tactic decomposes quantitative goals about `SPComp` programs. The module
-imports only `CatCryptCore.Unary.ExpectationWP`, `Std.Tactic.Do` (the `vcgen` tactic)
+imports `CatCryptCore.Unary.ExpectationWP`, `Std.Tactic.Do` (the `vcgen` tactic)
 and `Std.WP` (the `WPMonad` class); two examples are in
 `CatCryptCore.Unary.ExpectationVCGen`.
 
@@ -31,7 +29,8 @@ and `Std.WP` (the `WPMonad` class); two examples are in
   contributes `0`. At the default exception postcondition `⊥ = toDual ⊤` a failure
   outcome contributes `⊤`.
 
-The `Lean.Order` complete-lattice structures on `ℝ≥0∞` and `ℝ≥0∞ᵒᵈ` are those of Mathlib.
+The `Lean.Order` complete-lattice structures on `ℝ≥0∞` and `ℝ≥0∞ᵒᵈ` are those of Mathlib
+(`CatCryptCore.ForMathlib.Order.LeanOrderENNReal`).
 
 ## Main definitions
 
@@ -49,39 +48,14 @@ The `Lean.Order` complete-lattice structures on `ℝ≥0∞` and `ℝ≥0∞ᵒ�
   `SPComp.set` and `SPComp.fail` in both instances.
 -/
 
+@[expose] public section
+
+set_option autoImplicit false
+
 namespace CatCrypt.Unary
 
 open CatCrypt.Core CatCrypt.Prob
 open scoped ENNReal
-
-/-! ## `Lean.Order` complete lattices from Mathlib's -/
-
-/-- The `Lean.Order` complete lattice of a Mathlib complete lattice: `⊑` is `≤` and the
-supremum of a predicate is the `sSup` of its extension. -/
-abbrev leanOrderCompleteLatticeOf (α : Type) [_root_.CompleteLattice α] :
-    Lean.Order.CompleteLattice α where
-  rel a b := a ≤ b
-  rel_refl := le_refl _
-  rel_trans := le_trans
-  rel_antisymm := le_antisymm
-  has_sup c :=
-    ⟨sSup {x | c x}, fun _ => ⟨fun hsup _ hcy => le_trans (le_sSup hcy) hsup, sSup_le⟩⟩
-
-noncomputable instance instLeanOrderCompleteLatticeENNReal : Lean.Order.CompleteLattice ℝ≥0∞ :=
-  leanOrderCompleteLatticeOf ℝ≥0∞
-
-noncomputable instance instLeanOrderCompleteLatticeENNRealDual :
-    Lean.Order.CompleteLattice ℝ≥0∞ᵒᵈ :=
-  leanOrderCompleteLatticeOf ℝ≥0∞ᵒᵈ
-
-/-- The chain-complete partial order of `ℝ≥0∞` induced by its complete lattice; it
-supplies the bottom `Lean.Order.bot` used as the default exception postcondition. -/
-noncomputable instance instLeanOrderCCPOENNReal : Lean.Order.CCPO ℝ≥0∞ where
-  has_csup {c} _ := Lean.Order.CompleteLattice.has_sup c
-
-/-- The chain-complete partial order of `ℝ≥0∞ᵒᵈ` induced by its complete lattice. -/
-noncomputable instance instLeanOrderCCPOENNRealDual : Lean.Order.CCPO ℝ≥0∞ᵒᵈ where
-  has_csup {c} _ := Lean.Order.CompleteLattice.has_sup c
 
 /-! ## The failure-weighted preexpectation -/
 
@@ -96,7 +70,7 @@ failure mass of the continuation weighted by each successful outcome. -/
 theorem spcomp_bind_apply_none {α β : Type} (c : SPComp α) (f : α → SPComp β) (h : Heap) :
     (SPComp.bind c f h) none =
       (c h) none + ∑' p : α × Heap, (c h) (some p) * (f p.1 p.2) none := by
-  show (SDistr.bind (c h) fun p : α × Heap => f p.1 p.2) none = _
+  change (SDistr.bind (c h) fun p : α × Heap => f p.1 p.2) none = _
   unfold SDistr.bind
   simp_all [PMF.bind_apply, SDistr.tsum_option_eq_add, SDistr.fail_apply_none, mul_one]
 
@@ -125,7 +99,7 @@ theorem wpEF_sample (α : Type) [Fintype α] [Nonempty α] (post : α → Heap �
     (e : ℝ≥0∞) (h : Heap) :
     wpEF (SPComp.sample α) post e h = (Fintype.card α : ℝ≥0∞)⁻¹ * ∑' a : α, post a h := by
   have hnone : (SPComp.sample α h) none = 0 := by
-    show ((SDistr.uniform α).bind fun a => SDistr.pure (a, h)) none = 0
+    change ((SDistr.uniform α).bind fun a => SDistr.pure (a, h)) none = 0
     unfold SDistr.bind
     rw [PMF.bind_apply, SDistr.tsum_option_eq_add]
     simp_all [SDistr.uniform_apply_none, SDistr.pure_apply_none]
@@ -164,15 +138,11 @@ noncomputable instance instWPMonadSPComp : WPMonad SPComp (Heap → ℝ≥0∞) 
 theorem wp_eq_wpEF {α : Type} (c : SPComp α) (post : α → Heap → ℝ≥0∞) (e : ℝ≥0∞) :
     wp c post e = wpEF c post e := rfl
 
-/-- The `Lean.Order` bottom of `ℝ≥0∞` is `0`. -/
-theorem lean_order_bot_eq_zero : (Lean.Order.bot : ℝ≥0∞) = 0 :=
-  le_antisymm (Lean.Order.bot_le (0 : ℝ≥0∞)) zero_le
-
 /-- At the exception postcondition `⊥`, the weakest precondition of `SPComp` is `wpE`. -/
 theorem wp_bot_eq_wpE {α : Type} (c : SPComp α) (post : α → Heap → ℝ≥0∞) :
     wp c post Lean.Order.bot = wpE c post := by
   funext h
-  simp_all [wp_eq_wpEF, wpEF, lean_order_bot_eq_zero, zero_mul, add_zero]
+  simp_all [wp_eq_wpEF, wpEF, ENNReal.leanOrder_bot_eq_zero, zero_mul, add_zero]
 
 /-- A lower-bound triple at exception postcondition `⊥` is the pointwise bound
 `P ≤ wpE c Q`. -/
@@ -228,14 +198,6 @@ theorem spec_wpE_lower {α : Type} (c : SPComp α) {post : α → Heap → ℝ�
     {e : ℝ≥0∞} :
     Triple c (fun h => wpE c post h) post e :=
   ⟨fun _ => le_self_add⟩
-
-/-- The `Lean.Order` relation on `ℝ≥0∞` is `≤`. -/
-@[simp] theorem leanOrder_rel_iff_le (a b : ℝ≥0∞) :
-    Lean.Order.PartialOrder.rel a b ↔ a ≤ b := Iff.rfl
-
-/-- The `Lean.Order` relation on `ℝ≥0∞ᵒᵈ` is the reversed `≤` of `ℝ≥0∞`. -/
-@[simp] theorem leanOrder_rel_dual_iff (a b : ℝ≥0∞ᵒᵈ) :
-    Lean.Order.PartialOrder.rel a b ↔ OrderDual.ofDual b ≤ OrderDual.ofDual a := Iff.rfl
 
 /-! ## The upper-bound instance -/
 

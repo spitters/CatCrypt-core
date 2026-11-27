@@ -5,10 +5,10 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Container.Code
 public import CatCryptCore.Core.SPTreeFree
+public import PolyFun.PFunctor.Free.Code
 public import PolyFun.PFunctor.Free.WP.Charge
-import CatCryptCore.Tactics.DeriveFreeSig
+import PolyFun.PFunctor.Free.DeriveSig
 
 /-!
 # Cost as an interpretation of codes
@@ -111,8 +111,8 @@ theorem cost_mono {χ χ' : P.A → ℕ} (h : ∀ a, χ a ≤ χ' a) (x : P.Free
 
 /-- **Invariance under the relational lift.** Programs related by the lift of any relation have
 the same cost. -/
-theorem FreeRel.cost_eq {R : α → β → Prop} (χ : P.A → ℕ) {x : P.FreeM α} {y : P.FreeM β}
-    (h : FreeRel P R x y) : cost χ x = cost χ y := by
+theorem _root_.PFunctor.FreeRel.cost_eq {R : α → β → Prop} (χ : P.A → ℕ) {x : P.FreeM α}
+    {y : P.FreeM β} (h : FreeRel P R x y) : cost χ x = cost χ y := by
   induction h with
   | pure _ => rfl
   | liftBind a _ ih => rw [cost_liftBind, cost_liftBind, iSup_congr ih]

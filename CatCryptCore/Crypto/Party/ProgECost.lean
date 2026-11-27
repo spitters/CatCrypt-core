@@ -7,7 +7,7 @@ module
 
 public import CatCryptCore.Container.CodeCost
 public import CatCryptCore.Crypto.Party.LoopTimed
-import CatCryptCore.Tactics.DeriveFreeSig
+import PolyFun.PFunctor.Free.DeriveSig
 
 /-!
 # The time bound of party programs as a cost fold

@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Data.ENNReal.Basic
+public import Mathlib.Basic.ENNReal.Basic
 
 /-!
 # Natural-number coefficients in `ℝ≥0∞`

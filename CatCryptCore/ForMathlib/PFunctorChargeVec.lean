@@ -30,7 +30,6 @@ charged the handler's worst-case cost at `a`.
   of its component bounds
 * `PFunctor.FreeM.wpFold_chargeUnder_price_le` — a vector bound `u` gives the scalar bound
   `∑ i, p i * u i` on the fold at the priced charge
-* `PFunctor.FreeM.wpFold_charge_price_le` — the same with every answer allowed
 * `PFunctor.FreeM.wpFold_chargeUnder_liftM_le` — simulation overhead under allowed answers
 -/
 
@@ -109,13 +108,6 @@ theorem wpFold_chargeUnder_price_le {ι : Type*} [Fintype ι] (c : P.A → ι �
   simp only [Pi.zero_apply, mul_zero, Finset.sum_const_zero] at h
   exact h.trans (Finset.sum_le_sum fun i _ => mul_le_mul_right (hu i) (p i))
 
-/-- **Pricing a vector bound**, with every answer allowed. -/
-theorem wpFold_charge_price_le {ι : Type*} [Fintype ι] (c : P.A → ι → ℕ∞) (p : ι → ℕ∞)
-    {x : FreeM P α} {u : ι → ℕ∞} (hu : wpFold (OpSpec.charge c) x (fun _ => 0) ≤ u) :
-    wpFold (OpSpec.charge fun a => ∑ i, p i * c a i) x (fun _ => 0) ≤ ∑ i, p i * u i := by
-  rw [← OpSpec.chargeUnder_true] at hu ⊢
-  exact wpFold_chargeUnder_price_le c _ p hu
-
 end Vector
 
 section Simulation
@@ -134,22 +126,8 @@ theorem wpFold_chargeUnder_liftM_le {Q : PFunctor.{uA₂, uB}} (c : Q.A → ℕ�
     wpFold (OpSpec.chargeUnder c allows) (x.liftM handler) (fun _ => 0) ≤
       wpFold (OpSpec.chargeUnder
         (fun a => wpFold (OpSpec.chargeUnder c allows) (handler a) fun _ => 0) allowsP)
-        x (fun _ => 0) := by
-  rw [wpFold_liftM]
-  induction x with
-  | pure r => exact le_rfl
-  | lift_bind a r ih =>
-    change wpFold (OpSpec.chargeUnder c allows) (handler a)
-        (fun u => wpFold ((OpSpec.chargeUnder c allows).pullback handler) (r u) _) ≤
-      wpFold (OpSpec.chargeUnder c allows) (handler a) (fun _ => 0) + ⨆ b, ⨆ (_ : allowsP a b),
-        wpFold (OpSpec.chargeUnder
-          (fun a => wpFold (OpSpec.chargeUnder c allows) (handler a) fun _ => 0) allowsP)
-          (r b) (fun _ => 0)
-    refine wpFold_chargeUnder_le_add_of_demonicUnder c allows (hhandler a) fun b hb => ?_
-    exact (ih b).trans (le_iSup₂_of_le (f := fun b (_ : allowsP a b) =>
-      wpFold (OpSpec.chargeUnder
-        (fun a => wpFold (OpSpec.chargeUnder c allows) (handler a) fun _ => 0) allowsP)
-        (r b) (fun _ => 0)) b hb le_rfl)
+        x (fun _ => 0) :=
+  costUnder_liftM_le c handler hhandler x
 
 end Simulation
 

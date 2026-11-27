@@ -45,7 +45,7 @@ theorem same_msg_prTrue_vcgen (m : Bool) :
       Lean.Order.bot := by
     unfold det_enc_pair eq_adversary xorDet
     vcgen
-    all_goals simp only [leanOrder_rel_iff_le, tsum_bool, wp_eq_wpEF, wpEF_pure,
+    all_goals simp only [ENNReal.leanOrder_rel_iff_le, tsum_bool, wp_eq_wpEF, wpEF_pure,
       Fintype.card_bool, beq_self_eq_true]
     all_goals simp only [ite_true, ← two_mul, Nat.cast_ofNat, mul_one]
     all_goals simp only [binderNameHint, wpEF_pure, beq_self_eq_true, ite_true, ← two_mul, mul_one]
@@ -85,14 +85,14 @@ theorem prEventComp_bind_step_le_vcgen
       (OrderDual.toDual 0) := by
     vcgen [hstep, hm]
     rename_i h
-    simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
+    simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
     calc wpE m (fun _ h' => OrderDual.ofDual (wp (SPCompU.lift step)
             (fun _ h => OrderDual.toDual (if bad h then (1 : ℝ≥0∞) else 0))
             (OrderDual.toDual 0) h')) h
         ≤ wpE m (fun _ h' => (if bad h' then (1 : ℝ≥0∞) else 0) + ε) h := by
           refine wpE_mono m (fun _ h' => ?_) h
           have hle := hstep.le_wp h'
-          simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual] at hle
+          simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual] at hle
           refine le_trans hle ?_
           split_ifs <;> simp
       _ ≤ wpE m (fun _ h' => if bad h' then (1 : ℝ≥0∞) else 0) h + ε := by

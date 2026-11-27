@@ -9,7 +9,7 @@ public import CatCryptCore.Crypto.Advantage
 public import CatCryptCore.Crypto.HybridArgument
 public import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 public import Mathlib.Algebra.BigOperators.Ring.Finset
-public import Mathlib.Data.ENNReal.Inv
+public import Mathlib.Basic.ENNReal.Inv
 public import Mathlib.Algebra.BigOperators.Intervals
 
 /-!

@@ -101,17 +101,8 @@ theorem wpFold_chargeUnder_le_add_of_demonicUnder {X : Type*} (c : P.A → ℕ�
     (allows : (a : P.A) → P.B a → Prop) {x : FreeM P X} {post : X → ℕ∞} {I : X → Prop}
     {k : ℕ∞} (hI : wpFold (OpSpec.demonicUnder allows) x I) (hpost : ∀ a, I a → post a ≤ k) :
     wpFold (OpSpec.chargeUnder c allows) x post ≤
-      wpFold (OpSpec.chargeUnder c allows) x (fun _ => 0) + k := by
-  induction x with
-  | pure a => simpa using hpost a hI
-  | lift_bind a r ih =>
-    change c a + (⨆ b, ⨆ (_ : allows a b), wpFold (OpSpec.chargeUnder c allows) (r b) post) ≤
-      (c a + ⨆ b, ⨆ (_ : allows a b),
-        wpFold (OpSpec.chargeUnder c allows) (r b) fun _ => 0) + k
-    rw [add_assoc]
-    exact add_le_add le_rfl (iSup₂_le fun b hb =>
-      (ih b (hI b hb)).trans (add_le_add_left (le_iSup₂ (f := fun b (_ : allows a b) =>
-        wpFold (OpSpec.chargeUnder c allows) (r b) fun _ => 0) b hb) k))
+      wpFold (OpSpec.chargeUnder c allows) x (fun _ => 0) + k :=
+  (wpFold_chargeUnder_le_costUnder_add hI post).trans (add_le_add le_rfl (iSup₂_le hpost))
 
 /-- The bind clause of the charge fold: bounds `m` on `x` and `n` on `f a` at every return `a`
 satisfying `I`, where every allowed return of `x` satisfies `I`, bound `x.bind f` by `m + n`. -/
@@ -120,20 +111,8 @@ theorem wpFold_chargeUnder_bind_le {X Y : Type*} (c : P.A → ℕ∞)
     {m n : ℕ∞} (hx : wpFold (OpSpec.chargeUnder c allows) x (fun _ => 0) ≤ m)
     (hf : ∀ a, I a → wpFold (OpSpec.chargeUnder c allows) (f a) (fun _ => 0) ≤ n)
     (hI : wpFold (OpSpec.demonicUnder allows) x I) :
-    wpFold (OpSpec.chargeUnder c allows) (x.bind f) (fun _ => 0) ≤ m + n := by
-  rw [wpFold_bind']
-  exact (wpFold_chargeUnder_le_add_of_demonicUnder c allows hI hf).trans
-    (add_le_add_left hx n)
-
-/-- The demonic fold over the allowed answers is antitone in `allows`: a postcondition holding
-at every return reachable under `allows` holds at every return reachable under fewer answers. -/
-theorem wpFold_demonicUnder_of_le {X : Type*} {allows allows' : (a : P.A) → P.B a → Prop}
-    (h : ∀ a b, allows' a b → allows a b) {x : FreeM P X} {Q : X → Prop}
-    (hx : wpFold (OpSpec.demonicUnder allows) x Q) :
-    wpFold (OpSpec.demonicUnder allows') x Q := by
-  induction x with
-  | pure a => exact hx
-  | lift_bind a r ih => exact fun b hb => ih b (hx b (h a b hb))
+    wpFold (OpSpec.chargeUnder c allows) (x.bind f) (fun _ => 0) ≤ m + n :=
+  (costUnder_bind_le_of_wpFold (f := f) hI).trans (add_le_add hx (iSup₂_le hf))
 
 /-- With every answer allowed, a bound on the charge fold is the subtractive roll bound. -/
 theorem isRollBound_iff_wpFold_chargeUnder_true (c : P.A → ℕ) (x : FreeM P α) (n : ℕ) :

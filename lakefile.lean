@@ -61,7 +61,7 @@ require iris from git
 -- refinement-wp: the refinement weakest precondition `wrp` over `Std.WP`, which
 -- `Refinement/RRelWRP.lean` relates to `RRelPT`.
 require «refinement-wp» from git
-  "https://github.com/spitters/refinement-wp" @ "e8b8fa9563654a8e0b7bf35e05aa9e446ef0bf63"
+  "https://github.com/spitters/refinement-wp" @ "7f631d54c0adfef89cb0cf9cea92a199c7343e14"
 
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.

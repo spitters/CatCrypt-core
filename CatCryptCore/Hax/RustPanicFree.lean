@@ -48,8 +48,8 @@ open _root_.Std.WP Lean.Order
 
 /-- A triple with a false exception postcondition, at a state satisfying its
 precondition, makes the program a value satisfying the postcondition. -/
-theorem eq_ok_of_triple {α : Type} {x : Aeneas.Std.RustM α} {P : Prop} {Q : α → Prop}
-    {epost : Aeneas.Std.Error → Prop} (h : Triple x P Q epost) (hE : ∀ e, ¬ epost e) (hP : P) :
+theorem eq_ok_of_triple {α : Type} {x : HaxLean.Aeneas.Std.RustM α} {P : Prop} {Q : α → Prop}
+    {epost : HaxLean.Aeneas.Std.Error → Prop} (h : Triple x P Q epost) (hE : ∀ e, ¬ epost e) (hP : P) :
     ∃ v, x = .ok v ∧ Q v := by
   have hw := h.le_wp hP
   cases x with
@@ -59,19 +59,19 @@ theorem eq_ok_of_triple {α : Type} {x : Aeneas.Std.RustM α} {P : Prop} {Q : α
 
 /-- The exception postcondition `⊥` of the triple notation `⦃P⦄ x ⦃Q⦄` at `RustM` holds
 at no error. -/
-theorem bot_epost_false (e : Aeneas.Std.Error) :
-    ¬ (Lean.Order.bot : Aeneas.Std.Error → Prop) e := by
+theorem bot_epost_false (e : HaxLean.Aeneas.Std.Error) :
+    ¬ (Lean.Order.bot : HaxLean.Aeneas.Std.Error → Prop) e := by
   simp_all
 
 /-- `PanicFreeOn pre f` from a triple `⦃pre x⦄ f x ⦃post x⦄` at every argument. -/
-theorem panicFreeOn_of_triple {α β : Type} {pre : α → Prop} {f : α → Aeneas.Std.RustM β}
+theorem panicFreeOn_of_triple {α β : Type} {pre : α → Prop} {f : α → HaxLean.Aeneas.Std.RustM β}
     (post : α → β → Prop) (h : ∀ x, ⦃ pre x ⦄ f x ⦃ post x ⦄) : PanicFreeOn pre f := by
   intro x hx
   obtain ⟨v, hv, _⟩ := eq_ok_of_triple (h x) bot_epost_false hx
   exact ⟨v, hv⟩
 
 /-- `x = .ok v` from the triple `⦃P⦄ x ⦃fun r => r = v⦄` and `P`. -/
-theorem eq_ok_of_triple_eq {α : Type} {x : Aeneas.Std.RustM α} {v : α} {P : Prop}
+theorem eq_ok_of_triple_eq {α : Type} {x : HaxLean.Aeneas.Std.RustM α} {v : α} {P : Prop}
     (h : ⦃ P ⦄ x ⦃ fun r => r = v ⦄) (hP : P) : x = .ok v := by
   obtain ⟨w, hw, rfl⟩ := eq_ok_of_triple h bot_epost_false hP
   exact hw
@@ -107,8 +107,8 @@ catcrypt_auto_shape "RustM panic freedom" direct priority 60 :=
   app UCMonad.RustMBridge.PanicFreeOn
 
 catcrypt_auto_shape "RustM value equation" direct priority 55 :=
-  all [arg Eq/3 at 0 whnf (app Aeneas.Std.RustM),
-    arg Eq/3 at 2 (any [app Aeneas.Std.RustM.ok, app Pure.pure])]
+  all [arg Eq/3 at 0 whnf (app HaxLean.Aeneas.Std.RustM),
+    arg Eq/3 at 2 (any [app HaxLean.Aeneas.Std.RustM.ok, app Pure.pure])]
 
 catcrypt_auto_arm "RustM panic freedom" order 10 := "rust_panic_free"
 
@@ -121,7 +121,7 @@ open Hax _root_.Std.WP Lean.Order
 
 /-- `a[x + 1]` with a checked 64-bit increment: the two guarded operations `addM_w 64`
 and `indexM`. -/
-def incrIndex (p : Array Int × Int) : Aeneas.Std.RustM Int := do
+def incrIndex (p : Array Int × Int) : HaxLean.Aeneas.Std.RustM Int := do
   let j ← addM_w 64 p.2 1
   indexM p.1 j
 

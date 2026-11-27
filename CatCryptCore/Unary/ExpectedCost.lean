@@ -225,7 +225,7 @@ theorem ecost_bind_le (c : CostComp α) (f : α → CostComp β) (h : Heap) :
     unfold CostComp.bind
     vcgen [hc]
     rename_i s
-    simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
+    simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
       add_zero, wpE_bind, wpE_pure, Nat.cast_add, wpE_add, ecost]
     exact add_le_add (wpE_mono c (fun p h' => wpE_const_le _ _ _) s) le_rfl
   exact (SPCompU.triple_iff_wpE_le _ _ _).1 ht h
@@ -248,7 +248,7 @@ theorem ecost_bind (c : CostComp α) (f : α → CostComp β)
     unfold CostComp.bind
     vcgen [hc]
     rename_i s
-    simp only [leanOrder_rel_iff_le, wp_bot_eq_wpE, ecost]
+    simp only [ENNReal.leanOrder_rel_iff_le, wp_bot_eq_wpE, ecost]
     rw [← wpE_add]
     refine le_of_eq (wpE_congr c (fun p h' => ?_) s)
     simp only [wpE_bind, wpE_pure, Nat.cast_add, wpE_add, wpE_const_of_lossless (hf p.1)]

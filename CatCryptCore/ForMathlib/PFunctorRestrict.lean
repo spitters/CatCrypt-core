@@ -24,8 +24,9 @@ the demonic reading over the allowed answers.
   the inclusion of directions
 * `PFunctor.FreeM.wpFold_chargeUnder_eq_restrict` — the charge fold over the allowed answers is
   the charge fold of the restricted tree
-* `PFunctor.FreeM.wpFold_demonicUnder_iff_restrict` — the demonic fold over the allowed answers
-  is the demonic fold of the restricted tree
+
+The demonic fold over the allowed answers is the demonic fold of the restricted tree by PolyFun's
+`PFunctor.FreeM.wpFold_demonic_restrict_iff`.
 -/
 
 @[expose] public section
@@ -69,14 +70,6 @@ theorem wpFold_chargeUnder_eq_restrict {R : Type w} [CompleteLattice R] [Add R] 
     wpFold (OpSpec.chargeUnder c allows) x post =
       wpFold (OpSpec.charge (P := P.restrict allows) c) (x.restrict allows) post := by
   rw [FreeM.restrict, wpFold_mapLens, OpSpec.chargeUnder_eq]
-  rfl
-
-/-- The demonic fold over the allowed answers is the demonic fold of the restricted tree. -/
-theorem wpFold_demonicUnder_iff_restrict (allows : (a : P.A) → P.B a → Prop) (x : FreeM P α)
-    (I : α → Prop) :
-    wpFold (OpSpec.demonicUnder allows) x I ↔
-      wpFold (OpSpec.demonic (P.restrict allows)) (x.restrict allows) I := by
-  rw [FreeM.restrict, wpFold_mapLens, OpSpec.demonicUnder_eq]
   rfl
 
 end FreeM

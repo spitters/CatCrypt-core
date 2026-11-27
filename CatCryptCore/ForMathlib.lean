@@ -65,6 +65,7 @@ public import CatCryptCore.ForMathlib.MatrixPosSemidef
 public import CatCryptCore.ForMathlib.MultisetSum
 public import CatCryptCore.ForMathlib.NatFindBounded
 public import CatCryptCore.ForMathlib.Order.ScottInduction
+public import CatCryptCore.ForMathlib.Order.LeanOrderENNReal
 public import CatCryptCore.ForMathlib.PFunctorChargeUnder
 public import CatCryptCore.ForMathlib.PFunctorChargeVec
 public import CatCryptCore.ForMathlib.PFunctorRestrict

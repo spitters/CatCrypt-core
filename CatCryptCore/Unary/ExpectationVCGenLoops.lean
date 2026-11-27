@@ -93,7 +93,7 @@ theorem prBad_induction_forIn_vcgen
     case vc1 => simp_all
     case vc2 => simp_all
     case vc3 s =>
-      simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, binderNameHint,
+      simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, binderNameHint,
         SPCompU.wp_pure, List.length_cons, Nat.cast_add, Nat.cast_one]
       rw [wpE_add step (fun _ h' => if bad h' then 1 else 0) (fun _ _ => _)]
       have h1 : wpE step (fun _ h' => if bad h' then (1 : ℝ≥0∞) else 0) s
@@ -166,7 +166,7 @@ theorem ecost_retryN_le_forIn_vcgen {β : Type} (body : CostComp (Option β)) {C
     case vc1 => simp
     case vc2 => simp
     case vc3 pref cur suff hxs _ k s =>
-      simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, List.length_cons]
+      simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, List.length_cons]
       set D := C * ∑ i ∈ Finset.range suff.length, q ^ i
       refine (wpE_mono body (post' := fun a _ =>
         ((k : ℝ≥0∞) + a.2) + D * (a.1.elim 1 fun _ => 0)) (fun a _ => ?_) s).trans ?_

@@ -12,23 +12,23 @@ public import HaxLean.Rust.WP
 # The `RustM` monad at the root namespace
 
 `RustM` is the result monad of the Aeneas `Std` model vendored by hax-lean,
-`Aeneas.Std.RustM`: a value (`.ok v`), a failure (`.fail e`) or divergence
+`HaxLean.Aeneas.Std.RustM`: a value (`.ok v`), a failure (`.fail e`) or divergence
 (`.div`). This module gives it and its error type the root-level names `RustM`
 and `Error`, as abbreviations, so that `UCMonad.RustMBridge` and `CTypeBridge`
 state their results over the type that the extraction readings use.
 
-`Error` has the two kinds `panic` and `undef` of `Aeneas.Std.Error`. The five
+`Error` has the two kinds `panic` and `undef` of `HaxLean.Aeneas.Std.Error`. The five
 further kinds of the hax-lib error type (`assertionFailure`, `integerOverflow`,
 `divisionByZero`, `arrayOutOfBounds`, `maximumSizeExceeded`) are absent: no
 module of the workspace constructs or matches on them.
 
 ## What is provided
 
-* `Error`, `RustM`: abbreviations of `Aeneas.Std.Error` and `Aeneas.Std.RustM`,
+* `Error`, `RustM`: abbreviations of `HaxLean.Aeneas.Std.Error` and `HaxLean.Aeneas.Std.RustM`,
   with the constructors and `bind` exported under the root-level names. The
   monad and lawful-monad instances are those of hax-lean.
-* `RustM.isOk`, `RustM.of_isOk`: the Boolean test `Aeneas.Std.ok?` and the
-  extraction `Aeneas.Std.eval_global`.
+* `RustM.isOk`, `RustM.of_isOk`: the Boolean test `HaxLean.Aeneas.Std.ok?` and the
+  extraction `HaxLean.Aeneas.Std.eval_global`.
 * `RustM.IsOk`: the proposition that a computation is a value, with its
   introduction rules and `RustM.isOk_bind`.
 * `RustM.extractPure`: the value of a computation, or `default`.
@@ -39,31 +39,31 @@ module of the workspace constructs or matches on them.
 
 set_option autoImplicit false
 
-/-- Error kinds of a failing Rust computation: `Aeneas.Std.Error`. -/
-abbrev Error : Type := Aeneas.Std.Error
+/-- Error kinds of a failing Rust computation: `HaxLean.Aeneas.Std.Error`. -/
+abbrev Error : Type := HaxLean.Aeneas.Std.Error
 
-/-- The result monad of Rust computations, `Aeneas.Std.RustM`:
+/-- The result monad of Rust computations, `HaxLean.Aeneas.Std.RustM`:
     * `.ok v`: completion with value `v`
     * `.fail e`: a runtime error
     * `.div`: divergence -/
-abbrev RustM.{u} (α : Type u) : Type u := Aeneas.Std.RustM α
+abbrev RustM.{u} (α : Type u) : Type u := HaxLean.Aeneas.Std.RustM α
 
 namespace Error
 
-export Aeneas.Std.Error (panic undef)
+export HaxLean.Aeneas.Std.Error (panic undef)
 
 end Error
 
 namespace RustM
 
-export Aeneas.Std.RustM (ok fail div)
-export Aeneas.Std (bind)
+export HaxLean.Aeneas.Std.RustM (ok fail div)
+export HaxLean.Aeneas.Std (bind)
 
-/-- Is a `RustM` computation a value? This is `Aeneas.Std.ok?`. -/
-abbrev isOk {α : Type} (x : RustM α) : Bool := Aeneas.Std.ok? x
+/-- Is a `RustM` computation a value? This is `HaxLean.Aeneas.Std.ok?`. -/
+abbrev isOk {α : Type} (x : RustM α) : Bool := HaxLean.Aeneas.Std.ok? x
 
-/-- The value of a computation known to be one. This is `Aeneas.Std.eval_global`. -/
-abbrev of_isOk {α : Type} (x : RustM α) (h : RustM.isOk x) : α := Aeneas.Std.eval_global x h
+/-- The value of a computation known to be one. This is `HaxLean.Aeneas.Std.eval_global`. -/
+abbrev of_isOk {α : Type} (x : RustM α) (h : RustM.isOk x) : α := HaxLean.Aeneas.Std.eval_global x h
 
 @[simp]
 theorem ok_of_isOk {α : Type} (v : α) (h : isOk (ok v)) :

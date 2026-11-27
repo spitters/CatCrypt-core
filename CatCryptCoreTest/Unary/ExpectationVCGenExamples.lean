@@ -57,7 +57,7 @@ theorem ecost_bind_le_vcgen {α β : Type} (c : CostComp α) (f : α → CostCom
     unfold CostComp.bind
     vcgen [hc]
     rename_i s
-    simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
+    simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
       add_zero, wpE_bind, wpE_pure, Nat.cast_add, wpE_add, ecost]
     exact add_le_add (wpE_mono c (fun p h' => wpE_const_le _ _ _) s) le_rfl
   exact (SPCompU.triple_iff_wpE_le _ _ _).1 ht h
@@ -80,7 +80,7 @@ theorem ecost_bind_vcgen {α β : Type} (c : CostComp α) (f : α → CostComp �
     unfold CostComp.bind
     vcgen [hc]
     rename_i s
-    simp only [leanOrder_rel_iff_le, wp_bot_eq_wpE, ecost]
+    simp only [ENNReal.leanOrder_rel_iff_le, wp_bot_eq_wpE, ecost]
     rw [← wpE_add]
     refine le_of_eq (wpE_congr c (fun p h' => ?_) s)
     simp only [wpE_bind, wpE_pure, Nat.cast_add, wpE_add, wpE_const_of_lossless (hf p.1)]
@@ -109,7 +109,7 @@ theorem ecost_compileCharged_le_queryCost_vcgen {α : Type} (s : SPTree α) (hs 
       simp only [compileCharged, CostComp.bind, CostComp.sampleC, CostComp.lift]
       vcgen [hk]
       rename_i s
-      simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
+      simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
         add_zero, wpE_pure, wpE_bind, Nat.cast_add, Nat.cast_one, wpE_add]
       calc _ ≤ (Fintype.card β : ℝ≥0∞)⁻¹ * ∑' _ : β,
             (1 + ((Finset.univ.sup fun b => (k b).queryCost : ℕ) : ℝ≥0∞)) := by
@@ -134,7 +134,7 @@ theorem ecost_compileCharged_le_queryCost_vcgen {α : Type} (s : SPTree α) (hs 
       simp only [compileCharged, CostComp.bind, CostComp.getC, CostComp.lift]
       vcgen [hk]
       rename_i s
-      simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
+      simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
         add_zero, wpE_pure, Nat.cast_add, Nat.cast_one, wpE_add]
       refine (add_le_add (wpE_const_le _ _ _) ((ih _ (hs _) s).trans (Nat.cast_le.mpr
         (Finset.le_sup (f := fun v => (k v).queryCost) (Finset.mem_univ _))))).trans ?_
@@ -153,7 +153,7 @@ theorem ecost_compileCharged_le_queryCost_vcgen {α : Type} (s : SPTree α) (hs 
       simp only [compileCharged, CostComp.bind, CostComp.setC, CostComp.lift]
       vcgen [hk]
       rename_i s
-      simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
+      simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
         add_zero, wpE_pure, Nat.cast_add, Nat.cast_one, wpE_add]
       refine (add_le_add (wpE_const_le _ _ _) (ih hs _)).trans ?_
       show _ ≤ ((1 + t.queryCost : ℕ) : ℝ≥0∞)
@@ -213,7 +213,7 @@ theorem prBad_induction_vcgen
           (fun (_ : PUnit) h => OrderDual.toDual ((if bad h then (1 : ℝ≥0∞) else 0) + c))
           (OrderDual.toDual 0) := by
         vcgen [hr, hs]
-        simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
+        simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
         apply le_of_eq
         push_cast
         grind
@@ -246,7 +246,7 @@ theorem ecost_retryN_le_vcgen {β : Type} (body : CostComp (Option β)) {C q : �
       simp only [retryN, CostComp.bind]
       vcgen [hb]
       rename_i s
-      simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
+      simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
       calc _ ≤ wpE body (fun p _ => (p.2 : ℝ≥0∞) +
             (C * ∑ i ∈ Finset.range n, q ^ i) * (p.1.elim 1 fun _ => 0)) s := by
             refine wpE_mono body (fun p h' => ?_) s
@@ -291,7 +291,7 @@ theorem prTrue_union_bound_vcgen (bad₁ bad₂ : SPComp Bool)
       (fun b _ => OrderDual.toDual (if b then (1 : ℝ≥0∞) else 0)) (OrderDual.toDual 0) := by
     vcgen [hb]
     rename_i s
-    simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
+    simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
     calc _ ≤ wpE bad₁ (fun b _ => (if b then 1 else 0) +
           wpE bad₂ (fun b _ => if b then (1 : ℝ≥0∞) else 0) Heap.empty) s := by
           erw [wpE_bind]
@@ -338,7 +338,7 @@ theorem prTrue_double_sample_pure_bool_vcgen {R : Type} [Fintype R] [Nonempty R]
         (Fintype.card R : ℝ≥0∞) ^ 2)
       (fun b _ => if b then (1 : ℝ≥0∞) else 0) Lean.Order.bot := by
     vcgen
-    simp only [leanOrder_rel_iff_le, wp_eq_wpEF, wpEF_bind, wpEF_sample, wpEF_pure]
+    simp only [ENNReal.leanOrder_rel_iff_le, wp_eq_wpEF, wpEF_bind, wpEF_sample, wpEF_pure]
     simp_all
   have hup : Triple (SPCompU.lift (SPComp.bind (SPComp.sample R) fun e₁ =>
       SPComp.bind (SPComp.sample R) fun e₂ => SPComp.pure (f e₁ e₂)))
@@ -347,7 +347,7 @@ theorem prTrue_double_sample_pure_bool_vcgen {R : Type} [Fintype R] [Nonempty R]
         (Fintype.card R : ℝ≥0∞) ^ 2))
       (fun b _ => OrderDual.toDual (if b then (1 : ℝ≥0∞) else 0)) (OrderDual.toDual 0) := by
     vcgen
-    simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF_bind,
+    simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF_bind,
       wpEF_sample, wpEF_pure]
     simp_all
   exact le_antisymm ((SPCompU.triple_iff_wpE_le _ _ _).1 hup h₀)

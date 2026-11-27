@@ -895,6 +895,7 @@ public import CatCryptCore.Crypto.UCMonad.QDistHub
 public import CatCryptCore.Crypto.UCMonad.QDistTrace
 public import CatCryptCore.Crypto.UCMonad.RustMBridge
 public import CatCryptCore.Crypto.UCMonad.Transformers
+public import CatCryptCore.Crypto.UCMonad.EventSig
 
 -- Quantum random-oracle model: semi-classical one-way to hiding, KEM games and hops
 public import CatCryptCore.Quantum.QROM.CoherentCleanRun
@@ -1080,6 +1081,7 @@ public import CatCryptCore.Container.WTypes
 public import CatCryptCore.Container.Code
 public import CatCryptCore.Container.QuotientFree
 public import CatCryptCore.Container.CodeCost
+public import CatCryptCore.Container.HFreeRelInversion
 public import CatCryptCore.Container.CodeRel
 public import CatCryptCore.Container.DillerNahm
 public import CatCryptCore.Container.DNCert

@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.Instrument
-public import CatCryptCore.Refinement.RRelWRPProb
+public import CatCryptCore.ForMathlib.Order.LeanOrderENNReal
 public import Mathlib.Analysis.Matrix.Order
 public import Mathlib.Analysis.SpecialFunctions.ContinuousFunctionalCalculus.PosPart.Basic
 public import RefinementWP.Classes

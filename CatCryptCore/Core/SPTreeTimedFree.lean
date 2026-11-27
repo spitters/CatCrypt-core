@@ -466,7 +466,8 @@ theorem allRet_iff_wpFold_demonicUnder (Q : α → Prop) (s : SPTree.Timed α) :
 answers allowed by `spAllows`. -/
 theorem wpFold_demonicUnder_spAllows_of_allRet {Q : α → Prop} {s : SPTree.Timed α}
     (h : AllRet Q s) : wpFold (OpSpec.demonicUnder spAllows) (toFreeMT s) Q :=
-  wpFold_demonicUnder_of_le (fun _ _ _ => trivial) ((allRet_iff_wpFold_demonicUnder Q s).1 h)
+  wpFold_demonicUnder_mono_allows (fun _ _ _ => trivial)
+    ((allRet_iff_wpFold_demonicUnder Q s).1 h)
 
 /-! ## Compilation as a handler -/
 

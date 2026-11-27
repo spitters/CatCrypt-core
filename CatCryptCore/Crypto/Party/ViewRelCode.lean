@@ -5,10 +5,11 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Container.CodeRel
+public import CatCryptCore.Container.HFreeRelInversion
 public import CatCryptCore.Crypto.Party.Derived
 public import CatCryptCore.Crypto.Party.ProgECost
 public import CatCryptCore.Relational.Rules
+public import PolyFun.PFunctor.Free.QuotientRel
 
 /-!
 # Information flow of party programs as a heterogeneous lift along a code relation

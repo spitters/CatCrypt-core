@@ -676,7 +676,7 @@ theorem prTrue_union_bound (bad₁ bad₂ : SPComp Bool)
       (fun b _ => OrderDual.toDual (if b then (1 : ℝ≥0∞) else 0)) (OrderDual.toDual 0) := by
     vcgen [hb]
     rename_i s
-    simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
+    simp only [ENNReal.leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
     calc _ ≤ wpE bad₁ (fun b _ => (if b then 1 else 0) +
           wpE bad₂ (fun b _ => if b then (1 : ℝ≥0∞) else 0) Heap.empty) s := by
           erw [wpE_bind]

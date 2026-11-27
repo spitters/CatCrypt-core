@@ -8,7 +8,7 @@ module
 public import CatCryptCore.Core.SPTree
 public import Cslib.Foundations.Data.PFunctor.Free
 public import PolyFun.PFunctor.Free.WP.Charge
-import CatCryptCore.Tactics.DeriveFreeSig
+import PolyFun.PFunctor.Free.DeriveSig
 
 /-!
 # `SPTree` as a free monad over a polynomial functor

@@ -8,7 +8,9 @@ module
 public import RefinementWP.Classes
 public import CatCryptCore.Relational.Approx
 public import CatCryptCore.Relational.ApproxPointMass
+public import CatCryptCore.ForMathlib.Order.LeanOrderENNReal
 public import CatCryptCore.Unary.ExpectationVCGenCore
+public import CatCryptCore.Refinement.WRPUpTo
 
 /-!
 # Probabilistic refinement through couplings
@@ -44,8 +46,10 @@ relation and the precondition `⊤` the judgement is equivalent to `Refines`
 * `wpEF_le_add_of_rHoareApprox`: the expectation bound of an approximate coupling.
 * `refines_of_rHoareApprox_zero`, `refines_of_rHoare`: an exact coupling gives `Refines`.
 * `refinesUpTo_of_rHoareApprox`: a coupling of grade `ε` gives refinement up to `ε`.
+* `refinesUpTo_iff`: the judgement as an application of `WRPUpTo.RefinesUpTo`, unfolded.
 * `refinesUpTo_zero_iff`: at `ε = 0`, the transport property of `wrp` over bounded
   postconditions.
+* `RefinesUpTo.mono`, `RefinesUpTo.mono_err`: monotonicity in the error and the precondition.
 * `refinesUpTo_zero_iff_refines`: at the concretization of a heap relation, `RefinesUpTo 0`
   is equivalent to `Refines`.
 * `RefinesUpTo.vcomp_top`, `RefinesUpTo.vcomp_heapConc`, `RefinesUpTo.bind`: vertical and
@@ -68,39 +72,6 @@ open Std.WP (wp)
 open scoped ENNReal
 
 variable {α β γ δ : Type}
-
-/-! ## The lattice of expectations -/
-
-/-- The binary meet of `Lean.Order` on `ℝ≥0∞` is `min`. -/
-theorem meet_ennreal_eq_min (x y : ℝ≥0∞) : Lean.Order.meet x y = min x y :=
-  le_antisymm (le_min (Lean.Order.meet_le_left x y) (Lean.Order.meet_le_right x y))
-    (Lean.Order.le_meet (min x y) x y (min_le_left x y) (min_le_right x y))
-
-/-- The supremum of `Lean.Order` on `ℝ≥0∞` is `sSup`. -/
-theorem sup_ennreal_eq_sSup (s : ℝ≥0∞ → Prop) :
-    Lean.Order.CompleteLattice.sup s = sSup {x | s x} :=
-  le_antisymm (Lean.Order.sup_le s fun _ hy => le_sSup hy)
-    (sSup_le fun _ hy => Lean.Order.le_sup s hy)
-
-/-- The indexed supremum of `Lean.Order` on `ℝ≥0∞` is `⨆`. -/
-theorem iSup_ennreal_eq {ι : Type} (f : ι → ℝ≥0∞) : Lean.Order.iSup f = ⨆ i, f i :=
-  le_antisymm (Lean.Order.iSup_le f (⨆ i, f i) fun i => le_iSup f i)
-    (iSup_le fun i => Lean.Order.le_iSup f i)
-
-/-- The top of `Lean.Order` on `ℝ≥0∞` is `⊤`. -/
-theorem top_ennreal_eq : (Lean.Order.top : ℝ≥0∞) = ⊤ :=
-  le_antisymm le_top (Lean.Order.le_top (⊤ : ℝ≥0∞))
-
-/-- The meet with a fixed `x : ℝ≥0∞` in `Lean.Order` preserves suprema. -/
-instance instPreservesSupMeetENNReal (x : ℝ≥0∞) :
-    Lean.Order.PreservesSup (Lean.Order.meet x) where
-  map_sup s := by
-    simp only [meet_ennreal_eq_min, sup_ennreal_eq_sSup]
-    refine le_antisymm ?_ (sSup_le ?_)
-    · rw [inf_sSup_eq]
-      exact iSup₂_le fun y hy => le_sSup ⟨y, hy, rfl⟩
-    · rintro _ ⟨y, hy, rfl⟩
-      exact min_le_min le_rfl (le_sSup hy)
 
 /-! ## The expectation bound of a coupling -/
 
@@ -275,7 +246,7 @@ theorem post_expectation_apply (γc : Concretization (Heap → ℝ≥0∞) (Heap
     (Q : α → β → Heap → ℝ≥0∞) (Qa : β → Heap → ℝ≥0∞) (x : α) (h : Heap) :
     γc.post Q Qa x h = ⨆ y, min (Q x y h) (γc.pred (Qa y) h) := by
   simp only [Concretization.post, Lean.Order.iSup_apply, Lean.Order.meet_apply,
-    iSup_ennreal_eq, meet_ennreal_eq_min]
+    ENNReal.leanOrder_iSup_eq_iSup, ENNReal.leanOrder_meet_eq_min]
 
 /-- A related abstract outcome bounds the concrete postcondition at `retRel` from below. -/
 theorem le_post_retRel {x : α} {y : β} {h h' : Heap} (hr : couplingPost SR R x h y h')
@@ -307,7 +278,7 @@ theorem heapConc_add_const_le (p : Heap → ℝ≥0∞) (k : ℝ≥0∞) (h : He
 instance instIsSupPreservingHeapConc (SR : RPre) : (heapConc SR).IsSupPreserving.{_, 0} where
   sup {ι} f h := by
     refine iSup₂_le fun h' hs => ?_
-    simp only [Lean.Order.iSup_apply, iSup_ennreal_eq]
+    simp only [Lean.Order.iSup_apply, ENNReal.leanOrder_iSup_eq_iSup]
     exact iSup_mono fun i => le_iSup₂_of_le h' hs le_rfl
 
 /-- On postconditions bounded by `1`, the two readings of a return relation give the same
@@ -319,8 +290,8 @@ theorem post_indRel_eq_post_retRel {Qa : β → Heap → ℝ≥0∞} (hQa : ∀ 
   refine iSup_congr fun y => ?_
   have h1 := heapConc_le_one (SR := SR) (hQa y) h
   by_cases hR : R x y
-  · simp [indRel, retRel, hR, top_ennreal_eq, h1]
-  · simp [indRel, retRel, hR, lean_order_bot_eq_zero]
+  · simp [indRel, retRel, hR, ENNReal.leanOrder_top_eq_top, h1]
+  · simp [indRel, retRel, hR, ENNReal.leanOrder_bot_eq_zero]
 
 /-! ## The exact case -/
 
@@ -344,17 +315,27 @@ theorem refines_of_rHoare {c : SPComp α} {a : SPComp β}
     postcondition and exception postcondition bounded by `1`, `P` met with the concretized
     abstract expectation is at most the concrete expectation plus `ε`. The bound on the
     postconditions is part of the judgement because the slack of an approximate coupling is a
-    mass, which an integrand multiplies. -/
+    mass, which an integrand multiplies. It is the generic judgement `WRPUpTo.RefinesUpTo` at
+    the admissible classes of postconditions and exception postconditions bounded by `1`. -/
 def RefinesUpTo (ε : ℝ≥0∞) (P : Heap → ℝ≥0∞)
     (γc : Concretization (Heap → ℝ≥0∞) (Heap → ℝ≥0∞)) (eps : ℝ≥0∞ → ℝ≥0∞)
     (c : SPComp α) (a : SPComp β) (Q : α → β → Heap → ℝ≥0∞) : Prop :=
-  ∀ (Qa : β → Heap → ℝ≥0∞) (Ea : ℝ≥0∞), (∀ y h, Qa y h ≤ 1) → Ea ≤ 1 →
-    ∀ h, Lean.Order.meet P (γc.pred (wp a Qa Ea)) h ≤ wp c (γc.post Q Qa) (eps Ea) h + ε
+  WRPUpTo.RefinesUpTo (fun Qa : β → Heap → ℝ≥0∞ => ∀ y h, Qa y h ≤ 1) (fun Ea : ℝ≥0∞ => Ea ≤ 1)
+    ε P γc eps c a Q
 
 section UpTo
 
 variable {γc : Concretization (Heap → ℝ≥0∞) (Heap → ℝ≥0∞)} {eps : ℝ≥0∞ → ℝ≥0∞}
   {P : Heap → ℝ≥0∞} {Q : α → β → Heap → ℝ≥0∞} {c : SPComp α} {a : SPComp β} {ε : ℝ≥0∞}
+
+/-- The unfolding lemma of `RefinesUpTo`: for every postcondition and exception postcondition
+    bounded by `1`, at every heap, `P` met with the concretized abstract expectation is at most
+    the concrete expectation plus `ε`. -/
+theorem refinesUpTo_iff :
+    RefinesUpTo ε P γc eps c a Q ↔
+      ∀ (Qa : β → Heap → ℝ≥0∞) (Ea : ℝ≥0∞), (∀ y h, Qa y h ≤ 1) → Ea ≤ 1 →
+        ∀ h, Lean.Order.meet P (γc.pred (wp a Qa Ea)) h ≤ wp c (γc.post Q Qa) (eps Ea) h + ε :=
+  Iff.rfl
 
 /-- At `ε = 0`, refinement up to `ε` is the transport property of `wrp` restricted to bounded
     postconditions. -/
@@ -362,23 +343,31 @@ theorem refinesUpTo_zero_iff :
     RefinesUpTo 0 P γc eps c a Q ↔
       ∀ (Qa : β → Heap → ℝ≥0∞) (Ea : ℝ≥0∞), (∀ y h, Qa y h ≤ 1) → Ea ≤ 1 →
         Lean.Order.PartialOrder.rel (Lean.Order.meet P (γc.pred (wp a Qa Ea)))
-          (wp c (γc.post Q Qa) (eps Ea)) := by
-  simp only [RefinesUpTo, add_zero]
-  rfl
+          (wp c (γc.post Q Qa) (eps Ea)) :=
+  WRPUpTo.refinesUpTo_zero_iff
 
 /-- Refinement gives refinement up to every error. -/
 theorem refinesUpTo_of_refines (h : Refines P γc eps c a Q) (ε : ℝ≥0∞) :
     RefinesUpTo ε P γc eps c a Q :=
-  fun Qa Ea _ _ s => le_trans (wrp_transport h Qa Ea s) le_self_add
+  WRPUpTo.RefinesUpTo.of_refines h _ _ ε
 
 /-- Refinement up to an error under `⊤` is the lax square with slack, over bounded
     postconditions. -/
 theorem refinesUpTo_top_iff :
     RefinesUpTo ε Lean.Order.top γc eps c a Q ↔
       ∀ (Qa : β → Heap → ℝ≥0∞) (Ea : ℝ≥0∞), (∀ y h, Qa y h ≤ 1) → Ea ≤ 1 →
-        ∀ h, γc.pred (wp a Qa Ea) h ≤ wp c (γc.post Q Qa) (eps Ea) h + ε := by
-  simp only [RefinesUpTo, Lean.Order.meet_apply, Lean.Order.top_apply, meet_ennreal_eq_min,
-    top_ennreal_eq, min_top_left]
+        ∀ h, γc.pred (wp a Qa Ea) h ≤ wp c (γc.post Q Qa) (eps Ea) h + ε :=
+  WRPUpTo.refinesUpTo_top_iff
+
+/-- Refinement up to an error is monotone in the error and antitone in the precondition. -/
+theorem RefinesUpTo.mono {ε' : ℝ≥0∞} {P' : Heap → ℝ≥0∞} (h : RefinesUpTo ε P γc eps c a Q)
+    (hP : ∀ s, P' s ≤ P s) (hε : ε ≤ ε') : RefinesUpTo ε' P' γc eps c a Q :=
+  WRPUpTo.RefinesUpTo.mono h (fun _ => id) (fun _ => id) hP hε
+
+/-- Refinement up to an error is monotone in the error. -/
+theorem RefinesUpTo.mono_err {ε' : ℝ≥0∞} (h : RefinesUpTo ε P γc eps c a Q) (hε : ε ≤ ε') :
+    RefinesUpTo ε' P γc eps c a Q :=
+  WRPUpTo.RefinesUpTo.mono_err h hε
 
 /-- Refinement up to an error does not distinguish the two readings of a return relation. -/
 theorem refinesUpTo_indRel_iff :
@@ -403,7 +392,7 @@ theorem refinesUpTo_indRel_of_rHoareApprox {R₀ : γ → δ → Prop} {x₀ : �
   by_cases hR : R₀ x₀ y₀
   · exact refinesUpTo_of_rHoareApprox (h hR) _
   · intro Qa Ea _ _ s
-    simp [Lean.Order.meet_apply, meet_ennreal_eq_min, indRel, hR]
+    simp [Lean.Order.meet_apply, ENNReal.leanOrder_meet_eq_min, indRel, hR]
 
 end UpTo
 
@@ -454,10 +443,10 @@ theorem refinesUpTo_zero_iff_refines {c : SPComp α} {a : SPComp β} :
     simp only [post_expectation_apply, ENNReal.mul_iSup]
     refine iSup_le fun y => le_iSup_of_le y ?_
     by_cases hR : R x y
-    · simp only [retRel, hR, Lean.Order.CompleteLattice.ofProp, ite_true, top_ennreal_eq,
-        min_top_left, heapConc, ENNReal.mul_iSup, q, hcancel]
+    · simp only [retRel, hR, Lean.Order.CompleteLattice.ofProp, ite_true,
+        ENNReal.leanOrder_top_eq_top, min_top_left, heapConc, ENNReal.mul_iSup, q, hcancel]
       exact iSup₂_mono fun _ _ => min_le_left _ _
-    · simp [retRel, hR, lean_order_bot_eq_zero]
+    · simp [retRel, hR, ENNReal.leanOrder_bot_eq_zero]
   calc wpEF a (fun y s => min (Qa y s) n) (min e n) h'
       = k * wpEF a q (min e n * k⁻¹) h' := by
         simp only [← wpEF_const_mul, q, hcancel]
@@ -483,21 +472,11 @@ theorem RefinesUpTo.vcomp_top {γ₂ γ₁ : Concretization (Heap → ℝ≥0∞
     (h₂ : RefinesUpTo ε₂ Lean.Order.top γ₂ eps₂ c b Q₂) :
     RefinesUpTo (ε₁ + ε₂) Lean.Order.top (γ₂.comp γ₁) (fun e => eps₂ (eps₁ e)) c a
       (γ₂.relComp Q₂ Q₁) := by
-  rw [refinesUpTo_top_iff] at h₁ h₂ ⊢
-  intro Qa Ea hQa hEa h
-  have hQb : ∀ y s, γ₁.post Q₁ Qa y s ≤ 1 := fun y s => by
-    rw [post_expectation_apply]
-    exact iSup_le fun z => (min_le_right _ _).trans (hbound _ (hQa z) s)
-  calc γ₂.pred (γ₁.pred (wp a Qa Ea)) h
-      ≤ γ₂.pred (fun s => wp b (γ₁.post Q₁ Qa) (eps₁ Ea) s + ε₁) h :=
-        γ₂.pred_mono (h₁ Qa Ea hQa hEa) h
-    _ ≤ γ₂.pred (wp b (γ₁.post Q₁ Qa) (eps₁ Ea)) h + ε₁ := hadd _ _ _
-    _ ≤ wp c (γ₂.post Q₂ (γ₁.post Q₁ Qa)) (eps₂ (eps₁ Ea)) h + ε₂ + ε₁ :=
-        add_le_add (h₂ _ _ hQb (heps Ea hEa) h) le_rfl
-    _ ≤ wp c ((γ₂.comp γ₁).post (γ₂.relComp Q₂ Q₁) Qa) (eps₂ (eps₁ Ea)) h + ε₂ + ε₁ :=
-        add_le_add (add_le_add
-          (wpEF_mono c (Concretization.post_comp_le hsup Q₂ Q₁ Qa) le_rfl h) le_rfl) le_rfl
-    _ = _ := by rw [add_assoc, add_comm ε₂]
+  have hQb : ∀ Qa : γ → Heap → ℝ≥0∞, (∀ z s, Qa z s ≤ 1) → ∀ y s, γ₁.post Q₁ Qa y s ≤ 1 :=
+    fun Qa hQa y s => by
+      rw [post_expectation_apply]
+      exact iSup_le fun z => (min_le_right _ _).trans (hbound _ (hQa z) s)
+  exact WRPUpTo.RefinesUpTo.vcomp_top hsup hadd hQb heps h₁ h₂
 
 /-- Vertical composition at concretizations of heap relations and identity exception maps,
     where the side conditions of `RefinesUpTo.vcomp_top` hold. -/
@@ -516,24 +495,10 @@ theorem RefinesUpTo.bind {γc : Concretization (Heap → ℝ≥0∞) (Heap → �
     {g : β → SPComp δ} {Rc : α → β → Heap → ℝ≥0∞} {Q : γ → δ → Heap → ℝ≥0∞} {ε₁ ε₂ : ℝ≥0∞}
     (hc : RefinesUpTo ε₁ P γc eps c a Rc)
     (hk : ∀ x y, RefinesUpTo ε₂ (Rc x y) γc eps (k x) (g y) Q) :
-    RefinesUpTo (ε₁ + ε₂) P γc eps (c.bind k) (a.bind g) Q := by
-  intro Qa Ea hQa hEa h
-  let X : β → Heap → ℝ≥0∞ := fun y => wp (g y) Qa Ea
-  let Y : α → Heap → ℝ≥0∞ := fun x => wp (k x) (γc.post Q Qa) (eps Ea)
-  have ha : wp (a.bind g) Qa Ea = wp a X Ea := funext fun s => wpEF_bind a g Qa Ea s
-  have hX : ∀ y s, X y s ≤ 1 := fun y s => wpEF_le_one (g y) hQa hEa s
-  have hY : ∀ x s, γc.post Rc X x s ≤ Y x s + ε₂ := fun x s => by
-    rw [post_expectation_apply]
-    refine iSup_le fun y => ?_
-    have := hk x y Qa Ea hQa hEa s
-    rwa [Lean.Order.meet_apply, meet_ennreal_eq_min] at this
-  rw [ha]
-  calc _ ≤ wpEF c (γc.post Rc X) (eps Ea) h + ε₁ := hc X Ea hX hEa h
-    _ ≤ wpEF c (fun x s => Y x s + ε₂) (eps Ea) h + ε₁ :=
-        add_le_add (wpEF_mono c hY le_rfl h) le_rfl
-    _ ≤ wpEF c Y (eps Ea) h + ε₂ + ε₁ := add_le_add (wpEF_add_const_le c Y ε₂ _ h) le_rfl
-    _ = wp (c.bind k) (γc.post Q Qa) (eps Ea) h + (ε₁ + ε₂) := by
-        rw [wp_eq_wpEF, wpEF_bind, add_assoc, add_comm ε₂]
-        rfl
+    RefinesUpTo (ε₁ + ε₂) P γc eps (c.bind k) (a.bind g) Q :=
+  WRPUpTo.RefinesUpTo.bind (c := c) (k := k) (a := a) (g := g)
+    (fun Qa Ea _ _ s => (wpEF_bind a g Qa Ea s).le)
+    (fun _ _ hQa hEa y s => wpEF_le_one (g y) hQa hEa s)
+    (fun Y r E s => wpEF_add_const_le c Y r E s) hc hk
 
 end CatCrypt.Refinement.WRP

@@ -11,6 +11,7 @@ public import CatCryptCore.Quantum.TraceNorm
 public import CatCryptCore.ForMathlib.Matrix.TraceNormConj
 public import Mathlib.Analysis.CStarAlgebra.ContinuousFunctionalCalculus.Order
 public import QuantumFoundations.Pure.Vector
+public import CatCryptCore.Refinement.WRPUpTo
 
 /-!
 # Refinement of quantum channels up to an error
@@ -32,10 +33,14 @@ bound holds also when `U` is within `ε` of `e^{iφ} V`. Refinements up to `ε�
 ## Main definitions
 
 * `effectExp E ρ`: the expectation `tr(E ρ)` of the effect `E` at the state `ρ`.
-* `ChannelRefinesUpTo ε c a`: refinement of `a` by `c` up to `ε` on expectations of effects.
+* `ChannelRefinesUpTo ε c a`: refinement of `a` by `c` up to `ε` on expectations of effects, the
+  generic judgement `WRPUpTo.RefinesUpTo` at the identity concretization, the precondition
+  `traceLeOne` of states of trace at most `1` and the admissible postconditions `IsEffectPost`.
 
 ## Main results
 
+* `channelRefinesUpTo_iff_wp`, `channelRefinesUpTo_iff`: the judgement unfolded, over effects
+  and states of trace at most `1`.
 * `unitaryChannel_refinesUpTo_of_norm_sub_le`: unitary channels of matrices within `ε` refine
   each other up to `2ε`; `unitaryChannel_refinesUpTo_both_of_norm_sub_le` gives both directions.
 * `unitaryChannel_refinesUpTo_of_norm_sub_smul_le`: the same with a global phase.
@@ -68,37 +73,67 @@ variable {d : ℕ}
 def effectExp (E : Matrix (Fin d) (Fin d) ℂ) (ρ : PSDState d) : ℝ≥0∞ :=
   ENNReal.ofReal (E * ρ.1).trace.re
 
-/-- `c` refines `a` up to `ε` on expectations of effects: for every effect `E` and every state
-`ρ` of trace at most `1`, the weakest precondition of `a` at the expectation of `E` is at most
-that of `c` plus `ε`. -/
+/-- The precondition of the states of trace at most `1`: `⊤` at those states and `0` at the
+others. -/
+def traceLeOne (ρ : PSDState d) : ℝ≥0∞ :=
+  Lean.Order.CompleteLattice.ofProp (ρ.1.trace.re ≤ 1)
+
+/-- The postconditions of the expectations of effects: `Qa` is the expectation of an effect. -/
+def IsEffectPost (Qa : Unit → PSDState d → ℝ≥0∞) : Prop :=
+  ∃ E : Matrix (Fin d) (Fin d) ℂ, IsEffect E ∧ Qa = fun _ => effectExp E
+
+/-- `c` refines `a` up to `ε` on expectations of effects: the generic judgement
+`WRPUpTo.RefinesUpTo` at the identity concretization, the identity exception map and the
+equality of return values, under the precondition `traceLeOne`, with the expectations of effects
+as admissible postconditions. Unfolded (`channelRefinesUpTo_iff_wp`): for every effect `E` and
+every state `ρ` of trace at most `1`, the weakest precondition of `a` at the expectation of `E`
+is at most that of `c` plus `ε`. -/
 def ChannelRefinesUpTo (ε : ℝ≥0∞) (c a : QComp d Unit) : Prop :=
-  ∀ E : Matrix (Fin d) (Fin d) ℂ, IsEffect E → ∀ ρ : PSDState d, ρ.1.trace.re ≤ 1 →
-    wp a (fun _ => effectExp E) () ρ ≤ wp c (fun _ => effectExp E) () ρ + ε
+  WRPUpTo.RefinesUpTo IsEffectPost (fun _ : Unit => True) ε traceLeOne Concretization.id
+    (fun e : Unit => e) c a (eqRel (CPred := PSDState d → ℝ≥0∞))
+
+/-- The unfolding lemma of `ChannelRefinesUpTo` at the weakest preconditions: for every effect
+and every state of trace at most `1`. -/
+theorem channelRefinesUpTo_iff_wp {ε : ℝ≥0∞} {c a : QComp d Unit} :
+    ChannelRefinesUpTo ε c a ↔
+      ∀ E : Matrix (Fin d) (Fin d) ℂ, IsEffect E → ∀ ρ : PSDState d, ρ.1.trace.re ≤ 1 →
+        wp a (fun _ => effectExp E) () ρ ≤ wp c (fun _ => effectExp E) () ρ + ε := by
+  unfold ChannelRefinesUpTo
+  constructor
+  · intro h E hE ρ hρ
+    have k := h (fun _ => effectExp E) () ⟨E, hE, rfl⟩ trivial ρ
+    rw [Concretization.id_post_eqRel, WRPUpTo.meet_apply_eq_min] at k
+    have hP : traceLeOne ρ = ⊤ := by
+      simp [traceLeOne, Lean.Order.CompleteLattice.ofProp, hρ, ENNReal.leanOrder_top_eq_top]
+    rw [hP, min_top_left] at k
+    exact k
+  · rintro h Qa ⟨⟩ ⟨E, hE, rfl⟩ - ρ
+    rw [Concretization.id_post_eqRel, WRPUpTo.meet_apply_eq_min]
+    by_cases hρ : ρ.1.trace.re ≤ 1
+    · exact (min_le_right _ _).trans (h E hE ρ hρ)
+    · simp [traceLeOne, Lean.Order.CompleteLattice.ofProp, hρ, ENNReal.leanOrder_bot_eq_zero]
 
 /-- The unfolding lemma of `ChannelRefinesUpTo` at the states after the channels. -/
 theorem channelRefinesUpTo_iff {ε : ℝ≥0∞} {c a : QComp d Unit} :
     ChannelRefinesUpTo ε c a ↔
       ∀ E : Matrix (Fin d) (Fin d) ℂ, IsEffect E → ∀ ρ : PSDState d, ρ.1.trace.re ≤ 1 →
         effectExp E (channelState a ρ) ≤ effectExp E (channelState c ρ) + ε :=
-  Iff.rfl
+  channelRefinesUpTo_iff_wp
 
 /-- A computation refines itself up to every error. -/
 theorem ChannelRefinesUpTo.refl (ε : ℝ≥0∞) (c : QComp d Unit) : ChannelRefinesUpTo ε c c :=
-  fun _ _ _ _ => le_self_add
+  WRPUpTo.RefinesUpTo.refl _ _ ε _ c
 
 /-- Refinement up to an error is monotone in the error. -/
 theorem ChannelRefinesUpTo.mono {ε ε' : ℝ≥0∞} {c a : QComp d Unit}
     (h : ChannelRefinesUpTo ε c a) (hε : ε ≤ ε') : ChannelRefinesUpTo ε' c a :=
-  fun E hE ρ hρ => (h E hE ρ hρ).trans (by gcongr)
+  WRPUpTo.RefinesUpTo.mono_err h hε
 
 /-- **Refinements up to errors compose additively**, along the identity. -/
 theorem ChannelRefinesUpTo.trans {ε₁ ε₂ : ℝ≥0∞} {c b a : QComp d Unit}
     (h₂ : ChannelRefinesUpTo ε₂ c b) (h₁ : ChannelRefinesUpTo ε₁ b a) :
     ChannelRefinesUpTo (ε₁ + ε₂) c a :=
-  fun E hE ρ hρ => (h₁ E hE ρ hρ).trans <| by
-    rw [add_comm ε₁, ← add_assoc]
-    gcongr
-    exact h₂ E hE ρ hρ
+  WRPUpTo.RefinesUpTo.vcomp_id h₁ h₂
 
 /-- Exact refinement along the identity gives refinement up to every error. -/
 theorem ChannelRefines.refinesUpTo {c a : QComp d Unit} (h : ChannelRefines c a)
@@ -170,6 +205,7 @@ theorem unitaryChannel_refinesUpTo_of_norm_sub_smul_le {U V : Matrix.unitaryGrou
     conjugate_smul_unit c hcc _
   have hcV : ‖c • (V : Matrix (Fin d) (Fin d) ℂ)‖ ≤ 1 := by
     rw [norm_smul, hc, one_mul]; exact norm_unitary_le_one V
+  simp only [channelRefinesUpTo_iff]
   constructor
   · intro E hE ρ hρ
     have := effectExp_conjugate_le (norm_unitary_le_one U) hcV h hE ρ hρ

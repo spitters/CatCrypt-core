@@ -25,7 +25,7 @@ CatCrypt's UC security framework.
   RustM α    ──liftRust──→  SPComp α    ──UCMonad──→  security bounds
 ```
 
-`RustM` is the result monad `Aeneas.Std.RustM` of hax-lean under its root-level name
+`RustM` is the result monad `HaxLean.Aeneas.Std.RustM` of hax-lean under its root-level name
 (`CatCrypt/Hax/RustM.lean`), a deterministic error monad (`.ok | .fail | .div`). Mapping errors to the zero sub-distribution (`SPComp.fail`) gives a canonical
 embedding into `SPComp` that preserves the monad structure and is non-expansive.
 
@@ -342,7 +342,7 @@ theorem liftRust_of_isOk {α : Type} (x : RustM α) (h : RustM.isOk x) :
     liftRust x = SPComp.pure (RustM.of_isOk x h) := by
   cases x with
   | ok v => simp [liftRust, RustM.of_isOk]
-  | fail e => exact absurd h (by simp [RustM.isOk, Aeneas.Std.ok?])
-  | div => exact absurd h (by simp [RustM.isOk, Aeneas.Std.ok?])
+  | fail e => exact absurd h (by simp [RustM.isOk, HaxLean.Aeneas.Std.ok?])
+  | div => exact absurd h (by simp [RustM.isOk, HaxLean.Aeneas.Std.ok?])
 
 end UCMonad.RustMBridge

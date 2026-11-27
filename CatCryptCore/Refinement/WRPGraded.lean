@@ -138,8 +138,8 @@ theorem GSq.hcomp {ε₁ ε₂ : ℝ≥0∞} {a₁ c₁ a₂ c₂ : QComp d Unit
   intro E hE ρ hρ
   rw [channelState_seq, channelState_seq]
   have hρ₁ : (channelState a₁ ρ).1.trace.re ≤ 1 := (channelState_trace_le a₁ ρ).trans hρ
-  have step₂ := h₂ E hE (channelState a₁ ρ) hρ₁
-  have step₁ := h₁ _ (isEffect_dualMap_branch c₂ hE) ρ hρ
+  have step₂ := channelRefinesUpTo_iff.1 h₂ E hE (channelState a₁ ρ) hρ₁
+  have step₁ := channelRefinesUpTo_iff.1 h₁ _ (isEffect_dualMap_branch c₂ hE) ρ hρ
   change effectExp E (channelState a₂ (channelState a₁ ρ)) ≤
     effectExp E (channelState c₂ (channelState a₁ ρ)) + ε₂ at step₂
   change effectExp (dualMap (c₂.branch ()) E) (channelState a₁ ρ) ≤
@@ -170,7 +170,7 @@ theorem GSq.eq_of_zero {a c : QComp d Unit} (htp : IsTP (a.branch ())) (h : GSq 
         fun σ hσ => ?_
       have hE := isEffect_smul_inv_norm_add_one hσ
       have hs : (0 : ℝ) < (‖σ‖ + 1)⁻¹ := by positivity
-      have key := h _ hE ρ hρ
+      have key := channelRefinesUpTo_iff.1 h _ hE ρ hρ
       rw [add_zero] at key
       change effectExp _ (channelState a ρ) ≤ effectExp _ (channelState c ρ) at key
       unfold effectExp at key
